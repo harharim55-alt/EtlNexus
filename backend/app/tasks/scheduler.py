@@ -54,7 +54,7 @@ def setup_scheduler() -> AsyncIOScheduler:
         id="catalog_sync",
         name="Iceberg Catalog Sync",
         replace_existing=True,
-        next_run_time=now + timedelta(hours=2),
+        next_run_time=now + timedelta(hours=1),
     )
 
     logger.info(

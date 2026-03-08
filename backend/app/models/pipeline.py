@@ -25,10 +25,6 @@ class Pipeline(Base):
     airflow_status: Mapped["AirflowRunStatus | None"] = relationship(
         back_populates="pipeline", uselist=False
     )
-    usages: Mapped[list["PipelineUsage"]] = relationship(
-        back_populates="pipeline", cascade="all, delete-orphan"
-    )
-
     # Lineage: edges where this pipeline is the target (reads from)
     lineage_sources: Mapped[list["LineageEdge"]] = relationship(
         foreign_keys="LineageEdge.target_pipeline_id", back_populates="target_pipeline"
@@ -56,4 +52,3 @@ class PipelineField(Base):
 # Avoid circular import issues — these are imported at module level by __init__.py
 from app.models.airflow_status import AirflowRunStatus  # noqa: E402, F401
 from app.models.lineage import LineageEdge  # noqa: E402, F401
-from app.models.pipeline_usage import PipelineUsage  # noqa: E402, F401
