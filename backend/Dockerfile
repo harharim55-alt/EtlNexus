@@ -1,8 +1,8 @@
 FROM python:3.12-slim AS base
 
-# Install git (needed for git integration) and Java (needed for PySpark/Iceberg)
+# Install Java (needed for PySpark/Iceberg)
 RUN apt-get update && \
-    apt-get install -y --no-install-recommends git default-jre-headless && \
+    apt-get install -y --no-install-recommends default-jre-headless && \
     rm -rf /var/lib/apt/lists/*
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 

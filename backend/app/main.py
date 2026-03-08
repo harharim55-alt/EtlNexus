@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import ai, airflow, dag_networks, health, lineage, pipelines, schema_matrix
+from app.routers import ai, airflow, consumers, health, lineage, pipelines, schema_matrix, topology, usage
 from app.tasks.scheduler import setup_scheduler
 
 # Structured logging
@@ -51,14 +51,19 @@ async def lifespan(app: FastAPI):
     logger.info("ETL Explorer Hub starting up")
 
     # Run initial sync tasks on startup
-    from app.tasks.git_pull_task import sync_from_git
+    from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
     from app.tasks.airflow_poll_task import poll_airflow_statuses
     from app.tasks.catalog_sync_task import sync_from_catalog
+    from app.tasks.seed_usage_data import seed_usage_data
+
+    async def _startup_sync():
+        await sync_pipelines_from_airflow()
+        await seed_usage_data()
+        # Catalog sync runs after pipeline sync to match schemas to existing pipelines
+        await sync_from_catalog()
 
     # Run initial syncs in background — don't block app startup
-    # This prevents Docker health checks from timing out during slow Git clones or catalog reads
-    asyncio.create_task(sync_from_git())
-    asyncio.create_task(sync_from_catalog())
+    asyncio.create_task(_startup_sync())
     asyncio.create_task(poll_airflow_statuses())
 
     # Start background scheduler
@@ -113,7 +118,9 @@ async def general_exception_handler(request: Request, exc: Exception):
 app.include_router(health.router, prefix="/api")
 app.include_router(pipelines.router)
 app.include_router(lineage.router)
-app.include_router(dag_networks.router)
 app.include_router(airflow.router)
 app.include_router(schema_matrix.router)
+app.include_router(usage.router)
+app.include_router(consumers.router)
+app.include_router(topology.router)
 app.include_router(ai.router)

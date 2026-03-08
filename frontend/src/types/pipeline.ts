@@ -22,7 +22,6 @@ export interface PipelineDetail {
   category: string | null;
   schedule: string | null;
   rows_per_day: string | null;
-  code_path: string | null;
   airflow_status: string;
   fields: PipelineField[];
   source_tables: string[];

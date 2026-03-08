@@ -33,6 +33,16 @@ class LineageRepository:
 
         return {"reads_from": reads_from, "writes_to": writes_to}
 
+    async def get_downstream_pipelines(self, pipeline_id: uuid.UUID) -> list[LineageEdge]:
+        """Get lineage edges where this pipeline is the source (downstream consumers)."""
+        stmt = (
+            select(LineageEdge)
+            .options(selectinload(LineageEdge.target_pipeline))
+            .where(LineageEdge.source_pipeline_id == pipeline_id)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def upsert_edge(self, data: dict) -> LineageEdge:
         stmt = select(LineageEdge).where(
             LineageEdge.source_table == data["source_table"],

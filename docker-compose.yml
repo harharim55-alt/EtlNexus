@@ -26,16 +26,11 @@ services:
     env_file: .env
     environment:
       DATABASE_URL: postgresql+asyncpg://etlnexus:etlnexus@db:5432/etlnexus
-    volumes:
-      - etl-repo-data:/data/etl-repo
-      - dev-git-repo:/data/dev-repo
     ports:
       - "8000:8000"
     depends_on:
       db:
         condition: service_healthy
-      dev-git-repo:
-        condition: service_completed_successfully
       iceberg-seed:
         condition: service_completed_successfully
     develop:
@@ -90,12 +85,14 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: ""
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
       _AIRFLOW_DB_MIGRATE: "true"
       _AIRFLOW_WWW_USER_CREATE: "true"
       _AIRFLOW_WWW_USER_USERNAME: admin
       _AIRFLOW_WWW_USER_PASSWORD: admin
     volumes:
       - ./dev/dags:/opt/airflow/dags
+      - ./dev/seeds/etl_code:/data/etl-code
     entrypoint: /bin/bash
     command: -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com || true"
     depends_on:
@@ -110,9 +107,11 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ""
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
+      AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
       AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
     volumes:
       - ./dev/dags:/opt/airflow/dags
+      - ./dev/seeds/etl_code:/data/etl-code
     command: webserver
     ports:
       - "8080:8080"
@@ -132,9 +131,11 @@ services:
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
       AIRFLOW__CORE__FERNET_KEY: ""
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+      AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
     volumes:
       - ./dev/dags:/opt/airflow/dags
-    command: scheduler
+      - ./dev/seeds/etl_code:/data/etl-code
+    command: bash -c "airflow tasks serve-logs & exec airflow scheduler"
     depends_on:
       airflow-init:
         condition: service_completed_successfully
@@ -165,30 +166,6 @@ services:
       iceberg-rest:
         condition: service_healthy
 
-  # ============================================
-  # Dev-only: Seed a bare Git repo with sample ETL files
-  # ============================================
-  dev-git-repo:
-    image: alpine/git:latest
-    volumes:
-      - dev-git-repo:/data/dev-repo
-      - ./dev/seeds:/seeds
-    entrypoint: /bin/sh
-    command: >
-      -c "
-        if [ ! -d /data/dev-repo/.git ]; then
-          cd /data/dev-repo &&
-          git init -b main &&
-          git config user.email 'dev@etlnexus.local' &&
-          git config user.name 'Dev Seed' &&
-          cp -r /seeds/etl_code/* . 2>/dev/null || mkdir -p dagger &&
-          git add -A &&
-          git commit -m 'Initial seed' || true
-        fi
-      "
-
 volumes:
   pgdata:
   airflow-pgdata:
-  etl-repo-data:
-  dev-git-repo:

@@ -74,6 +74,44 @@ class AirflowClient:
             offset += limit
         return all_dags
 
+    async def get_task_instances(self, dag_id: str, dag_run_id: str) -> list[dict]:
+        """Get task instances for a specific DAG run."""
+        result = await self._request(
+            "GET",
+            f"/dags/{dag_id}/dagRuns/{dag_run_id}/taskInstances",
+        )
+        if result and "task_instances" in result:
+            return result["task_instances"]
+        return []
+
+    async def get_dag_tasks(self, dag_id: str) -> list[dict]:
+        """Get task definitions for a DAG (includes downstream_task_ids)."""
+        result = await self._request("GET", f"/dags/{dag_id}/tasks")
+        if result and "tasks" in result:
+            return result["tasks"]
+        return []
+
+    async def get_task_log(
+        self, dag_id: str, dag_run_id: str, task_id: str, try_number: int = 1
+    ) -> str:
+        """Fetch the log content for a specific task instance attempt."""
+        url = (
+            f"{self.base_url}/dags/{dag_id}/dagRuns/{dag_run_id}"
+            f"/taskInstances/{task_id}/logs/{try_number}"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.get(
+                    url,
+                    auth=self.auth,
+                    headers={"Accept": "text/plain"},
+                )
+                resp.raise_for_status()
+                return resp.text
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            logger.debug("Failed to fetch task log %s/%s/%s: %s", dag_id, dag_run_id, task_id, e)
+            return ""
+
     async def get_latest_dag_run_status(self, dag_id: str) -> dict:
         """Get the latest run status for a DAG. Returns status dict."""
         runs = await self.get_dag_runs(dag_id, limit=1)

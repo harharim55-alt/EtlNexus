@@ -1,6 +1,8 @@
 """Shopify Sales Sync ETL - Daily synchronization of e-commerce transactions."""
 
-from etls import raw_orders, raw_customers, stripe_billing
+from etls import core_users_snapshot
+
+SUFFIXES = ["customers", "products", "line_items", "refunds", "fulfillments", "discounts", "inventory"]
 
 
 class ShopifySalesSync:
@@ -9,13 +11,10 @@ class ShopifySalesSync:
         self.destination_tables = ["stg_shopify_orders", "stg_shopify_customers"]
         self.schedule = "Daily at 00:00 UTC"
         self.category = "E-commerce"
-        self.networks = ["revenue_daily", "ecommerce_pipeline"]
+        self.networks = ["nightfall_revenue", "atlas_intelligence"]
 
     def extract(self, start_date, end_date):
-        orders = raw_orders(start_date, end_date).consume()
-        customers = raw_customers(start_date, end_date).consume()
-        billing = stripe_billing(start_date, end_date).consume()
-        return orders, customers, billing
+        self.users = core_users_snapshot(start_date, end_date).consume()
 
     def transform(self, data):
         pass

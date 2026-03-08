@@ -8,6 +8,7 @@ import { MetricsCards } from "./MetricsCards";
 import { SchemaViewer } from "./SchemaViewer";
 import { ConsumeSnippet } from "./ConsumeSnippet";
 import { JoinIntelligence } from "./JoinIntelligence";
+import { UsageCard } from "./UsageCard";
 import { DagNetworkCard } from "./DagNetworkCard";
 
 export function BentoWorkspace() {
@@ -54,11 +55,7 @@ export function BentoWorkspace() {
 
       <div className="grid grid-cols-12 gap-6 mt-6">
         {/* Row 1: Lineage + Metrics */}
-        <LineageTopology
-          pipelineId={pipeline.id}
-          pipelineName={pipeline.name}
-          airflowStatus={pipeline.airflow_status}
-        />
+        <LineageTopology pipelineId={pipeline.id} />
         <MetricsCards
           rowsPerDay={pipeline.rows_per_day}
           schedule={pipeline.schedule}
@@ -68,11 +65,12 @@ export function BentoWorkspace() {
         <SchemaViewer fields={pipeline.fields} />
         <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
           <JoinIntelligence pipelineId={pipeline.id} />
-          <ConsumeSnippet pipelineName={pipeline.name} />
+          <ConsumeSnippet pipelineName={pipeline.name} category={pipeline.category} />
         </div>
 
-        {/* Row 3: DAG Networks */}
+        {/* Row 3: DAG Networks + Consumers & Usage */}
         <DagNetworkCard pipelineId={pipeline.id} />
+        <UsageCard pipelineId={pipeline.id} />
       </div>
     </div>
   );

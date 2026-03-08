@@ -33,7 +33,7 @@ export const PipelineListItem = memo(function PipelineListItem({
         <StatusBadge status={pipeline.airflow_status} size="sm" />
       </div>
       <div className="text-xs text-slate-500 font-mono mb-3">
-        {pipeline.category}
+        {pipeline.category === "API" ? "API" : "ETL"}
       </div>
       <div className="flex gap-2 text-[10px] font-mono">
         {pipeline.schedule && (

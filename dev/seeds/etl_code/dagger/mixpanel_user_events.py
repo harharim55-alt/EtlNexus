@@ -1,6 +1,8 @@
 """Mixpanel User Events - Raw user behavior events from web and mobile."""
 
-from etls import raw_telemetry, core_backend
+from etls import core_users_snapshot
+
+SUFFIXES = []
 
 
 class MixpanelUserEvents:
@@ -9,12 +11,10 @@ class MixpanelUserEvents:
         self.destination_tables = ["fact_user_events", "dim_sessions"]
         self.schedule = "Every 4 Hours"
         self.category = "Analytics"
-        self.networks = ["analytics_pipeline", "product_insights"]
+        self.networks = ["pulse_360", "atlas_intelligence"]
 
     def extract(self, start_date, end_date):
-        telemetry = raw_telemetry(start_date, end_date).consume()
-        backend = core_backend(start_date, end_date).consume()
-        return telemetry, backend
+        self.users = core_users_snapshot(start_date, end_date).consume()
 
     def transform(self, data):
         pass

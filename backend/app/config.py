@@ -5,13 +5,6 @@ class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://etlnexus:etlnexus@db:5432/etlnexus"
 
-    # Git Integration
-    git_repo_url: str = "/data/dev-repo"
-    git_clone_path: str = "/data/etl-repo"
-    git_branch: str = "main"
-    git_pull_interval_minutes: int = 60
-    git_https_token: str | None = None
-
     # Airflow Integration
     airflow_base_url: str = "http://airflow-webserver:8080/api/v1"
     airflow_username: str = "admin"
@@ -27,9 +20,6 @@ class Settings(BaseSettings):
     llm_api_key: str = ""
     llm_model: str = "default"
     llm_max_tokens: int = 1024
-
-    # ETL DAGs function
-    etl_dags_module: str = "etl_dags"
 
     # App
     cors_origins: list[str] = ["http://localhost:5173"]
