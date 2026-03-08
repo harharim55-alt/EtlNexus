@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+*.egg
+dist/
+build/
+.venv/
+
+# Node
+node_modules/
+
+# Environment
+.env
+.env.prod
+.env.local
+.env.*.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Backend
+backend/.venv/
+backend/alembic/versions/__pycache__/
+
+# Frontend
+frontend/dist/
+frontend/.vite/
+
+# PySpark / Java
+*.jar
+*.class
+derby.log
+metastore_db/
+spark-warehouse/
+
+# Ivy cache (Spark dependency downloads)
+.ivy2/
+
+# Coverage / Testing
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Dev data volumes
+/data/
+
+# Playwright
+.playwright-mcp/
+*.png
+
+# Claude Code
+.claude/

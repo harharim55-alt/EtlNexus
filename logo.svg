@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="800" height="800" fill="none">
+  <!-- Source Database Node -->
+  <rect x="2" y="10" width="5" height="5" rx="1.5" fill="#818CF8" />
+  
+  <!-- Transformation Core -->
+  <circle cx="12" cy="12.5" r="3.5" fill="url(#core_gradient)" />
+  
+  <!-- Animated processing ring -->
+  <circle cx="12" cy="12.5" r="5" stroke="url(#core_gradient)" stroke-width="1" stroke-dasharray="2 2">
+    <!-- Native SVG animation so it spins anywhere -->
+    <animateTransform 
+      attributeName="transform" 
+      type="rotate" 
+      from="0 12 12.5" 
+      to="360 12 12.5" 
+      dur="4s" 
+      repeatCount="indefinite" 
+    />
+  </circle>
+  
+  <!-- Destination Data Models -->
+  <rect x="18" y="4" width="4" height="4" rx="1" fill="#34D399" />
+  <rect x="18" y="10" width="4" height="4" rx="1" fill="#F472B6" />
+  <rect x="18" y="16" width="4" height="4" rx="1" fill="#FBBF24" />
+  
+  <!-- Pipelines (Lines) -->
+  <path d="M7 12.5H8.5" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" />
+  <path d="M15.5 12.5H16.5V6H18" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  <path d="M15.5 12.5H18" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" />
+  <path d="M15.5 12.5H16.5V18H18" stroke="#6366F1" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+  
+  <defs>
+    <linearGradient id="core_gradient" x1="8.5" y1="9" x2="15.5" y2="16" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#818CF8" />
+      <stop offset="1" stop-color="#C084FC" />
+    </linearGradient>
+  </defs>
+</svg>

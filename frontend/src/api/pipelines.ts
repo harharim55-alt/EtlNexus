@@ -1,0 +1,18 @@
+import apiClient from "./client";
+import type { PipelineListItem, PipelineDetail, JoinSuggestionsResponse } from "@/types/pipeline";
+
+export async function fetchPipelines(query?: string): Promise<PipelineListItem[]> {
+  const params = query ? { q: query } : {};
+  const { data } = await apiClient.get<PipelineListItem[]>("/pipelines", { params });
+  return data;
+}
+
+export async function fetchPipelineDetail(pipelineId: string): Promise<PipelineDetail> {
+  const { data } = await apiClient.get<PipelineDetail>(`/pipelines/${pipelineId}`);
+  return data;
+}
+
+export async function fetchJoinSuggestions(pipelineId: string): Promise<JoinSuggestionsResponse> {
+  const { data } = await apiClient.get<JoinSuggestionsResponse>(`/pipelines/${pipelineId}/joins`);
+  return data;
+}
