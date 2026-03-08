@@ -1,6 +1,8 @@
 """Stripe Billing Aggregator - Aggregates subscription lifecycle events."""
 
-from etls import mixpanel_events, invoices, subscriptions
+from etls import stg_shopify_orders, crm_accounts
+
+SUFFIXES = ["subscriptions", "payments", "refunds"]
 
 
 class StripeBillingAggregator:
@@ -9,13 +11,11 @@ class StripeBillingAggregator:
         self.destination_tables = ["finance_invoices", "finance_subscriptions"]
         self.schedule = "Hourly"
         self.category = "Finance"
-        self.networks = ["revenue_daily", "finance_pipeline"]
+        self.networks = ["nightfall_revenue", "atlas_intelligence"]
 
     def extract(self, start_date, end_date):
-        events = mixpanel_events(start_date, end_date).consume()
-        inv = invoices(start_date, end_date).consume()
-        subs = subscriptions(start_date, end_date).consume()
-        return events, inv, subs
+        self.orders = stg_shopify_orders(start_date, end_date).consume()
+        self.crm = crm_accounts(start_date, end_date).consume()
 
     def transform(self, data):
         pass

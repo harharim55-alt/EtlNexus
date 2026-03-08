@@ -1,6 +1,7 @@
 """APScheduler setup for background tasks."""
 
 import logging
+from datetime import datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -12,19 +13,26 @@ scheduler = AsyncIOScheduler()
 
 
 def setup_scheduler() -> AsyncIOScheduler:
-    """Configure and return the scheduler with all background tasks."""
+    """Configure and return the scheduler with all background tasks.
+
+    Jobs start after their first interval, NOT immediately — the initial
+    sync is handled by _startup_sync in main.py to ensure correct ordering.
+    """
     from app.tasks.airflow_poll_task import poll_airflow_statuses
-    from app.tasks.git_pull_task import sync_from_git
+    from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
     from app.tasks.catalog_sync_task import sync_from_catalog
 
-    # Git pull + re-parse ETL code
+    now = datetime.now()
+
+    # Airflow pipeline discovery (replaces git pull + code parsing)
     scheduler.add_job(
-        sync_from_git,
+        sync_pipelines_from_airflow,
         "interval",
-        minutes=settings.git_pull_interval_minutes,
-        id="git_pull",
-        name="Git Pull & Parse ETLs",
+        minutes=settings.airflow_poll_interval_minutes,
+        id="airflow_pipeline_sync",
+        name="Airflow Pipeline Discovery",
         replace_existing=True,
+        next_run_time=now + timedelta(minutes=settings.airflow_poll_interval_minutes),
     )
 
     # Airflow status poll
@@ -35,6 +43,7 @@ def setup_scheduler() -> AsyncIOScheduler:
         id="airflow_poll",
         name="Airflow Status Poll",
         replace_existing=True,
+        next_run_time=now + timedelta(minutes=settings.airflow_poll_interval_minutes),
     )
 
     # Catalog sync (every 2 hours)
@@ -45,11 +54,12 @@ def setup_scheduler() -> AsyncIOScheduler:
         id="catalog_sync",
         name="Iceberg Catalog Sync",
         replace_existing=True,
+        next_run_time=now + timedelta(hours=2),
     )
 
     logger.info(
-        "Scheduler configured: git_pull=%dmin, airflow_poll=%dmin, catalog_sync=2h",
-        settings.git_pull_interval_minutes,
+        "Scheduler configured: airflow_sync=%dmin, airflow_poll=%dmin, catalog_sync=2h",
+        settings.airflow_poll_interval_minutes,
         settings.airflow_poll_interval_minutes,
     )
     return scheduler

@@ -30,8 +30,6 @@ services:
     env_file: .env.prod
     environment:
       DATABASE_URL: postgresql+asyncpg://etlnexus:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}@db:5432/etlnexus
-    volumes:
-      - etl-repo-data:/data/etl-repo
     depends_on:
       db:
         condition: service_healthy
@@ -74,4 +72,3 @@ services:
 
 volumes:
   pgdata:
-  etl-repo-data:

@@ -28,7 +28,6 @@ class PipelineRepository:
             .options(
                 selectinload(Pipeline.fields),
                 selectinload(Pipeline.airflow_status),
-                selectinload(Pipeline.dag_networks),
             )
             .where(Pipeline.id == pipeline_id)
         )

@@ -31,7 +31,6 @@ class PipelineDetail(BaseModel):
     category: str | None = None
     schedule: str | None = None
     rows_per_day: str | None = None
-    code_path: str | None = None
     airflow_status: str = "unknown"
     fields: list[PipelineFieldSchema] = []
     source_tables: list[str] = []

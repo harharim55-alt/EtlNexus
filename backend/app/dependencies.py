@@ -3,13 +3,15 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db_session
 from app.repositories.airflow_repo import AirflowRepository
-from app.repositories.dag_network_repo import DagNetworkRepository
 from app.repositories.field_frequency_repo import FieldFrequencyRepository
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
+from app.repositories.usage_repo import UsageRepository
 from app.services.ai_service import AIService
+from app.services.consumer_service import ConsumerService
 from app.services.pipeline_service import PipelineService
 from app.services.schema_matrix_service import SchemaMatrixService
+from app.services.usage_service import UsageService
 
 
 # Repositories
@@ -23,10 +25,6 @@ def get_lineage_repo(session: AsyncSession = Depends(get_db_session)) -> Lineage
 
 def get_airflow_repo(session: AsyncSession = Depends(get_db_session)) -> AirflowRepository:
     return AirflowRepository(session)
-
-
-def get_dag_network_repo(session: AsyncSession = Depends(get_db_session)) -> DagNetworkRepository:
-    return DagNetworkRepository(session)
 
 
 def get_field_frequency_repo(session: AsyncSession = Depends(get_db_session)) -> FieldFrequencyRepository:
@@ -45,6 +43,25 @@ def get_schema_matrix_service(
     field_freq_repo: FieldFrequencyRepository = Depends(get_field_frequency_repo),
 ) -> SchemaMatrixService:
     return SchemaMatrixService(field_freq_repo)
+
+
+def get_usage_repo(session: AsyncSession = Depends(get_db_session)) -> UsageRepository:
+    return UsageRepository(session)
+
+
+def get_usage_service(
+    usage_repo: UsageRepository = Depends(get_usage_repo),
+    lineage_repo: LineageRepository = Depends(get_lineage_repo),
+    airflow_repo: AirflowRepository = Depends(get_airflow_repo),
+) -> UsageService:
+    return UsageService(usage_repo, lineage_repo, airflow_repo)
+
+
+def get_consumer_service(
+    lineage_repo: LineageRepository = Depends(get_lineage_repo),
+    airflow_repo: AirflowRepository = Depends(get_airflow_repo),
+) -> ConsumerService:
+    return ConsumerService(lineage_repo, airflow_repo)
 
 
 def get_ai_service(

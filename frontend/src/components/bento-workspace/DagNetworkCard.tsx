@@ -1,5 +1,5 @@
 import { Network } from "lucide-react";
-import { useDagNetworks } from "@/hooks/use-dag-networks";
+import { useTopology } from "@/hooks/use-topology";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface DagNetworkCardProps {
@@ -7,10 +7,11 @@ interface DagNetworkCardProps {
 }
 
 export function DagNetworkCard({ pipelineId }: DagNetworkCardProps) {
-  const { data, isLoading } = useDagNetworks(pipelineId);
+  const { data: topology, isLoading } = useTopology(pipelineId);
+  const dagIds = topology?.dag_ids ?? [];
 
   return (
-    <div className="col-span-12 bg-[#18181b] border border-white/5 rounded-2xl p-5">
+    <div className="col-span-12 lg:col-span-5 bg-[#18181b] border border-white/5 rounded-2xl p-5">
       <h3 className="text-[11px] font-mono uppercase tracking-widest text-slate-500 mb-4 flex items-center gap-2">
         <Network className="w-3.5 h-3.5" /> DAG Networks
       </h3>
@@ -19,14 +20,14 @@ export function DagNetworkCard({ pipelineId }: DagNetworkCardProps) {
           <Skeleton className="h-8 w-32 bg-white/5 rounded-lg" />
           <Skeleton className="h-8 w-32 bg-white/5 rounded-lg" />
         </div>
-      ) : data && data.networks.length > 0 ? (
+      ) : dagIds.length > 0 ? (
         <div className="flex flex-wrap gap-2">
-          {data.networks.map((net) => (
+          {dagIds.map((dagId) => (
             <span
-              key={net.network_name}
+              key={dagId}
               className="text-xs font-mono px-3 py-1.5 rounded-lg bg-white/5 text-slate-300 border border-white/5"
             >
-              {net.network_name}
+              {dagId}
             </span>
           ))}
         </div>

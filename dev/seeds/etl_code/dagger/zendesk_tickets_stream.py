@@ -1,6 +1,8 @@
 """Zendesk Tickets Stream - Real-time streaming of customer support tickets."""
 
-from etls import tickets_stream, agent_events
+from etls import crm_accounts
+
+SUFFIXES = ["csat_scores", "tags"]
 
 
 class ZendeskTicketsStream:
@@ -9,12 +11,10 @@ class ZendeskTicketsStream:
         self.destination_tables = ["raw_zendesk_tickets", "raw_csat_scores"]
         self.schedule = "Real-time (Streaming)"
         self.category = "Support"
-        self.networks = ["customer_ops", "support_pipeline"]
+        self.networks = ["watchtower"]
 
     def extract(self, start_date, end_date):
-        tickets = tickets_stream(start_date, end_date).consume()
-        agents = agent_events(start_date, end_date).consume()
-        return tickets, agents
+        self.crm = crm_accounts(start_date, end_date).consume()
 
     def transform(self, data):
         pass

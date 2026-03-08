@@ -16,7 +16,6 @@ class Pipeline(Base):
     category: Mapped[str | None] = mapped_column(String(100))
     schedule: Mapped[str | None] = mapped_column(String(100))
     rows_per_day: Mapped[str | None] = mapped_column(String(50))
-    code_path: Mapped[str | None] = mapped_column(String(500))
     created_at: Mapped[datetime] = mapped_column(default=func.now())
     updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now())
 
@@ -26,7 +25,7 @@ class Pipeline(Base):
     airflow_status: Mapped["AirflowRunStatus | None"] = relationship(
         back_populates="pipeline", uselist=False
     )
-    dag_networks: Mapped[list["DagNetwork"]] = relationship(
+    usages: Mapped[list["PipelineUsage"]] = relationship(
         back_populates="pipeline", cascade="all, delete-orphan"
     )
 
@@ -56,5 +55,5 @@ class PipelineField(Base):
 
 # Avoid circular import issues — these are imported at module level by __init__.py
 from app.models.airflow_status import AirflowRunStatus  # noqa: E402, F401
-from app.models.dag_network import DagNetwork  # noqa: E402, F401
 from app.models.lineage import LineageEdge  # noqa: E402, F401
+from app.models.pipeline_usage import PipelineUsage  # noqa: E402, F401

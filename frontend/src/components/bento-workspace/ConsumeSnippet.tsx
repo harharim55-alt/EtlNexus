@@ -3,10 +3,40 @@ import { CopyButton } from "@/components/shared/CopyButton";
 
 interface ConsumeSnippetProps {
   pipelineName: string;
+  category?: string;
 }
 
-export function ConsumeSnippet({ pipelineName }: ConsumeSnippetProps) {
+export function ConsumeSnippet({ pipelineName, category }: ConsumeSnippetProps) {
   const importName = pipelineName.toLowerCase().replace(/ /g, "_");
+  const isApi = category?.toLowerCase() === "api";
+
+  if (isApi) {
+    const apiCode = `from path import api\n\n${importName} = ${importName}(start_date, end_date)`;
+
+    return (
+      <div className="bg-[#18181b] border border-white/5 rounded-2xl p-5 shrink-0">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-[11px] font-mono uppercase tracking-widest text-slate-500 flex items-center gap-2">
+            <Code className="w-3.5 h-3.5" /> Import & Consume
+          </h3>
+          <CopyButton text={apiCode} />
+        </div>
+
+        <div className="bg-[#09090b] rounded-xl p-4 border border-white/5 overflow-x-auto">
+          <code className="text-xs font-mono leading-relaxed text-slate-300">
+            <span className="text-pink-500">from</span> path{" "}
+            <span className="text-pink-500">import</span> api
+            <br />
+            <br />
+            <span className="text-indigo-400">{importName}</span> ={" "}
+            <span className="text-indigo-400">{importName}</span>(
+            <span className="text-emerald-400">start_date</span>,{" "}
+            <span className="text-emerald-400">end_date</span>)
+          </code>
+        </div>
+      </div>
+    );
+  }
 
   const etlCode = `from etls import ${importName}\n\n${importName}("2026-01-25").consume()`;
   const catalogCode = `from etls import Catalog, Engine\n\nCatalog(Engine.Spark).iceberg.dagger.${importName}("date").consume().as_pyspark()`;

@@ -43,7 +43,6 @@ class PipelineService:
             category=pipeline.category,
             schedule=pipeline.schedule,
             rows_per_day=pipeline.rows_per_day,
-            code_path=pipeline.code_path,
             airflow_status=(
                 pipeline.airflow_status.status if pipeline.airflow_status else "unknown"
             ),
