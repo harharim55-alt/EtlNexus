@@ -1,4 +1,4 @@
-# TrekBase Coding Standards and Conventions
+# ETLNexus Coding Standards and Conventions
 
 This document outlines the coding standards, style guides, and conventions to be followed for the project. Adhering to these standards will help ensure code consistency, readability, and maintainability.
 

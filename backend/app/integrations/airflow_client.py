@@ -57,13 +57,22 @@ class AirflowClient:
         return []
 
     async def get_all_dags(self) -> list[dict]:
-        """List all DAGs from Airflow."""
-        result = await self._request(
-            "GET", "/dags", params={"limit": 100}
-        )
-        if result and "dags" in result:
-            return result["dags"]
-        return []
+        """List all DAGs from Airflow with pagination."""
+        all_dags = []
+        offset = 0
+        limit = 100
+        while True:
+            result = await self._request(
+                "GET", "/dags", params={"limit": limit, "offset": offset}
+            )
+            if not result or "dags" not in result:
+                break
+            dags = result["dags"]
+            all_dags.extend(dags)
+            if len(dags) < limit:
+                break
+            offset += limit
+        return all_dags
 
     async def get_latest_dag_run_status(self, dag_id: str) -> dict:
         """Get the latest run status for a DAG. Returns status dict."""

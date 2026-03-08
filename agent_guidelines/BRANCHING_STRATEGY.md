@@ -1,6 +1,6 @@
 # Git Branching Strategy for Turing v2
 
-This document outlines the Git branching strategy used for the TrekBase project. We will follow a model similar to GitFlow.
+This document outlines the Git branching strategy used for the ETLNexus project. We will follow a model similar to GitFlow.
 
 ## Main Branches
 
