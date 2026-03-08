@@ -70,7 +70,7 @@ export function BentoWorkspace() {
 
         {/* Row 3: DAG Networks + Consumers & Usage */}
         <DagNetworkCard pipelineId={pipeline.id} />
-        <UsageCard pipelineId={pipeline.id} />
+        <UsageCard etlName={pipeline.name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_")} />
       </div>
     </div>
   );

@@ -6,6 +6,8 @@ export interface PipelineUsage {
   last_accessed_at: string | null;
   access_count: number;
   airflow_status: string | null;
+  dag_id: string | null;
+  is_current: boolean;
 }
 
 export interface PipelineUsageResponse {
