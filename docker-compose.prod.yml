@@ -4,7 +4,7 @@ services:
     environment:
       POSTGRES_DB: etlnexus
       POSTGRES_USER: etlnexus
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-etlnexus}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -13,6 +13,15 @@ services:
       timeout: 5s
       retries: 5
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   backend:
     build:
@@ -20,18 +29,28 @@ services:
       dockerfile: Dockerfile
     env_file: .env.prod
     environment:
-      DATABASE_URL: postgresql+asyncpg://etlnexus:${POSTGRES_PASSWORD:-etlnexus}@db:5432/etlnexus
+      DATABASE_URL: postgresql+asyncpg://etlnexus:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}@db:5432/etlnexus
     volumes:
       - etl-repo-data:/data/etl-repo
     depends_on:
       db:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8000/api/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
+      start_period: 30s
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
 
   frontend:
     build:
@@ -43,6 +62,15 @@ services:
     depends_on:
       - backend
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   pgdata:

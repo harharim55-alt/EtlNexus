@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import logging.config
 from contextlib import asynccontextmanager
@@ -54,9 +55,11 @@ async def lifespan(app: FastAPI):
     from app.tasks.airflow_poll_task import poll_airflow_statuses
     from app.tasks.catalog_sync_task import sync_from_catalog
 
-    await sync_from_git()
-    await sync_from_catalog()
-    await poll_airflow_statuses()
+    # Run initial syncs in background — don't block app startup
+    # This prevents Docker health checks from timing out during slow Git clones or catalog reads
+    asyncio.create_task(sync_from_git())
+    asyncio.create_task(sync_from_catalog())
+    asyncio.create_task(poll_airflow_statuses())
 
     # Start background scheduler
     sched = setup_scheduler()
