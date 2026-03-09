@@ -65,7 +65,7 @@ export function BentoWorkspace() {
         <SchemaViewer fields={pipeline.fields} />
         <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
           <JoinIntelligence pipelineId={pipeline.id} />
-          <ConsumeSnippet pipelineName={pipeline.name} category={pipeline.category} />
+          <ConsumeSnippet pipelineName={pipeline.name} category={pipeline.category ?? undefined} />
         </div>
 
         {/* Row 3: DAG Networks + Consumers & Usage */}

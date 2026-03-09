@@ -1,9 +1,32 @@
+import { lazy, Suspense } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { PipelineRegistry } from "@/components/pipeline-registry/PipelineRegistry";
-import { BentoWorkspace } from "@/components/bento-workspace/BentoWorkspace";
-import { SchemaMatrixView } from "@/components/schema-matrix/SchemaMatrixView";
-import { AIArchitectView } from "@/components/ai-terminal/AIArchitectView";
+import { Skeleton } from "@/components/ui/skeleton";
+
+const BentoWorkspace = lazy(() =>
+  import("@/components/bento-workspace/BentoWorkspace").then((m) => ({
+    default: m.BentoWorkspace,
+  }))
+);
+const SchemaMatrixView = lazy(() =>
+  import("@/components/schema-matrix/SchemaMatrixView").then((m) => ({
+    default: m.SchemaMatrixView,
+  }))
+);
+const AIArchitectView = lazy(() =>
+  import("@/components/ai-terminal/AIArchitectView").then((m) => ({
+    default: m.AIArchitectView,
+  }))
+);
+
+function TabSkeleton() {
+  return (
+    <div className="flex-1 flex items-center justify-center">
+      <Skeleton className="h-64 w-96 bg-white/5 rounded-2xl" />
+    </div>
+  );
+}
 
 function App() {
   const activeTab = useNavigationStore((s) => s.activeTab);
@@ -14,11 +37,21 @@ function App() {
         {activeTab === "catalog" && (
           <>
             <PipelineRegistry />
-            <BentoWorkspace />
+            <Suspense fallback={<TabSkeleton />}>
+              <BentoWorkspace />
+            </Suspense>
           </>
         )}
-        {activeTab === "matrix" && <SchemaMatrixView />}
-        {activeTab === "ai" && <AIArchitectView />}
+        {activeTab === "matrix" && (
+          <Suspense fallback={<TabSkeleton />}>
+            <SchemaMatrixView />
+          </Suspense>
+        )}
+        {activeTab === "ai" && (
+          <Suspense fallback={<TabSkeleton />}>
+            <AIArchitectView />
+          </Suspense>
+        )}
       </div>
     </AppShell>
   );
