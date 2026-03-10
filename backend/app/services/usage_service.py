@@ -68,24 +68,22 @@ class UsageService:
         # 4. Load enrichment from PostgreSQL
         enrichment = await self.usage_repo.get_enrichment_map(etl_name)
 
-        # 5. Build downstream consumer entries first (need total reads for current)
+        # 5. Build downstream consumer entries
         current_category = current_pipeline.category if current_pipeline else ""
 
         consumer_entries: list[PipelineUsageSchema] = []
-        total_reads = 0
 
         for tid, info in downstream_info.items():
             p = task_id_to_pipeline.get(tid)
             enrich = enrichment.get(tid)
             p_category = p.category if p else ""
             reads = enrich.access_count if enrich else 0
-            total_reads += reads
 
             consumer_entries.append(
                 PipelineUsageSchema(
                     id=str(p.id) if p else tid,
                     consumer_name=p.name if p else tid.replace("_", " ").title(),
-                    usage_type="api" if p_category == "API" else "etl",
+                    usage_type="api" if "api" in p_category.lower() else "etl",
                     description=enrich.description if enrich else None,
                     last_accessed_at=enrich.last_accessed_at if enrich else None,
                     access_count=reads,
@@ -95,15 +93,19 @@ class UsageService:
                 )
             )
 
+        # Current ETL's own reads from self-entry in pipeline_usages
+        self_entry = enrichment.get(etl_name)
+        own_reads = self_entry.access_count if self_entry else 0
+
         # Current pipeline first, then downstream consumers
         usages: list[PipelineUsageSchema] = [
             PipelineUsageSchema(
                 id=str(current_pipeline.id) if current_pipeline else etl_name,
                 consumer_name=current_pipeline.name if current_pipeline else etl_name.replace("_", " ").title(),
-                usage_type="api" if current_category == "API" else "etl",
+                usage_type="api" if "api" in current_category.lower() else "etl",
                 description=current_pipeline.description if current_pipeline else None,
-                last_accessed_at=None,
-                access_count=total_reads,
+                last_accessed_at=self_entry.last_accessed_at if self_entry else None,
+                access_count=own_reads,
                 airflow_status=my_status,
                 dag_id=my_dag_id,
                 is_current=True,
