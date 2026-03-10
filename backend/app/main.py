@@ -57,14 +57,18 @@ async def lifespan(app: FastAPI):
     from app.tasks.seed_usage_data import seed_usage_data
 
     async def _startup_sync():
-        await sync_pipelines_from_airflow()
-        await seed_usage_data()
-        # Catalog sync runs after pipeline sync to match schemas to existing pipelines
-        await sync_from_catalog()
+        try:
+            await sync_pipelines_from_airflow()
+            await seed_usage_data()
+            # Catalog sync runs after pipeline sync to match schemas to existing pipelines
+            await sync_from_catalog()
+            # Poll only after sync creates pipelines — avoids race on shared tables
+            await poll_airflow_statuses()
+        except Exception:
+            logger.exception("Startup sync failed — app will serve stale/empty data")
 
     # Run initial syncs in background — don't block app startup
     asyncio.create_task(_startup_sync())
-    asyncio.create_task(poll_airflow_statuses())
 
     # Start background scheduler
     sched = setup_scheduler()
@@ -75,6 +79,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown
     sched.shutdown(wait=False)
+    from app.integrations.airflow_client import airflow_client
+    await airflow_client.close()
     from app.integrations.iceberg_client import iceberg_client
     iceberg_client.stop()
     logger.info("ETL Explorer Hub shutting down")
