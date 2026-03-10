@@ -9,7 +9,6 @@ import { SchemaViewer } from "./SchemaViewer";
 import { ConsumeSnippet } from "./ConsumeSnippet";
 import { JoinIntelligence } from "./JoinIntelligence";
 import { UsageCard } from "./UsageCard";
-import { DagNetworkCard } from "./DagNetworkCard";
 import { ResourcePerformanceCard } from "./ResourcePerformanceCard";
 
 export function BentoWorkspace() {
@@ -75,8 +74,7 @@ export function BentoWorkspace() {
           <ConsumeSnippet pipelineName={pipeline.name} category={pipeline.category ?? undefined} />
         </div>
 
-        {/* Row 3: DAG Networks + Consumers & Usage */}
-        <DagNetworkCard pipelineId={pipeline.id} />
+        {/* Row 4: Consumers & Usage */}
         <UsageCard etlName={pipeline.name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_")} />
       </div>
     </div>
