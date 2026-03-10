@@ -46,6 +46,24 @@ def setup_scheduler() -> AsyncIOScheduler:
         next_run_time=now + timedelta(minutes=settings.airflow_poll_interval_minutes),
     )
 
+    # One-shot catch-up sync 5 minutes after startup (Airflow may not be ready at boot)
+    scheduler.add_job(
+        sync_pipelines_from_airflow,
+        "date",
+        run_date=now + timedelta(minutes=5),
+        id="airflow_catchup_sync",
+        name="Airflow Catch-up Sync (5min)",
+        replace_existing=True,
+    )
+    scheduler.add_job(
+        poll_airflow_statuses,
+        "date",
+        run_date=now + timedelta(minutes=5, seconds=30),
+        id="airflow_catchup_poll",
+        name="Airflow Catch-up Poll (5min)",
+        replace_existing=True,
+    )
+
     # Catalog sync (every 2 hours)
     scheduler.add_job(
         sync_from_catalog,
@@ -58,7 +76,7 @@ def setup_scheduler() -> AsyncIOScheduler:
     )
 
     logger.info(
-        "Scheduler configured: airflow_sync=%dmin, airflow_poll=%dmin, catalog_sync=2h",
+        "Scheduler configured: catchup=5min, airflow_sync=%dmin, airflow_poll=%dmin, catalog_sync=2h",
         settings.airflow_poll_interval_minutes,
         settings.airflow_poll_interval_minutes,
     )

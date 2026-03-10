@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import ai, airflow, consumers, health, lineage, pipelines, schema_matrix, topology, usage
+from app.routers import ai, airflow, consumers, health, lineage, pipelines, resources, schema_matrix, topology, usage
 from app.tasks.scheduler import setup_scheduler
 
 # Structured logging
@@ -123,4 +123,5 @@ app.include_router(schema_matrix.router)
 app.include_router(usage.router)
 app.include_router(consumers.router)
 app.include_router(topology.router)
+app.include_router(resources.router)
 app.include_router(ai.router)

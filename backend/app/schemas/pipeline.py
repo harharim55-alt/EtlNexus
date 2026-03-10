@@ -20,6 +20,7 @@ class PipelineListItem(BaseModel):
     schedule: str | None = None
     rows_per_day: str | None = None
     airflow_status: str = "unknown"
+    success_rate: float | None = None
 
     model_config = {"from_attributes": True}
 
@@ -39,6 +40,11 @@ class PipelineDetail(BaseModel):
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class SyncResponse(BaseModel):
+    synced: bool
+    pipeline_name: str
 
 
 class JoinSuggestion(BaseModel):

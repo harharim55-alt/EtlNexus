@@ -1,9 +1,12 @@
 """Iceberg catalog client using PySpark to read table schemas."""
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from app.config import settings
+
+_SAFE_IDENTIFIER = re.compile(r"^[a-zA-Z0-9_.]+$")
 
 logger = logging.getLogger(__name__)
 
@@ -15,10 +18,19 @@ class IcebergTableSchema:
     fields: list[dict] = field(default_factory=list)  # [{"name": ..., "type": ...}]
 
 
+def _validate_identifier(value: str, label: str) -> str:
+    """Validate that a value is a safe Spark SQL identifier (alphanumeric, dots, underscores)."""
+    if not _SAFE_IDENTIFIER.match(value):
+        raise ValueError(f"Unsafe {label}: {value!r} — must match [a-zA-Z0-9_.]")
+    return value
+
+
 class IcebergClient:
     def __init__(self):
         self.catalog_uri = settings.iceberg_catalog_uri
-        self.namespace_prefix = settings.iceberg_namespace_prefix
+        self.namespace_prefix = _validate_identifier(
+            settings.iceberg_namespace_prefix, "iceberg_namespace_prefix"
+        )
         self._spark = None
         self._connected = False
 
@@ -74,6 +86,7 @@ class IcebergClient:
 
     def list_tables_in_namespace(self, namespace: str) -> list[str]:
         """List all tables in a given Iceberg namespace."""
+        _validate_identifier(namespace, "namespace")
         spark = self._get_spark()
         if not spark:
             return []
@@ -130,6 +143,7 @@ class IcebergClient:
             # List tables under the dagger namespace
             tables = self.list_tables_in_namespace(self.namespace_prefix)
             for table_name in tables:
+                _validate_identifier(table_name, "table_name")
                 full_name = f"iceberg.{self.namespace_prefix}.{table_name}"
                 schema = self.get_table_schema(full_name)
                 if schema:

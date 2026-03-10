@@ -25,7 +25,14 @@ class PipelineService:
             pipelines = await self.pipeline_repo.search(query)
         else:
             pipelines = await self.pipeline_repo.get_all()
-        return [self._to_list_item(p) for p in pipelines]
+
+        items = [self._to_list_item(p) for p in pipelines]
+        if pipelines:
+            ids = [p.id for p in pipelines]
+            rates = await self.pipeline_repo.get_success_rates(ids)
+            for item in items:
+                item.success_rate = rates.get(uuid.UUID(item.id))
+        return items
 
     async def get_pipeline_detail(self, pipeline_id: uuid.UUID) -> PipelineDetail | None:
         pipeline = await self.pipeline_repo.get_by_id(pipeline_id)

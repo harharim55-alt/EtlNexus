@@ -25,6 +25,12 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     debug: bool = False
 
+    # Spark Cluster Capacity (for resource utilization display)
+    spark_max_driver_memory_gb: int = 16
+    spark_max_executor_memory_gb: int = 64
+    spark_max_executor_cores: int = 32
+    spark_max_total_executors: int = 20
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

@@ -12,6 +12,7 @@ class Pipeline(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    task_id: Mapped[str | None] = mapped_column(String(255), index=True)
     description: Mapped[str | None] = mapped_column(Text)
     category: Mapped[str | None] = mapped_column(String(100))
     schedule: Mapped[str | None] = mapped_column(String(100))
@@ -33,6 +34,12 @@ class Pipeline(Base):
     lineage_targets: Mapped[list["LineageEdge"]] = relationship(
         foreign_keys="LineageEdge.source_pipeline_id", back_populates="source_pipeline"
     )
+    resource_configs: Mapped[list["PipelineResourceConfig"]] = relationship(
+        back_populates="pipeline", cascade="all, delete-orphan"
+    )
+    run_history: Mapped[list["PipelineRunHistory"]] = relationship(
+        back_populates="pipeline", cascade="all, delete-orphan"
+    )
 
 
 class PipelineField(Base):
@@ -52,3 +59,5 @@ class PipelineField(Base):
 # Avoid circular import issues — these are imported at module level by __init__.py
 from app.models.airflow_status import AirflowRunStatus  # noqa: E402, F401
 from app.models.lineage import LineageEdge  # noqa: E402, F401
+from app.models.resource_config import PipelineResourceConfig  # noqa: E402, F401
+from app.models.run_history import PipelineRunHistory  # noqa: E402, F401

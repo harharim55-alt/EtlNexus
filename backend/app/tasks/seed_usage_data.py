@@ -14,42 +14,42 @@ logger = logging.getLogger(__name__)
 # Enrichment data keyed by etl_name → list of downstream consumer entries.
 # consumer_name values match actual Airflow downstream task_ids.
 SEED_USAGES: dict[str, list[dict]] = {
-    "postgres_production_db": [
-        {"consumer_name": "shopify_sales_sync", "usage_type": "etl", "description": "Syncs customer and order data from Shopify using production DB profiles", "access_count": 8900, "days_ago": 0},
-        {"consumer_name": "salesforce_crm_sync", "usage_type": "etl", "description": "Enriches CRM sync with production account data", "access_count": 4380, "days_ago": 0},
-        {"consumer_name": "mixpanel_user_events", "usage_type": "etl", "description": "Maps event streams to production user profiles", "access_count": 2100, "days_ago": 0},
+    "switch_port_collector": [
+        {"consumer_name": "bgp_route_sync", "usage_type": "etl", "description": "Syncs BGP route tables using switch port interface data", "access_count": 8900, "days_ago": 0},
+        {"consumer_name": "dns_record_sync", "usage_type": "etl", "description": "Enriches DNS zone sync with port-level network topology", "access_count": 4380, "days_ago": 0},
+        {"consumer_name": "netflow_capture", "usage_type": "etl", "description": "Maps NetFlow records to physical switch port interfaces", "access_count": 2100, "days_ago": 0},
     ],
-    "shopify_sales_sync": [
-        {"consumer_name": "stripe_billing_aggregator", "usage_type": "etl", "description": "Aggregates billing data from Shopify orders", "access_count": 1847, "days_ago": 0},
-        {"consumer_name": "customer_360_enrichment", "usage_type": "etl", "description": "Enriches customer profiles with purchase history", "access_count": 4200, "days_ago": 0},
-        {"consumer_name": "revenue_reconciliation", "usage_type": "etl", "description": "Reconciles Shopify revenue against billing records", "access_count": 730, "days_ago": 0},
+    "bgp_route_sync": [
+        {"consumer_name": "bandwidth_billing_aggregator", "usage_type": "etl", "description": "Aggregates bandwidth billing from BGP route announcements", "access_count": 1847, "days_ago": 0},
+        {"consumer_name": "device_fingerprint_enrichment", "usage_type": "etl", "description": "Enriches device fingerprints with BGP routing context", "access_count": 4200, "days_ago": 0},
+        {"consumer_name": "bandwidth_cost_reconciliation", "usage_type": "etl", "description": "Reconciles metered bandwidth against BGP route records", "access_count": 730, "days_ago": 0},
     ],
-    "salesforce_crm_sync": [
-        {"consumer_name": "stripe_billing_aggregator", "usage_type": "etl", "description": "Cross-references CRM deals with billing data", "access_count": 1234, "days_ago": 0},
-        {"consumer_name": "customer_360_enrichment", "usage_type": "etl", "description": "Merges CRM contacts into unified customer view", "access_count": 1890, "days_ago": 0},
-        {"consumer_name": "support_analytics_rollup", "usage_type": "etl", "description": "Correlates support tickets with CRM account health", "access_count": 445, "days_ago": 1},
+    "dns_record_sync": [
+        {"consumer_name": "bandwidth_billing_aggregator", "usage_type": "etl", "description": "Cross-references DNS zones with bandwidth billing data", "access_count": 1234, "days_ago": 0},
+        {"consumer_name": "device_fingerprint_enrichment", "usage_type": "etl", "description": "Merges DNS resolution data into unified device profiles", "access_count": 1890, "days_ago": 0},
+        {"consumer_name": "incident_analytics_rollup", "usage_type": "etl", "description": "Correlates syslog incidents with DNS resolution context", "access_count": 445, "days_ago": 1},
     ],
-    "mixpanel_user_events": [
-        {"consumer_name": "churn_prediction_features", "usage_type": "etl", "description": "Behavioral event features for churn prediction model", "access_count": 3420, "days_ago": 0},
+    "netflow_capture": [
+        {"consumer_name": "link_failure_prediction", "usage_type": "etl", "description": "Flow-level traffic features for link failure prediction model", "access_count": 3420, "days_ago": 0},
     ],
-    "zendesk_tickets_stream": [
-        {"consumer_name": "support_analytics_rollup", "usage_type": "etl", "description": "Aggregates ticket volume and SLA metrics", "access_count": 2103, "days_ago": 0},
+    "syslog_event_stream": [
+        {"consumer_name": "incident_analytics_rollup", "usage_type": "etl", "description": "Aggregates syslog event volume and severity metrics", "access_count": 2103, "days_ago": 0},
     ],
-    "stripe_billing_aggregator": [
-        {"consumer_name": "revenue_reconciliation", "usage_type": "etl", "description": "Input to revenue variance and reconciliation analysis", "access_count": 956, "days_ago": 0},
-        {"consumer_name": "billing_reports_api", "usage_type": "etl", "description": "Feeds aggregated billing data to API endpoint", "access_count": 365, "days_ago": 1},
+    "bandwidth_billing_aggregator": [
+        {"consumer_name": "bandwidth_cost_reconciliation", "usage_type": "etl", "description": "Input to bandwidth variance and cost reconciliation analysis", "access_count": 956, "days_ago": 0},
+        {"consumer_name": "bandwidth_reports_api", "usage_type": "etl", "description": "Feeds aggregated bandwidth data to reports API endpoint", "access_count": 365, "days_ago": 1},
     ],
-    "customer_360_enrichment": [
-        {"consumer_name": "churn_prediction_features", "usage_type": "etl", "description": "Customer health signals for churn feature pipeline", "access_count": 2340, "days_ago": 0},
-        {"consumer_name": "customer_insights_api", "usage_type": "etl", "description": "Serves enriched customer data via API", "access_count": 3200, "days_ago": 0},
+    "device_fingerprint_enrichment": [
+        {"consumer_name": "link_failure_prediction", "usage_type": "etl", "description": "Device health signals for link failure feature pipeline", "access_count": 2340, "days_ago": 0},
+        {"consumer_name": "network_insights_api", "usage_type": "etl", "description": "Serves enriched device data via network insights API", "access_count": 3200, "days_ago": 0},
     ],
-    "churn_prediction_features": [
-        {"consumer_name": "executive_kpi_snapshot", "usage_type": "etl", "description": "Churn metrics for executive KPI rollup", "access_count": 1460, "days_ago": 0},
-        {"consumer_name": "customer_insights_api", "usage_type": "etl", "description": "At-risk customer scores for API endpoint", "access_count": 4500, "days_ago": 0},
+    "link_failure_prediction": [
+        {"consumer_name": "noc_dashboard_snapshot", "usage_type": "etl", "description": "Link failure metrics for NOC dashboard KPI rollup", "access_count": 1460, "days_ago": 0},
+        {"consumer_name": "network_insights_api", "usage_type": "etl", "description": "At-risk link scores for network insights API endpoint", "access_count": 4500, "days_ago": 0},
     ],
-    "revenue_reconciliation": [
-        {"consumer_name": "executive_kpi_snapshot", "usage_type": "etl", "description": "Revenue variance data for executive dashboard", "access_count": 1120, "days_ago": 0},
-        {"consumer_name": "billing_reports_api", "usage_type": "etl", "description": "Reconciled revenue data for billing reports API", "access_count": 1890, "days_ago": 0},
+    "bandwidth_cost_reconciliation": [
+        {"consumer_name": "noc_dashboard_snapshot", "usage_type": "etl", "description": "Bandwidth cost variance data for NOC dashboard", "access_count": 1120, "days_ago": 0},
+        {"consumer_name": "bandwidth_reports_api", "usage_type": "etl", "description": "Reconciled bandwidth data for billing reports API", "access_count": 1890, "days_ago": 0},
     ],
     # Leaf pipelines — no downstream consumers, no seed entries
 }

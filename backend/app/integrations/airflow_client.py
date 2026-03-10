@@ -1,6 +1,7 @@
-"""Airflow REST API client with retry and graceful degradation."""
+"""Airflow REST API client with retry, graceful degradation, and TTL caching."""
 
 import logging
+import time
 from datetime import datetime
 
 import httpx
@@ -9,6 +10,33 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
+# Cache TTL in seconds (5 minutes)
+_CACHE_TTL = 300
+
+
+class _TTLCache:
+    """Simple TTL cache for Airflow API responses."""
+
+    def __init__(self, ttl: int = _CACHE_TTL):
+        self._ttl = ttl
+        self._store: dict[str, tuple[float, object]] = {}
+
+    def get(self, key: str) -> object | None:
+        entry = self._store.get(key)
+        if entry is None:
+            return None
+        ts, value = entry
+        if time.monotonic() - ts > self._ttl:
+            del self._store[key]
+            return None
+        return value
+
+    def set(self, key: str, value: object) -> None:
+        self._store[key] = (time.monotonic(), value)
+
+    def clear(self) -> None:
+        self._store.clear()
+
 
 class AirflowClient:
     def __init__(self):
@@ -16,6 +44,7 @@ class AirflowClient:
         self.auth = (settings.airflow_username, settings.airflow_password)
         self.timeout = httpx.Timeout(10.0)
         self._connected = False
+        self._cache = _TTLCache()
 
     async def _request(self, method: str, path: str, **kwargs) -> dict | None:
         url = f"{self.base_url}{path}"
@@ -57,7 +86,11 @@ class AirflowClient:
         return []
 
     async def get_all_dags(self) -> list[dict]:
-        """List all DAGs from Airflow with pagination."""
+        """List all DAGs from Airflow with pagination. Cached for 5 minutes."""
+        cached = self._cache.get("all_dags")
+        if cached is not None:
+            return cached
+
         all_dags = []
         offset = 0
         limit = 100
@@ -72,6 +105,9 @@ class AirflowClient:
             if len(dags) < limit:
                 break
             offset += limit
+
+        if all_dags:
+            self._cache.set("all_dags", all_dags)
         return all_dags
 
     async def get_task_instances(self, dag_id: str, dag_run_id: str) -> list[dict]:
@@ -85,11 +121,17 @@ class AirflowClient:
         return []
 
     async def get_dag_tasks(self, dag_id: str) -> list[dict]:
-        """Get task definitions for a DAG (includes downstream_task_ids)."""
+        """Get task definitions for a DAG (includes downstream_task_ids). Cached for 5 minutes."""
+        cache_key = f"dag_tasks:{dag_id}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         result = await self._request("GET", f"/dags/{dag_id}/tasks")
-        if result and "tasks" in result:
-            return result["tasks"]
-        return []
+        tasks = result.get("tasks", []) if result else []
+        if tasks:
+            self._cache.set(cache_key, tasks)
+        return tasks
 
     async def get_task_log(
         self, dag_id: str, dag_run_id: str, task_id: str, try_number: int = 1
