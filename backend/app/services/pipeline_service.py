@@ -1,5 +1,6 @@
 import uuid
 
+from app.cache import pipeline_list_cache
 from app.models.pipeline import Pipeline
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
@@ -21,6 +22,11 @@ class PipelineService:
         self.lineage_repo = lineage_repo
 
     async def list_pipelines(self, query: str | None = None) -> list[PipelineListItem]:
+        if not query:
+            cached = pipeline_list_cache.get("all")
+            if cached is not None:
+                return cached
+
         if query:
             pipelines = await self.pipeline_repo.search(query)
         else:
@@ -32,6 +38,9 @@ class PipelineService:
             rates = await self.pipeline_repo.get_success_rates(ids)
             for item in items:
                 item.success_rate = rates.get(uuid.UUID(item.id))
+
+        if not query:
+            pipeline_list_cache.set("all", items)
         return items
 
     async def get_pipeline_detail(self, pipeline_id: uuid.UUID) -> PipelineDetail | None:

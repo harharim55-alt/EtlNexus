@@ -6,6 +6,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.cache import topology_cache
 from app.database import get_db_session
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
@@ -20,6 +21,11 @@ async def get_pipeline_topology(
     dag_id: Optional[str] = Query(None, description="Filter topology to a specific DAG"),
     session: AsyncSession = Depends(get_db_session),
 ):
+    cache_key = f"{pipeline_id}:{dag_id}"
+    cached = topology_cache.get(cache_key)
+    if cached is not None:
+        return cached
+
     pipeline_repo = PipelineRepository(session)
     dag_task_repo = DagTaskRepository(session)
 
@@ -95,7 +101,7 @@ async def get_pipeline_topology(
             if tid not in merged_downstream:
                 merged_downstream[tid] = _make_task(tid)
 
-    return TopologyGraph(
+    result = TopologyGraph(
         pipeline_task_id=my_task_id,
         pipeline_status=pipeline_status,
         dag_ids=all_dag_ids,
@@ -103,3 +109,5 @@ async def get_pipeline_topology(
         upstream_prefers=list(merged_prefers.values()),
         downstream=list(merged_downstream.values()),
     )
+    topology_cache.set(cache_key, result)
+    return result

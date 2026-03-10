@@ -5,7 +5,7 @@ export function useAirflowStatuses() {
   return useQuery({
     queryKey: ["airflow-statuses"],
     queryFn: fetchAllAirflowStatuses,
-    refetchInterval: 60_000,
-    staleTime: 30_000,
+    refetchInterval: 5 * 60_000,
+    staleTime: 5 * 60_000,
   });
 }

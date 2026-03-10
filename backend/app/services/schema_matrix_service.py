@@ -1,3 +1,4 @@
+from app.cache import schema_matrix_cache
 from app.repositories.field_frequency_repo import FieldFrequencyRepository
 from app.schemas.schema_matrix import (
     FieldFrequencyRow,
@@ -11,6 +12,10 @@ class SchemaMatrixService:
         self.field_freq_repo = field_freq_repo
 
     async def get_schema_matrix(self) -> SchemaMatrixResponse:
+        cached = schema_matrix_cache.get("matrix")
+        if cached is not None:
+            return cached
+
         frequencies = await self.field_freq_repo.get_field_frequencies()
         rows = [
             FieldFrequencyRow(
@@ -22,4 +27,6 @@ class SchemaMatrixService:
             )
             for f in frequencies
         ]
-        return SchemaMatrixResponse(fields=rows)
+        result = SchemaMatrixResponse(fields=rows)
+        schema_matrix_cache.set("matrix", result)
+        return result
