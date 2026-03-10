@@ -1,41 +1,18 @@
-"""Airflow REST API client with retry, graceful degradation, and TTL caching."""
+"""Airflow REST API client with retry, graceful degradation, and TTL caching.
+
+Uses a persistent httpx.AsyncClient with connection pooling to avoid
+creating a new TCP connection per request.
+"""
 
 import logging
-import time
 from datetime import datetime
 
 import httpx
 
+from app.cache import TTLCache
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-# Cache TTL in seconds (5 minutes)
-_CACHE_TTL = 300
-
-
-class _TTLCache:
-    """Simple TTL cache for Airflow API responses."""
-
-    def __init__(self, ttl: int = _CACHE_TTL):
-        self._ttl = ttl
-        self._store: dict[str, tuple[float, object]] = {}
-
-    def get(self, key: str) -> object | None:
-        entry = self._store.get(key)
-        if entry is None:
-            return None
-        ts, value = entry
-        if time.monotonic() - ts > self._ttl:
-            del self._store[key]
-            return None
-        return value
-
-    def set(self, key: str, value: object) -> None:
-        self._store[key] = (time.monotonic(), value)
-
-    def clear(self) -> None:
-        self._store.clear()
 
 
 class AirflowClient:
@@ -44,19 +21,27 @@ class AirflowClient:
         self.auth = (settings.airflow_username, settings.airflow_password)
         self.timeout = httpx.Timeout(10.0)
         self._connected = False
-        self._cache = _TTLCache()
+        self._cache = TTLCache(ttl=300)
+        # Persistent client with connection pool — reuses TCP connections
+        self._client = httpx.AsyncClient(
+            timeout=self.timeout,
+            limits=httpx.Limits(
+                max_connections=10,
+                max_keepalive_connections=5,
+                keepalive_expiry=30,
+            ),
+        )
 
     async def _request(self, method: str, path: str, **kwargs) -> dict | None:
         url = f"{self.base_url}{path}"
         for attempt in range(2):
             try:
-                async with httpx.AsyncClient(timeout=self.timeout) as client:
-                    resp = await client.request(
-                        method, url, auth=self.auth, **kwargs
-                    )
-                    resp.raise_for_status()
-                    self._connected = True
-                    return resp.json()
+                resp = await self._client.request(
+                    method, url, auth=self.auth, **kwargs
+                )
+                resp.raise_for_status()
+                self._connected = True
+                return resp.json()
             except (httpx.HTTPStatusError, httpx.RequestError) as e:
                 logger.warning(
                     "Airflow request failed (attempt %d): %s %s -> %s",
@@ -142,14 +127,13 @@ class AirflowClient:
             f"/taskInstances/{task_id}/logs/{try_number}"
         )
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.get(
-                    url,
-                    auth=self.auth,
-                    headers={"Accept": "text/plain"},
-                )
-                resp.raise_for_status()
-                return resp.text
+            resp = await self._client.get(
+                url,
+                auth=self.auth,
+                headers={"Accept": "text/plain"},
+            )
+            resp.raise_for_status()
+            return resp.text
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
             logger.debug("Failed to fetch task log %s/%s/%s: %s", dag_id, dag_run_id, task_id, e)
             return ""
@@ -173,6 +157,10 @@ class AirflowClient:
                 "dag_id": dag_id,
             }
         return {"status": "unknown", "execution_date": None, "dag_id": dag_id}
+
+    async def close(self) -> None:
+        """Close the persistent HTTP client. Call during app shutdown."""
+        await self._client.aclose()
 
 
 airflow_client = AirflowClient()
