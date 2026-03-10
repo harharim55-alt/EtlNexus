@@ -37,6 +37,7 @@ backend/alembic/versions/__pycache__/
 # Frontend
 frontend/dist/
 frontend/.vite/
+frontend/tsconfig.tsbuildinfo
 
 # PySpark / Java
 *.jar
@@ -61,6 +62,11 @@ htmlcov/
 # Playwright
 .playwright-mcp/
 *.png
+
+# Generated docs / review artifacts
+.full-review/
+C4-Documentation/
+docs/
 
 # Claude Code
 .claude/
