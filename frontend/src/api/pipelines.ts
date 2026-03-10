@@ -16,3 +16,13 @@ export async function fetchJoinSuggestions(pipelineId: string): Promise<JoinSugg
   const { data } = await apiClient.get<JoinSuggestionsResponse>(`/pipelines/${pipelineId}/joins`);
   return data;
 }
+
+export interface SyncResponse {
+  synced: boolean;
+  pipeline_name: string;
+}
+
+export async function syncPipeline(pipelineId: string): Promise<SyncResponse> {
+  const { data } = await apiClient.post<SyncResponse>(`/pipelines/${pipelineId}/sync`);
+  return data;
+}

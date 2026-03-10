@@ -1,6 +1,12 @@
 import { memo } from "react";
-import { StatusBadge } from "@/components/shared/StatusBadge";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
+
+function getSuccessRateDot(rate: number | null) {
+  if (rate == null) return { color: "bg-slate-500", title: "No recent runs" };
+  if (rate >= 80) return { color: "bg-emerald-500", title: `${rate}% success (30d)` };
+  if (rate >= 50) return { color: "bg-amber-500", title: `${rate}% success (30d)` };
+  return { color: "bg-rose-500", title: `${rate}% success (30d)` };
+}
 
 interface PipelineListItemProps {
   pipeline: PipelineListItemType;
@@ -13,6 +19,8 @@ export const PipelineListItem = memo(function PipelineListItem({
   isActive,
   onClick,
 }: PipelineListItemProps) {
+  const dot = getSuccessRateDot(pipeline.success_rate);
+
   return (
     <div
       onClick={onClick}
@@ -30,10 +38,13 @@ export const PipelineListItem = memo(function PipelineListItem({
         >
           {pipeline.name}
         </h3>
-        <StatusBadge status={pipeline.airflow_status} size="sm" />
+        <span
+          className={`shrink-0 mt-1.5 h-2 w-2 rounded-full ${dot.color}`}
+          title={dot.title}
+        />
       </div>
       <div className="text-xs text-slate-500 font-mono mb-3">
-        {pipeline.category === "API" ? "API" : "ETL"}
+        {pipeline.category?.toLowerCase().includes("api") ? "API" : "ETL"}
       </div>
       <div className="flex gap-2 text-[10px] font-mono">
         {pipeline.schedule && (

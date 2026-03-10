@@ -8,7 +8,7 @@ interface ConsumeSnippetProps {
 
 export function ConsumeSnippet({ pipelineName, category }: ConsumeSnippetProps) {
   const importName = pipelineName.toLowerCase().replace(/ /g, "_");
-  const isApi = category?.toLowerCase() === "api";
+  const isApi = category?.toLowerCase().includes("api") ?? false;
 
   if (isApi) {
     const apiCode = `from path import api\n\n${importName} = ${importName}(start_date, end_date)`;

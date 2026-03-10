@@ -1,4 +1,3 @@
-import { useEffect, useState } from "react";
 import { Layers, Lock, Network, Sparkles } from "lucide-react";
 import { useLineage } from "@/hooks/use-lineage";
 import { useTopology } from "@/hooks/use-topology";
@@ -169,8 +168,8 @@ function UpstreamGroup({
 }
 
 export function LineageTopology({ pipelineId }: LineageTopologyProps) {
-  const [selectedDagId, setSelectedDagId] = useState<string | null>(null);
-  useEffect(() => setSelectedDagId(null), [pipelineId]);
+  const selectedDagId = usePipelineStore((s) => s.selectedDagId);
+  const setSelectedDagId = usePipelineStore((s) => s.setSelectedDagId);
   const { data: topology, isLoading: topoLoading } = useTopology(pipelineId, selectedDagId);
   const { data: lineage, isLoading: lineageLoading } = useLineage(pipelineId);
   const setSelectedPipelineId = usePipelineStore(

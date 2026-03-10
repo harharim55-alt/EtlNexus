@@ -13,6 +13,7 @@ export interface PipelineListItem {
   schedule: string | null;
   rows_per_day: string | null;
   airflow_status: string;
+  success_rate: number | null;
 }
 
 export interface PipelineDetail {

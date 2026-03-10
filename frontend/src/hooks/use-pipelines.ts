@@ -6,6 +6,7 @@ export function usePipelines(searchQuery: string) {
     queryKey: ["pipelines", searchQuery],
     queryFn: () => fetchPipelines(searchQuery || undefined),
     staleTime: 30_000,
+    refetchInterval: 60_000,
     placeholderData: keepPreviousData,
   });
 }

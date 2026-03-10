@@ -10,6 +10,7 @@ import { ConsumeSnippet } from "./ConsumeSnippet";
 import { JoinIntelligence } from "./JoinIntelligence";
 import { UsageCard } from "./UsageCard";
 import { DagNetworkCard } from "./DagNetworkCard";
+import { ResourcePerformanceCard } from "./ResourcePerformanceCard";
 
 export function BentoWorkspace() {
   const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
@@ -31,6 +32,7 @@ export function BentoWorkspace() {
         <div className="grid grid-cols-12 gap-6">
           <Skeleton className="col-span-12 lg:col-span-8 h-48 bg-white/5 rounded-2xl" />
           <Skeleton className="col-span-12 lg:col-span-4 h-48 bg-white/5 rounded-2xl" />
+          <Skeleton className="col-span-12 h-36 bg-white/5 rounded-2xl" />
           <Skeleton className="col-span-12 lg:col-span-7 h-64 bg-white/5 rounded-2xl" />
           <Skeleton className="col-span-12 lg:col-span-5 h-64 bg-white/5 rounded-2xl" />
         </div>
@@ -61,7 +63,12 @@ export function BentoWorkspace() {
           schedule={pipeline.schedule}
         />
 
-        {/* Row 2: Schema + Join Intelligence + Consume */}
+        {/* Row 2: Resource & Performance */}
+        {!pipeline.category?.toLowerCase().includes("api") && (
+          <ResourcePerformanceCard pipelineId={pipeline.id} />
+        )}
+
+        {/* Row 3: Schema + Join Intelligence + Consume */}
         <SchemaViewer fields={pipeline.fields} />
         <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
           <JoinIntelligence pipelineId={pipeline.id} />
