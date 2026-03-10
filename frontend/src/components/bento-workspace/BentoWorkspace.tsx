@@ -67,15 +67,15 @@ export function BentoWorkspace() {
           <ResourcePerformanceCard pipelineId={pipeline.id} />
         )}
 
-        {/* Row 3: Schema + Join Intelligence + Consume */}
-        <SchemaViewer fields={pipeline.fields} />
+        {/* Row 3: Schema + Usage (left) | Join Intelligence + Consume (right) */}
+        <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
+          <SchemaViewer fields={pipeline.fields} />
+          <UsageCard etlName={pipeline.name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_")} />
+        </div>
         <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
           <JoinIntelligence pipelineId={pipeline.id} />
           <ConsumeSnippet pipelineName={pipeline.name} category={pipeline.category ?? undefined} />
         </div>
-
-        {/* Row 4: Consumers & Usage */}
-        <UsageCard etlName={pipeline.name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_")} />
       </div>
     </div>
   );

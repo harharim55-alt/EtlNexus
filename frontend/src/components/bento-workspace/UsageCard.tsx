@@ -103,7 +103,7 @@ export function UsageCard({ etlName }: UsageCardProps) {
   const consumers = usages.filter((u) => !u.is_current);
 
   return (
-    <div className="col-span-12 bg-[#18181b] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
+    <div className="bg-[#18181b] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
       {/* Header */}
       <div className="p-5 border-b border-white/5 bg-[#18181b]/50 backdrop-blur flex items-center justify-between">
         <h3 className="text-[11px] font-mono uppercase tracking-widest text-slate-500 flex items-center gap-2">
