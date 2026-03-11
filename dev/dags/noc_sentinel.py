@@ -10,6 +10,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 from etl_runner import run_etl
+from sensor_runner import run_sensor
 
 from hourly.task_configs import syslog_event_stream_task_config, incident_analytics_rollup_task_config
 from daily.resources import dns_record_sync_resources
@@ -34,6 +35,39 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     catchup=False,
 ) as dag:
+
+    # --- Sensors (data ingestion) ---
+    syslog_receiver_sensor = PythonOperator(
+        task_id="syslog_receiver_sensor",
+        python_callable=run_sensor,
+        params={
+            "sensor_name": "syslog_receiver_sensor",
+            "team": "Security Engineering",
+            "description": "Receives syslog messages from network devices and firewalls",
+        },
+        op_kwargs={
+            "sensor_name": "syslog_receiver_sensor",
+            "team": "Security Engineering",
+            "description": "Receives syslog messages from network devices and firewalls",
+            "volume_per_day": 8_500_000,
+        },
+    )
+
+    dns_query_log_sensor = PythonOperator(
+        task_id="dns_query_log_sensor",
+        python_callable=run_sensor,
+        params={
+            "sensor_name": "dns_query_log_sensor",
+            "team": "Network Monitoring",
+            "description": "Taps DNS resolver query logs for resolution analytics",
+        },
+        op_kwargs={
+            "sensor_name": "dns_query_log_sensor",
+            "team": "Network Monitoring",
+            "description": "Taps DNS resolver query logs for resolution analytics",
+            "volume_per_day": 12_000_000,
+        },
+    )
 
     syslog_event_stream = PythonOperator(
         task_id="syslog_event_stream",
@@ -91,6 +125,10 @@ with DAG(
             "resources": incident_analytics_rollup_resources.resources,
         },
     )
+
+    # Sensor wiring
+    syslog_receiver_sensor >> syslog_event_stream
+    dns_query_log_sensor >> dns_record_sync
 
     # Dependencies derived from task configs:
     # syslog_event_stream prefers dns_record_sync (soft dep)

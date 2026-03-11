@@ -1,23 +1,47 @@
 """Syslog Event Stream - Real-time streaming of network syslog events."""
 
-from etls import dns_zone_records
+from base_etl import BaseETL
 
 SUFFIXES = ["severity_scores", "facility_tags"]
 
 
-class SyslogEventStream:
-    def __init__(self):
-        self.table = "raw_syslog_events"
-        self.destination_tables = ["raw_syslog_events", "raw_severity_scores"]
-        self.schedule = "Real-time (Streaming)"
-        self.category = "Incident Management"
-        self.networks = ["noc_sentinel"]
+class SyslogEventStream(BaseETL):
+    def __init__(self, start_date, end_date=None):
+        super().__init__(start_date, end_date, schedule="hourly")
+        self.etl_name = "syslog_event_stream"
 
-    def extract(self, start_date, end_date):
-        self.dns = dns_zone_records(start_date, end_date).consume()
+    def extract(self):
+        self.events = self.spark.table("iceberg.dagger.syslog_event_stream")
 
-    def transform(self, data):
-        pass
+    def transform(self):
+        from pyspark.sql import functions as F
 
-    def load(self, data):
-        pass
+        # Filter events by severity (keep warning and above), assign priority ranking
+        severity_order = F.when(F.col("severity") == "emergency", 0) \
+            .when(F.col("severity") == "alert", 1) \
+            .when(F.col("severity") == "critical", 2) \
+            .when(F.col("severity") == "error", 3) \
+            .when(F.col("severity") == "warning", 4) \
+            .otherwise(5)
+
+        self.result = (
+            self.events
+            .withColumn("_sev_rank", severity_order)
+            .filter(F.col("_sev_rank") <= 4)
+            .drop("_sev_rank")
+            .select(
+                F.col("event_id"),
+                F.col("source_host"),
+                F.col("facility"),
+                F.col("severity"),
+                F.col("message"),
+                F.col("priority"),
+                F.col("event_time"),
+                F.col("received_at"),
+            )
+            .withColumn("date", F.lit(self.start_date).cast("date"))
+            .withColumn("hourkey", F.lit(self.hourkey))
+        )
+
+    def load(self):
+        self.result.writeTo(f"iceberg.dagger.{self.etl_name}").overwritePartitions()

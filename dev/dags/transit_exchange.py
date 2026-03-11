@@ -10,6 +10,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 
 from etl_runner import run_etl
+from sensor_runner import run_sensor
 
 from daily.task_configs import (
     switch_port_collector_task_config,
@@ -40,6 +41,55 @@ with DAG(
     start_date=datetime(2026, 1, 1),
     catchup=False,
 ) as dag:
+
+    # --- Sensors (data ingestion) ---
+    switch_telemetry_sensor = PythonOperator(
+        task_id="switch_telemetry_sensor",
+        python_callable=run_sensor,
+        params={
+            "sensor_name": "switch_telemetry_sensor",
+            "team": "Infrastructure Ops",
+            "description": "Streams switch interface telemetry via gNMI/SNMP polling",
+        },
+        op_kwargs={
+            "sensor_name": "switch_telemetry_sensor",
+            "team": "Infrastructure Ops",
+            "description": "Streams switch interface telemetry via gNMI/SNMP polling",
+            "volume_per_day": 2_400_000,
+        },
+    )
+
+    bgp_feed_sensor = PythonOperator(
+        task_id="bgp_feed_sensor",
+        python_callable=run_sensor,
+        params={
+            "sensor_name": "bgp_feed_sensor",
+            "team": "Infrastructure Ops",
+            "description": "Ingests BGP route announcements from peering routers",
+        },
+        op_kwargs={
+            "sensor_name": "bgp_feed_sensor",
+            "team": "Infrastructure Ops",
+            "description": "Ingests BGP route announcements from peering routers",
+            "volume_per_day": 850_000,
+        },
+    )
+
+    dns_query_log_sensor = PythonOperator(
+        task_id="dns_query_log_sensor",
+        python_callable=run_sensor,
+        params={
+            "sensor_name": "dns_query_log_sensor",
+            "team": "Network Monitoring",
+            "description": "Taps DNS resolver query logs for resolution analytics",
+        },
+        op_kwargs={
+            "sensor_name": "dns_query_log_sensor",
+            "team": "Network Monitoring",
+            "description": "Taps DNS resolver query logs for resolution analytics",
+            "volume_per_day": 12_000_000,
+        },
+    )
 
     switch_port_collector = PythonOperator(
         task_id="switch_port_collector",
@@ -116,6 +166,11 @@ with DAG(
             "resources": dns_record_sync_resources.resources,
         },
     )
+
+    # Sensor wiring
+    switch_telemetry_sensor >> switch_port_collector
+    bgp_feed_sensor >> bgp_route_sync
+    dns_query_log_sensor >> dns_record_sync
 
     # Dependencies derived from task configs:
     # switch_port_collector has no needs → runs first

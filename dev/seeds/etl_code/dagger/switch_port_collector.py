@@ -1,21 +1,41 @@
 """Switch Port Collector - Periodic snapshot of network switch interface states."""
 
+from base_etl import BaseETL
+
 SUFFIXES = ["interfaces", "vlans", "uplinks", "configs"]
 
 
-class SwitchPortCollector:
-    def __init__(self):
-        self.table = "switch_interface_snapshot"
-        self.destination_tables = ["switch_interface_snapshot", "port_config_snapshot"]
-        self.schedule = "Daily at 03:00 UTC"
-        self.category = "Network Infrastructure"
-        self.networks = ["heartbeat_probe", "transit_exchange", "backbone_core", "application_mesh"]
+class SwitchPortCollector(BaseETL):
+    def __init__(self, start_date, end_date=None):
+        super().__init__(start_date, end_date, schedule="daily")
+        self.etl_name = "switch_port_collector"
 
-    def extract(self, start_date, end_date):
-        pass
+    def extract(self):
+        self.ports = self.spark.table("iceberg.dagger.switch_port_collector")
 
-    def transform(self, data):
-        pass
+    def transform(self):
+        from pyspark.sql import functions as F
+        from pyspark.sql.window import Window
 
-    def load(self, data):
-        pass
+        # Deduplicate by switch_id + port_number, keeping latest collected_at
+        w = Window.partitionBy("switch_id", "port_number").orderBy(F.col("collected_at").desc())
+        self.result = (
+            self.ports
+            .withColumn("_rank", F.row_number().over(w))
+            .filter(F.col("_rank") == 1)
+            .drop("_rank")
+            .select(
+                F.col("switch_id"),
+                F.col("port_number"),
+                F.col("mac_address"),
+                F.col("collected_at"),
+                F.col("last_state_change"),
+                F.col("is_active"),
+                F.col("port_speed"),
+                F.col("vlan_id"),
+            )
+            .withColumn("date", F.lit(self.start_date).cast("date"))
+        )
+
+    def load(self):
+        self.result.writeTo(f"iceberg.dagger.{self.etl_name}").overwritePartitions()
