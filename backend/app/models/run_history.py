@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Float, ForeignKey, Integer, String, func, UniqueConstraint
+from sqlalchemy import BigInteger, Float, ForeignKey, Integer, String, Text, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -28,6 +28,26 @@ class PipelineRunHistory(Base):
     cpu_utilization_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     executors_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
     recorded_at: Mapped[datetime] = mapped_column(default=func.now())
+
+    # sparkMeasure / real Spark metrics (migration 012)
+    spark_application_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    executor_run_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    executor_cpu_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    jvm_gc_time_ms: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    shuffle_read_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    shuffle_write_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    input_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    output_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    memory_bytes_spilled: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    disk_bytes_spilled: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    peak_execution_memory: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    result_size_bytes: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    num_tasks: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    num_stages: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    metrics_source: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Spark execution plan (migration 013)
+    execution_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     pipeline: Mapped["Pipeline"] = relationship(back_populates="run_history")
 

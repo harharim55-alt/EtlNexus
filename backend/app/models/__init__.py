@@ -5,3 +5,4 @@ from app.models.pipeline_usage import PipelineUsage  # noqa: F401
 from app.models.resource_config import PipelineResourceConfig  # noqa: F401
 from app.models.run_history import PipelineRunHistory  # noqa: F401
 from app.models.dag_task import DagTask  # noqa: F401
+from app.models.sensor import Sensor  # noqa: F401
