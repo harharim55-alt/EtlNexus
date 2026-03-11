@@ -453,7 +453,7 @@ function NodeCard({
   isDimmed: boolean;
   onClick: () => void;
 }) {
-  const displayName = node.pipeline_name ?? node.task_id.replace(/_/g, " ");
+  const displayName = node.pipeline_name ?? node.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const isClickable = !node.is_current && !!node.pipeline_id;
   const cfg = STATUS_CONFIG[node.status] ?? STATUS_CONFIG.unknown;
 
@@ -504,7 +504,7 @@ function SensorNodeCard({
   isHighlighted: boolean;
   isDimmed: boolean;
 }) {
-  const displayName = node.pipeline_name ?? node.task_id.replace(/_/g, " ");
+  const displayName = node.pipeline_name ?? node.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const cfg = STATUS_CONFIG[node.status] ?? STATUS_CONFIG.unknown;
 
   return (

@@ -68,7 +68,7 @@ function TaskNode({
   isCurrent?: boolean;
   onClick?: () => void;
 }) {
-  const displayName = task.pipeline_name ?? task.task_id.replace(/_/g, " ");
+  const displayName = task.pipeline_name ?? task.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const isClickable = !isCurrent && !!task.pipeline_id;
   const cfg = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.unknown;
 

@@ -51,11 +51,11 @@ class AirflowService:
             logger.warning("Could not fetch DAGs from Airflow")
             return 0
 
-        # Build map: task_id → pipeline (prefer stored task_id, fall back to name conversion)
+        # Build map: task_id → pipeline
         task_to_pipeline = {}
         for pipeline in pipelines:
-            tid = pipeline.task_id or self._pipeline_to_dag_id(pipeline.name)
-            task_to_pipeline[tid] = pipeline
+            if pipeline.task_id:
+                task_to_pipeline[pipeline.task_id] = pipeline
 
         # Build sensor name set for quick lookup
         all_sensors = await self.sensor_repo.get_all()
@@ -209,14 +209,6 @@ class AirflowService:
             history_recorded,
         )
         return updated
-
-    @staticmethod
-    def _pipeline_to_dag_id(pipeline_name: str) -> str:
-        """Convert pipeline name to expected Airflow task ID.
-
-        E.g., "Shopify Sales Sync" -> "shopify_sales_sync"
-        """
-        return pipeline_name.lower().replace(" ", "_").replace("-", "_")
 
     @staticmethod
     def _parse_datetime(date_str: str | None) -> datetime | None:

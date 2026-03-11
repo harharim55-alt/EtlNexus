@@ -42,7 +42,9 @@ async def get_pipeline_topology(
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
 
-    my_task_id = pipeline.task_id or pipeline.name.lower().replace(" ", "_")
+    my_task_id = pipeline.task_id
+    if not my_task_id:
+        raise HTTPException(status_code=404, detail="Pipeline has no task_id")
 
     # Get all DAGs containing this task (from cached dag_tasks table)
     dag_entries = await dag_task_repo.get_dags_for_task(my_task_id)
@@ -69,8 +71,8 @@ async def get_pipeline_topology(
     all_pipelines = await pipeline_repo.get_all()
     task_id_to_pipeline = {}
     for p in all_pipelines:
-        tid = p.task_id or p.name.lower().replace(" ", "_")
-        task_id_to_pipeline[tid] = p
+        if p.task_id:
+            task_id_to_pipeline[p.task_id] = p
 
     # Build task_group_id lookup from all active dag_task entries
     # Key: (dag_id, task_id) -> task_group_id
@@ -145,9 +147,8 @@ async def get_pipeline_topology(
     # Build status map from all pipelines' airflow_status
     status_map: dict[str, str] = {}
     for p in all_pipelines:
-        tid = p.task_id or p.name.lower().replace(" ", "_")
-        if p.airflow_status:
-            status_map[tid] = p.airflow_status.status
+        if p.task_id and p.airflow_status:
+            status_map[p.task_id] = p.airflow_status.status
 
     for entry in active_entries:
         def _make_task(task_id: str, _did: str = entry.dag_id) -> TopologyTask:
@@ -200,7 +201,9 @@ async def get_upstream_topology(
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
 
-    my_task_id = pipeline.task_id or pipeline.name.lower().replace(" ", "_")
+    my_task_id = pipeline.task_id
+    if not my_task_id:
+        raise HTTPException(status_code=404, detail="Pipeline has no task_id")
 
     dag_entries = await dag_task_repo.get_dags_for_task(my_task_id)
     if not dag_entries:
@@ -260,10 +263,11 @@ async def get_upstream_topology(
     task_id_to_pipeline = {}
     status_map: dict[str, str] = {}
     for p in all_pipelines:
-        tid = p.task_id or p.name.lower().replace(" ", "_")
-        task_id_to_pipeline[tid] = p
+        if not p.task_id:
+            continue
+        task_id_to_pipeline[p.task_id] = p
         if p.airflow_status:
-            status_map[tid] = p.airflow_status.status
+            status_map[p.task_id] = p.airflow_status.status
 
     pipeline_status = "unknown"
     if pipeline.airflow_status:

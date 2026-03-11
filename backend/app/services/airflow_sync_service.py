@@ -12,6 +12,8 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import re
+
 from app.integrations.airflow_client import airflow_client
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.dag_task_repo import DagTaskRepository
@@ -19,6 +21,7 @@ from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
 from app.repositories.sensor_repo import SensorRepository
+from app.repositories.team_repo import TeamRepository
 from app.services.airflow_service import TASK_STATE_MAP
 
 logger = logging.getLogger(__name__)
@@ -36,6 +39,7 @@ class AirflowSyncService:
         self.airflow_repo = AirflowRepository(session)
         self.dag_task_repo = DagTaskRepository(session)
         self.sensor_repo = SensorRepository(session)
+        self.team_repo = TeamRepository(session)
 
     async def sync_pipelines_from_airflow(self) -> int:
         """Discover all tasks across all DAGs and register as pipelines + lineage.
@@ -78,6 +82,9 @@ class AirflowSyncService:
                 t["task_id"]: self._unwrap_params(t.get("params", {}))
                 for t in tasks_def
             }
+            # TaskGroup mapping from DAG source — fallback for task_group when
+            # rendered op_kwargs is empty (upstream_failed tasks)
+            task_group_map = await airflow_client.get_task_group_map(dag_id)
 
             runs = await airflow_client.get_dag_runs(dag_id, limit=1)
             if not runs:
@@ -162,6 +169,7 @@ class AirflowSyncService:
                     "destination_tables": destination_tables,
                     "description": description,
                     "needs": op_kwargs.get("needs", []),
+                    "task_group": task_group_map.get(task_id) or None,
                 }
 
             # Build dag_task_graph entries for all tasks in this DAG (ETLs + sensors)
@@ -176,7 +184,7 @@ class AirflowSyncService:
                     "downstream_task_ids": downstream_map.get(task_id, []),
                     "needs": op_kwargs.get("needs", []),
                     "prefers": op_kwargs.get("prefers", []),
-                    "task_group_id": op_kwargs.get("task_group") or None,
+                    "task_group_id": task_group_map.get(task_id) or None,
                     "sensor_name": s_name,
                 })
 
@@ -185,6 +193,9 @@ class AirflowSyncService:
         if not seen_tasks:
             logger.info("No tasks with etl metadata found in Airflow")
             return 0
+
+        # Load known teams for task_group prefix matching
+        known_teams = await self.team_repo.get_all_names()
 
         # Pass 1: Upsert pipelines and lineage
         synced = 0
@@ -201,6 +212,14 @@ class AirflowSyncService:
                 "schedule": meta["schedule"],
             })
             task_id_to_pipeline_id[task_id] = pipeline.id
+
+            # Assign team from task_group prefix
+            task_group = meta.get("task_group")
+            team_name = self._extract_team_from_task_group(task_group, known_teams)
+            if team_name:
+                team = await self.team_repo.get_or_create(team_name, source="airflow")
+                known_teams.add(team_name)
+                await self.pipeline_repo.set_team(pipeline.id, team_name, team.id)
 
             # Primary table = task_id (naming convention)
             primary_table = task_id
@@ -336,7 +355,9 @@ class AirflowSyncService:
         if not pipeline:
             raise ValueError(f"Pipeline {pipeline_id} not found")
 
-        task_id = pipeline.task_id or pipeline.name.lower().replace(" ", "_")
+        task_id = pipeline.task_id
+        if not task_id:
+            raise ValueError(f"Pipeline {pipeline_id} has no task_id")
         display_name = pipeline.name
         logger.info("Manual sync started for pipeline %s (task_id=%s)", display_name, task_id)
 
@@ -653,17 +674,36 @@ class AirflowSyncService:
                         desc = parts[1].strip()
                         if desc:
                             return desc
-        return task_id.replace("-", "_").replace("_", " ").title()
+        return AirflowSyncService._task_id_to_display_name(task_id)
+
+    @staticmethod
+    def _extract_team_from_task_group(
+        task_group: str | None, known_teams: set[str]
+    ) -> str | None:
+        """Extract team name from PascalCase task_group prefix.
+
+        Matches the longest known team name that is a prefix of the task_group.
+        E.g., 'DaggerCollection' with known_teams={'Dagger','Vault'} → 'Dagger'.
+        """
+        if not task_group:
+            return None
+        for team in sorted(known_teams, key=len, reverse=True):
+            if task_group.startswith(team) and len(task_group) > len(team):
+                return team
+        return None
 
     @staticmethod
     def _task_id_to_display_name(task_id: str) -> str:
-        """Convert task_id to display name, normalizing hyphens.
+        """Convert task_id to display name.
 
-        E.g., "shopify_sales_sync" -> "Shopify Sales Sync"
-             "shopify-sales-sync" -> "Shopify Sales Sync"
-             "customer_360_enrichment" -> "Customer 360 Enrichment"
+        Handles both PascalCase and snake_case:
+          'SwitchPortCollector' -> 'Switch Port Collector'
+          'switch_port_collector' -> 'Switch Port Collector'
         """
-        return task_id.replace("-", "_").replace("_", " ").title()
+        # Insert space before each uppercase that follows a lowercase letter or digit
+        spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", task_id)
+        # Also handle any remaining snake_case or kebab-case
+        return spaced.replace("_", " ").replace("-", " ").strip().title()
 
     @staticmethod
     def _parse_datetime(date_str: str | None) -> datetime | None:
@@ -745,4 +785,4 @@ class AirflowSyncService:
                         desc = parts[1].strip()
                         if desc:
                             return desc
-        return task_id.replace("_", " ").title()
+        return AirflowSyncService._task_id_to_display_name(task_id)

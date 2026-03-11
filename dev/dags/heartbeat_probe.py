@@ -8,13 +8,15 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.utils.task_group import TaskGroup
 
 from etl_runner import run_etl
 from sensor_runner import run_sensor
 
-from hourly.task_configs import netflow_capture_task_config
-from daily.resources import switch_port_collector_resources
-from hourly.resources import netflow_capture_resources
+from daily.task_configs import SwitchPortCollector_task_config
+from hourly.task_configs import NetflowCapture_task_config
+from daily.resources import SwitchPortCollector_resources
+from hourly.resources import NetflowCapture_resources
 
 default_args = {
     "owner": "data-engineering",
@@ -33,81 +35,100 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Sensors (data ingestion) ---
-    switch_telemetry_sensor = PythonOperator(
-        task_id="switch_telemetry_sensor",
-        python_callable=run_sensor,
-        params={
-            "sensor_name": "switch_telemetry_sensor",
-            "team": "Infrastructure Ops",
-            "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-        },
-        op_kwargs={
-            "sensor_name": "switch_telemetry_sensor",
-            "team": "Infrastructure Ops",
-            "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-            "volume_per_day": 2_400_000,
-        },
-    )
+    # --- Sensors group (data ingestion) ---
+    with TaskGroup("DaggerSensors", prefix_group_id=False) as sensors:
+        SwitchTelemetrySensor = PythonOperator(
+            task_id="SwitchTelemetrySensor",
+            python_callable=run_sensor,
+            params={
+                "sensor_name": "SwitchTelemetrySensor",
+                "team": "Dagger",
+                "description": "Streams switch interface telemetry via gNMI/SNMP polling",
+            },
+            op_kwargs={
+                "sensor_name": "SwitchTelemetrySensor",
+                "team": "Dagger",
+                "description": "Streams switch interface telemetry via gNMI/SNMP polling",
+                "volume_per_day": 2_400_000,
+            },
+        )
 
-    snmp_trap_sensor = PythonOperator(
-        task_id="snmp_trap_sensor",
-        python_callable=run_sensor,
-        params={
-            "sensor_name": "snmp_trap_sensor",
-            "team": "NOC Operations",
-            "description": "Receives SNMP trap notifications for device health events",
-        },
-        op_kwargs={
-            "sensor_name": "snmp_trap_sensor",
-            "team": "NOC Operations",
-            "description": "Receives SNMP trap notifications for device health events",
-            "volume_per_day": 420_000,
-        },
-    )
+        SnmpTrapSensor = PythonOperator(
+            task_id="SnmpTrapSensor",
+            python_callable=run_sensor,
+            params={
+                "sensor_name": "SnmpTrapSensor",
+                "team": "Oasis",
+                "description": "Receives SNMP trap notifications for device health events",
+            },
+            op_kwargs={
+                "sensor_name": "SnmpTrapSensor",
+                "team": "Oasis",
+                "description": "Receives SNMP trap notifications for device health events",
+                "volume_per_day": 420_000,
+            },
+        )
 
-    switch_port_collector = PythonOperator(
-        task_id="switch_port_collector",
-        python_callable=run_etl,
-        params={
-            "etl_name": "switch_port_collector",
-            "category": "Network Infrastructure",
-            "schedule": "Daily at 03:00 UTC",
-            "needs": [],
-            "prefers": [],
-        },
-        op_kwargs={
-            "etl_name": "switch_port_collector",
-            "needs": [], "prefers": [],
-            "category": "Network Infrastructure",
-            "schedule": "Daily at 03:00 UTC",
-            "resources": switch_port_collector_resources.resources,
-        },
-    )
+    # --- Probes group (ETL tasks) ---
+    with TaskGroup("DaggerProbes", prefix_group_id=False) as probes:
+        SwitchPortCollector = PythonOperator(
+            task_id="SwitchPortCollector",
+            python_callable=run_etl,
+            params={
+                "etl_name": "SwitchPortCollector",
+                "category": "Network Infrastructure",
+                "schedule": "Daily at 03:00 UTC",
+                "needs": SwitchPortCollector_task_config.needs,
+                "prefers": SwitchPortCollector_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "SwitchPortCollector",
+                "needs": SwitchPortCollector_task_config.needs, "prefers": SwitchPortCollector_task_config.prefers,
+                "category": "Network Infrastructure",
+                "schedule": "Daily at 03:00 UTC",
+                "resources": SwitchPortCollector_resources.resources,
+            },
+        )
 
-    netflow_capture = PythonOperator(
-        task_id="netflow_capture",
-        python_callable=run_etl,
-        params={
-            "etl_name": "netflow_capture",
-            "category": "Traffic Analytics",
-            "schedule": "Every 4 Hours",
-            "needs": ["switch_port_collector"],
-            "prefers": [],
-        },
-        op_kwargs={
-            "etl_name": "netflow_capture",
-            "needs": ["switch_port_collector"], "prefers": [],
-            "category": "Traffic Analytics",
-            "schedule": "Every 4 Hours",
-            "resources": netflow_capture_resources.resources,
-        },
-    )
+        NetflowCapture = PythonOperator(
+            task_id="NetflowCapture",
+            python_callable=run_etl,
+            params={
+                "etl_name": "NetflowCapture",
+                "category": "Traffic Analytics",
+                "schedule": "Every 4 Hours",
+                "needs": NetflowCapture_task_config.needs,
+                "prefers": NetflowCapture_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "NetflowCapture",
+                "needs": NetflowCapture_task_config.needs, "prefers": NetflowCapture_task_config.prefers,
+                "category": "Traffic Analytics",
+                "schedule": "Every 4 Hours",
+                "resources": NetflowCapture_resources.resources,
+            },
+        )
 
     # Sensor wiring
-    switch_telemetry_sensor >> switch_port_collector
-    snmp_trap_sensor >> switch_port_collector
+    SwitchTelemetrySensor >> SwitchPortCollector
+    SnmpTrapSensor >> SwitchPortCollector
 
-    # Dependencies derived from task configs:
-    # netflow_capture needs switch_port_collector
-    switch_port_collector >> netflow_capture
+    # --- Dynamic dependency wiring from task configs ---
+    etl_ops = {
+        "SwitchPortCollector": SwitchPortCollector,
+        "NetflowCapture": NetflowCapture,
+    }
+    task_cfgs = {
+        "SwitchPortCollector": SwitchPortCollector_task_config,
+        "NetflowCapture": NetflowCapture_task_config,
+    }
+    for task_id, op in etl_ops.items():
+        tc = task_cfgs[task_id]
+        for need in tc.needs:
+            if need in etl_ops:
+                etl_ops[need] >> op
+        for prefer in tc.prefers:
+            if prefer in etl_ops:
+                etl_ops[prefer] >> op
+        if any(p in etl_ops for p in tc.prefers):
+            op.trigger_rule = "all_done"

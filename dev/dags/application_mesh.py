@@ -17,29 +17,29 @@ from etl_runner import run_etl
 from sensor_runner import run_sensor
 
 from daily.task_configs import (
-    switch_port_collector_task_config,
-    packet_inspection_enrichment_task_config,
-    protocol_adoption_tracker_task_config,
-    handshake_completion_analysis_task_config,
-    ab_routing_experiment_engine_task_config,
-    endpoint_activity_scoring_task_config,
-    device_onboarding_monitor_task_config,
-    traffic_class_segments_task_config,
-    capacity_metrics_api_task_config,
+    SwitchPortCollector_task_config,
+    PacketInspectionEnrichment_task_config,
+    ProtocolAdoptionTracker_task_config,
+    HandshakeCompletionAnalysis_task_config,
+    AbRoutingExperimentEngine_task_config,
+    EndpointActivityScoring_task_config,
+    DeviceOnboardingMonitor_task_config,
+    TrafficClassSegments_task_config,
+    CapacityMetricsApiDummy_task_config,
 )
-from hourly.task_configs import netflow_capture_task_config
+from hourly.task_configs import NetflowCapture_task_config
 from daily.resources import (
-    switch_port_collector_resources,
-    packet_inspection_enrichment_resources,
-    protocol_adoption_tracker_resources,
-    handshake_completion_analysis_resources,
-    ab_routing_experiment_engine_resources,
-    endpoint_activity_scoring_resources,
-    device_onboarding_monitor_resources,
-    traffic_class_segments_resources,
-    capacity_metrics_api_resources,
+    SwitchPortCollector_resources,
+    PacketInspectionEnrichment_resources,
+    ProtocolAdoptionTracker_resources,
+    HandshakeCompletionAnalysis_resources,
+    AbRoutingExperimentEngine_resources,
+    EndpointActivityScoring_resources,
+    DeviceOnboardingMonitor_resources,
+    TrafficClassSegments_resources,
+    CapacityMetricsApiDummy_resources,
 )
-from hourly.resources import netflow_capture_resources
+from hourly.resources import NetflowCapture_resources
 
 default_args = {
     "owner": "data-engineering",
@@ -59,255 +59,269 @@ with DAG(
 ) as dag:
 
     # --- Sensors group (data ingestion) ---
-    with TaskGroup("sensors", prefix_group_id=False) as sensors:
-        switch_telemetry_sensor = PythonOperator(
-            task_id="switch_telemetry_sensor",
+    with TaskGroup("PrismSensors", prefix_group_id=False) as sensors:
+        SwitchTelemetrySensor = PythonOperator(
+            task_id="SwitchTelemetrySensor",
             python_callable=run_sensor,
             params={
-                "sensor_name": "switch_telemetry_sensor",
-                "team": "Infrastructure Ops",
+                "sensor_name": "SwitchTelemetrySensor",
+                "team": "Dagger",
                 "description": "Streams switch interface telemetry via gNMI/SNMP polling",
             },
             op_kwargs={
-                "sensor_name": "switch_telemetry_sensor",
-                "team": "Infrastructure Ops",
+                "sensor_name": "SwitchTelemetrySensor",
+                "team": "Dagger",
                 "description": "Streams switch interface telemetry via gNMI/SNMP polling",
                 "volume_per_day": 2_400_000,
             },
         )
 
-        netflow_collector_sensor = PythonOperator(
-            task_id="netflow_collector_sensor",
+        NetflowCollectorSensor = PythonOperator(
+            task_id="NetflowCollectorSensor",
             python_callable=run_sensor,
             params={
-                "sensor_name": "netflow_collector_sensor",
-                "team": "Network Monitoring",
+                "sensor_name": "NetflowCollectorSensor",
+                "team": "Prism",
                 "description": "Captures NetFlow/sFlow records from edge routers",
             },
             op_kwargs={
-                "sensor_name": "netflow_collector_sensor",
-                "team": "Network Monitoring",
+                "sensor_name": "NetflowCollectorSensor",
+                "team": "Prism",
                 "description": "Captures NetFlow/sFlow records from edge routers",
                 "volume_per_day": 5_200_000,
             },
         )
 
     # --- Ingestion group (depth 0-2) — collection and enrichment ---
-    with TaskGroup("ingestion", prefix_group_id=False) as ingestion:
-        switch_port_collector = PythonOperator(
-            task_id="switch_port_collector",
+    with TaskGroup("PrismIngestion", prefix_group_id=False) as ingestion:
+        SwitchPortCollector = PythonOperator(
+            task_id="SwitchPortCollector",
             python_callable=run_etl,
             params={
-                "etl_name": "switch_port_collector",
+                "etl_name": "SwitchPortCollector",
                 "category": "Network Infrastructure",
                 "schedule": "Daily at 03:00 UTC",
-                "needs": [],
-                "prefers": [],
+                "needs": SwitchPortCollector_task_config.needs,
+                "prefers": SwitchPortCollector_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "switch_port_collector",
-                "needs": [], "prefers": [],
+                "etl_name": "SwitchPortCollector",
+                "needs": SwitchPortCollector_task_config.needs, "prefers": SwitchPortCollector_task_config.prefers,
                 "category": "Network Infrastructure",
                 "schedule": "Daily at 03:00 UTC",
-                "task_group": "ingestion",
-                "resources": switch_port_collector_resources.resources,
+                "resources": SwitchPortCollector_resources.resources,
             },
         )
 
-        netflow_capture = PythonOperator(
-            task_id="netflow_capture",
+        NetflowCapture = PythonOperator(
+            task_id="NetflowCapture",
             python_callable=run_etl,
             params={
-                "etl_name": "netflow_capture",
+                "etl_name": "NetflowCapture",
                 "category": "Traffic Analytics",
                 "schedule": "Every 4 Hours",
-                "needs": ["switch_port_collector"],
-                "prefers": [],
+                "needs": NetflowCapture_task_config.needs,
+                "prefers": NetflowCapture_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "netflow_capture",
-                "needs": ["switch_port_collector"], "prefers": [],
+                "etl_name": "NetflowCapture",
+                "needs": NetflowCapture_task_config.needs, "prefers": NetflowCapture_task_config.prefers,
                 "category": "Traffic Analytics",
                 "schedule": "Every 4 Hours",
-                "task_group": "ingestion",
-                "resources": netflow_capture_resources.resources,
+                "resources": NetflowCapture_resources.resources,
             },
         )
 
-        packet_inspection_enrichment = PythonOperator(
-            task_id="packet_inspection_enrichment",
+        PacketInspectionEnrichment = PythonOperator(
+            task_id="PacketInspectionEnrichment",
             python_callable=run_etl,
             params={
-                "etl_name": "packet_inspection_enrichment",
+                "etl_name": "PacketInspectionEnrichment",
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 03:30 UTC",
-                "needs": ["netflow_capture", "switch_port_collector"],
-                "prefers": [],
+                "needs": PacketInspectionEnrichment_task_config.needs,
+                "prefers": PacketInspectionEnrichment_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "packet_inspection_enrichment",
-                "needs": ["netflow_capture", "switch_port_collector"], "prefers": [],
+                "etl_name": "PacketInspectionEnrichment",
+                "needs": PacketInspectionEnrichment_task_config.needs, "prefers": PacketInspectionEnrichment_task_config.prefers,
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 03:30 UTC",
-                "task_group": "ingestion",
-                "resources": packet_inspection_enrichment_resources.resources,
+                "resources": PacketInspectionEnrichment_resources.resources,
             },
         )
 
     # --- Consumers group (depth 3) — downstream analytics ---
-    with TaskGroup("consumers", prefix_group_id=False) as consumers:
-        protocol_adoption_tracker = PythonOperator(
-            task_id="protocol_adoption_tracker",
+    with TaskGroup("PrismConsumers", prefix_group_id=False) as consumers:
+        ProtocolAdoptionTracker = PythonOperator(
+            task_id="ProtocolAdoptionTracker",
             python_callable=run_etl,
             params={
-                "etl_name": "protocol_adoption_tracker",
+                "etl_name": "ProtocolAdoptionTracker",
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 04:00 UTC",
-                "needs": ["packet_inspection_enrichment"],
-                "prefers": [],
+                "needs": ProtocolAdoptionTracker_task_config.needs,
+                "prefers": ProtocolAdoptionTracker_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "protocol_adoption_tracker",
-                "needs": ["packet_inspection_enrichment"], "prefers": [],
+                "etl_name": "ProtocolAdoptionTracker",
+                "needs": ProtocolAdoptionTracker_task_config.needs, "prefers": ProtocolAdoptionTracker_task_config.prefers,
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 04:00 UTC",
-                "task_group": "consumers",
-                "resources": protocol_adoption_tracker_resources.resources,
+                "resources": ProtocolAdoptionTracker_resources.resources,
             },
         )
 
-        handshake_completion_analysis = PythonOperator(
-            task_id="handshake_completion_analysis",
+        HandshakeCompletionAnalysis = PythonOperator(
+            task_id="HandshakeCompletionAnalysis",
             python_callable=run_etl,
             params={
-                "etl_name": "handshake_completion_analysis",
+                "etl_name": "HandshakeCompletionAnalysis",
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 04:00 UTC",
-                "needs": ["packet_inspection_enrichment"],
-                "prefers": [],
+                "needs": HandshakeCompletionAnalysis_task_config.needs,
+                "prefers": HandshakeCompletionAnalysis_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "handshake_completion_analysis",
-                "needs": ["packet_inspection_enrichment"], "prefers": [],
+                "etl_name": "HandshakeCompletionAnalysis",
+                "needs": HandshakeCompletionAnalysis_task_config.needs, "prefers": HandshakeCompletionAnalysis_task_config.prefers,
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 04:00 UTC",
-                "task_group": "consumers",
-                "resources": handshake_completion_analysis_resources.resources,
+                "resources": HandshakeCompletionAnalysis_resources.resources,
             },
         )
 
-        ab_routing_experiment_engine = PythonOperator(
-            task_id="ab_routing_experiment_engine",
+        AbRoutingExperimentEngine = PythonOperator(
+            task_id="AbRoutingExperimentEngine",
             python_callable=run_etl,
             params={
-                "etl_name": "ab_routing_experiment_engine",
+                "etl_name": "AbRoutingExperimentEngine",
                 "category": "Network Science",
                 "schedule": "Daily at 04:30 UTC",
-                "needs": ["packet_inspection_enrichment"],
-                "prefers": ["protocol_adoption_tracker"],
+                "needs": AbRoutingExperimentEngine_task_config.needs,
+                "prefers": AbRoutingExperimentEngine_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "ab_routing_experiment_engine",
-                "needs": ["packet_inspection_enrichment"], "prefers": ["protocol_adoption_tracker"],
+                "etl_name": "AbRoutingExperimentEngine",
+                "needs": AbRoutingExperimentEngine_task_config.needs, "prefers": AbRoutingExperimentEngine_task_config.prefers,
                 "category": "Network Science",
                 "schedule": "Daily at 04:30 UTC",
-                "task_group": "consumers",
-                "resources": ab_routing_experiment_engine_resources.resources,
+                "resources": AbRoutingExperimentEngine_resources.resources,
             },
         )
 
-        endpoint_activity_scoring = PythonOperator(
-            task_id="endpoint_activity_scoring",
+        EndpointActivityScoring = PythonOperator(
+            task_id="EndpointActivityScoring",
             python_callable=run_etl,
             params={
-                "etl_name": "endpoint_activity_scoring",
+                "etl_name": "EndpointActivityScoring",
                 "category": "Predictive Analytics",
                 "schedule": "Daily at 04:30 UTC",
-                "needs": ["packet_inspection_enrichment"],
-                "prefers": ["device_fingerprint_enrichment"],
+                "needs": EndpointActivityScoring_task_config.needs,
+                "prefers": EndpointActivityScoring_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "endpoint_activity_scoring",
-                "needs": ["packet_inspection_enrichment"], "prefers": ["device_fingerprint_enrichment"],
+                "etl_name": "EndpointActivityScoring",
+                "needs": EndpointActivityScoring_task_config.needs, "prefers": EndpointActivityScoring_task_config.prefers,
                 "category": "Predictive Analytics",
                 "schedule": "Daily at 04:30 UTC",
-                "task_group": "consumers",
-                "resources": endpoint_activity_scoring_resources.resources,
+                "resources": EndpointActivityScoring_resources.resources,
             },
         )
 
-        device_onboarding_monitor = PythonOperator(
-            task_id="device_onboarding_monitor",
+        DeviceOnboardingMonitor = PythonOperator(
+            task_id="DeviceOnboardingMonitor",
             python_callable=run_etl,
             params={
-                "etl_name": "device_onboarding_monitor",
+                "etl_name": "DeviceOnboardingMonitor",
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 04:00 UTC",
-                "needs": ["packet_inspection_enrichment"],
-                "prefers": [],
+                "needs": DeviceOnboardingMonitor_task_config.needs,
+                "prefers": DeviceOnboardingMonitor_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "device_onboarding_monitor",
-                "needs": ["packet_inspection_enrichment"], "prefers": [],
+                "etl_name": "DeviceOnboardingMonitor",
+                "needs": DeviceOnboardingMonitor_task_config.needs, "prefers": DeviceOnboardingMonitor_task_config.prefers,
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 04:00 UTC",
-                "task_group": "consumers",
-                "resources": device_onboarding_monitor_resources.resources,
+                "resources": DeviceOnboardingMonitor_resources.resources,
             },
         )
 
-        traffic_class_segments = PythonOperator(
-            task_id="traffic_class_segments",
+        TrafficClassSegments = PythonOperator(
+            task_id="TrafficClassSegments",
             python_callable=run_etl,
             params={
-                "etl_name": "traffic_class_segments",
+                "etl_name": "TrafficClassSegments",
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 05:00 UTC",
-                "needs": ["packet_inspection_enrichment"],
-                "prefers": ["endpoint_activity_scoring"],
+                "needs": TrafficClassSegments_task_config.needs,
+                "prefers": TrafficClassSegments_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "traffic_class_segments",
-                "needs": ["packet_inspection_enrichment"], "prefers": ["endpoint_activity_scoring"],
+                "etl_name": "TrafficClassSegments",
+                "needs": TrafficClassSegments_task_config.needs, "prefers": TrafficClassSegments_task_config.prefers,
                 "category": "Protocol Analytics",
                 "schedule": "Daily at 05:00 UTC",
-                "task_group": "consumers",
-                "resources": traffic_class_segments_resources.resources,
+                "resources": TrafficClassSegments_resources.resources,
             },
         )
 
-        capacity_metrics_api = PythonOperator(
-            task_id="capacity_metrics_api",
+        CapacityMetricsApiDummy = PythonOperator(
+            task_id="CapacityMetricsApiDummy",
             python_callable=run_etl,
             params={
-                "etl_name": "capacity_metrics_api",
+                "etl_name": "CapacityMetricsApiDummy",
                 "category": "Network APIs",
                 "schedule": "On-demand (API)",
-                "needs": ["packet_inspection_enrichment"],
-                "prefers": ["protocol_adoption_tracker", "endpoint_activity_scoring"],
+                "needs": CapacityMetricsApiDummy_task_config.needs,
+                "prefers": CapacityMetricsApiDummy_task_config.prefers,
             },
             op_kwargs={
-                "etl_name": "capacity_metrics_api",
-                "needs": ["packet_inspection_enrichment"], "prefers": ["protocol_adoption_tracker", "endpoint_activity_scoring"],
+                "etl_name": "CapacityMetricsApiDummy",
+                "needs": CapacityMetricsApiDummy_task_config.needs, "prefers": CapacityMetricsApiDummy_task_config.prefers,
                 "category": "Network APIs",
                 "schedule": "On-demand (API)",
-                "task_group": "consumers",
-                "resources": capacity_metrics_api_resources.resources,
+                "resources": CapacityMetricsApiDummy_resources.resources,
             },
         )
 
     # --- Sensor wiring (sensors → root ETL tasks) ---
-    switch_telemetry_sensor >> switch_port_collector
-    netflow_collector_sensor >> netflow_capture
+    SwitchTelemetrySensor >> SwitchPortCollector
+    NetflowCollectorSensor >> NetflowCapture
 
-    # --- Dependency wiring ---
-    switch_port_collector >> netflow_capture
-    netflow_capture >> packet_inspection_enrichment
-    switch_port_collector >> packet_inspection_enrichment
-    packet_inspection_enrichment >> protocol_adoption_tracker
-    packet_inspection_enrichment >> handshake_completion_analysis
-    packet_inspection_enrichment >> ab_routing_experiment_engine
-    packet_inspection_enrichment >> endpoint_activity_scoring
-    packet_inspection_enrichment >> device_onboarding_monitor
-    packet_inspection_enrichment >> traffic_class_segments
-    packet_inspection_enrichment >> capacity_metrics_api
+    # --- Dynamic dependency wiring from task configs ---
+    etl_ops = {
+        "SwitchPortCollector": SwitchPortCollector,
+        "NetflowCapture": NetflowCapture,
+        "PacketInspectionEnrichment": PacketInspectionEnrichment,
+        "ProtocolAdoptionTracker": ProtocolAdoptionTracker,
+        "HandshakeCompletionAnalysis": HandshakeCompletionAnalysis,
+        "AbRoutingExperimentEngine": AbRoutingExperimentEngine,
+        "EndpointActivityScoring": EndpointActivityScoring,
+        "DeviceOnboardingMonitor": DeviceOnboardingMonitor,
+        "TrafficClassSegments": TrafficClassSegments,
+        "CapacityMetricsApiDummy": CapacityMetricsApiDummy,
+    }
+    task_cfgs = {
+        "SwitchPortCollector": SwitchPortCollector_task_config,
+        "NetflowCapture": NetflowCapture_task_config,
+        "PacketInspectionEnrichment": PacketInspectionEnrichment_task_config,
+        "ProtocolAdoptionTracker": ProtocolAdoptionTracker_task_config,
+        "HandshakeCompletionAnalysis": HandshakeCompletionAnalysis_task_config,
+        "AbRoutingExperimentEngine": AbRoutingExperimentEngine_task_config,
+        "EndpointActivityScoring": EndpointActivityScoring_task_config,
+        "DeviceOnboardingMonitor": DeviceOnboardingMonitor_task_config,
+        "TrafficClassSegments": TrafficClassSegments_task_config,
+        "CapacityMetricsApiDummy": CapacityMetricsApiDummy_task_config,
+    }
+    for task_id, op in etl_ops.items():
+        tc = task_cfgs[task_id]
+        for need in tc.needs:
+            if need in etl_ops:
+                etl_ops[need] >> op
+        for prefer in tc.prefers:
+            if prefer in etl_ops:
+                etl_ops[prefer] >> op
+        if any(p in etl_ops for p in tc.prefers):
+            op.trigger_rule = "all_done"

@@ -1,10 +1,13 @@
 """Seed Iceberg tables with realistic network-themed sample data."""
 
+import os
 import random
 import sys
 import time
 import urllib.request
 import urllib.error
+
+os.umask(0)
 from datetime import date, datetime, timedelta
 
 from pyspark.sql import SparkSession
@@ -162,6 +165,7 @@ def create_spark_session():
                 "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.driver.memory", "1g")
         .config("spark.ui.enabled", "false")
+        .config("spark.hadoop.fs.permissions.umask-mode", "000")
         .getOrCreate()
     )
     return spark
@@ -1013,33 +1017,33 @@ def gen_weekly_network_digest():
 # ---------------------------------------------------------------------------
 
 TABLE_GENERATORS = {
-    "bgp_route_sync": gen_bgp_route_sync,
-    "syslog_event_stream": gen_syslog_event_stream,
-    "bandwidth_billing_aggregator": gen_bandwidth_billing_aggregator,
-    "netflow_capture": gen_netflow_capture,
-    "dns_record_sync": gen_dns_record_sync,
-    "switch_port_collector": gen_switch_port_collector,
-    "device_fingerprint_enrichment": gen_device_fingerprint_enrichment,
-    "bandwidth_cost_reconciliation": gen_bandwidth_cost_reconciliation,
-    "link_failure_prediction": gen_link_failure_prediction,
-    "incident_analytics_rollup": gen_incident_analytics_rollup,
-    "noc_dashboard_snapshot": gen_noc_dashboard_snapshot,
-    "packet_inspection_enrichment": gen_packet_inspection_enrichment,
-    "protocol_adoption_tracker": gen_protocol_adoption_tracker,
-    "handshake_completion_analysis": gen_handshake_completion_analysis,
-    "ab_routing_experiment_engine": gen_ab_routing_experiment_engine,
-    "endpoint_activity_scoring": gen_endpoint_activity_scoring,
-    "device_onboarding_monitor": gen_device_onboarding_monitor,
-    "traffic_class_segments": gen_traffic_class_segments,
-    "dhcp_lease_sync": gen_dhcp_lease_sync,
-    "http_access_log_ingest": gen_http_access_log_ingest,
-    "traffic_attribution_model": gen_traffic_attribution_model,
-    "threat_scoring_pipeline": gen_threat_scoring_pipeline,
-    "peering_roi_calculator": gen_peering_roi_calculator,
-    "capacity_planning_forecast": gen_capacity_planning_forecast,
-    "mac_address_enrichment": gen_mac_address_enrichment,
-    "cdn_cost_reconciler": gen_cdn_cost_reconciler,
-    "weekly_network_digest": gen_weekly_network_digest,
+    "BgpRouteSync": gen_bgp_route_sync,
+    "SyslogEventStream": gen_syslog_event_stream,
+    "BandwidthBillingAggregator": gen_bandwidth_billing_aggregator,
+    "NetflowCapture": gen_netflow_capture,
+    "DnsRecordSync": gen_dns_record_sync,
+    "SwitchPortCollector": gen_switch_port_collector,
+    "DeviceFingerprintEnrichment": gen_device_fingerprint_enrichment,
+    "BandwidthCostReconciliation": gen_bandwidth_cost_reconciliation,
+    "LinkFailurePrediction": gen_link_failure_prediction,
+    "IncidentAnalyticsRollup": gen_incident_analytics_rollup,
+    "NocDashboardSnapshot": gen_noc_dashboard_snapshot,
+    "PacketInspectionEnrichment": gen_packet_inspection_enrichment,
+    "ProtocolAdoptionTracker": gen_protocol_adoption_tracker,
+    "HandshakeCompletionAnalysis": gen_handshake_completion_analysis,
+    "AbRoutingExperimentEngine": gen_ab_routing_experiment_engine,
+    "EndpointActivityScoring": gen_endpoint_activity_scoring,
+    "DeviceOnboardingMonitor": gen_device_onboarding_monitor,
+    "TrafficClassSegments": gen_traffic_class_segments,
+    "DhcpLeaseSync": gen_dhcp_lease_sync,
+    "HttpAccessLogIngest": gen_http_access_log_ingest,
+    "TrafficAttributionModel": gen_traffic_attribution_model,
+    "ThreatScoringPipeline": gen_threat_scoring_pipeline,
+    "PeeringRoiCalculator": gen_peering_roi_calculator,
+    "CapacityPlanningForecast": gen_capacity_planning_forecast,
+    "MacAddressEnrichment": gen_mac_address_enrichment,
+    "CdnCostReconciler": gen_cdn_cost_reconciler,
+    "WeeklyNetworkDigest": gen_weekly_network_digest,
 }
 
 
@@ -1062,6 +1066,7 @@ def main():
 
     print(f"Data seeding complete! Total rows: {total_rows}")
     spark.stop()
+    sys.exit(0)
 
 
 if __name__ == "__main__":

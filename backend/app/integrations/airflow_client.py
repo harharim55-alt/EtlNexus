@@ -5,6 +5,7 @@ creating a new TCP connection per request.
 """
 
 import logging
+import re
 from datetime import datetime
 
 import httpx
@@ -137,6 +138,77 @@ class AirflowClient:
         except (httpx.HTTPStatusError, httpx.RequestError) as e:
             logger.debug("Failed to fetch task log %s/%s/%s: %s", dag_id, dag_run_id, task_id, e)
             return ""
+
+    async def get_dag_source(self, dag_id: str) -> str | None:
+        """Fetch the DAG Python source via Airflow dagSources API. Cached for 5 minutes."""
+        cache_key = f"dag_source:{dag_id}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        details = await self._request("GET", f"/dags/{dag_id}/details")
+        if not details:
+            return None
+
+        file_token = details.get("file_token")
+        if not file_token:
+            return None
+
+        url = f"{self.base_url}/dagSources/{file_token}"
+        try:
+            resp = await self._client.get(url, auth=self.auth)
+            resp.raise_for_status()
+            source = resp.text
+            if source:
+                self._cache.set(cache_key, source)
+            return source
+        except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            logger.debug("Failed to fetch DAG source for %s: %s", dag_id, e)
+            return None
+
+    async def get_task_group_map(self, dag_id: str) -> dict[str, str]:
+        """Parse DAG source to build task_id → TaskGroup name mapping.
+
+        Parses the Python source to find TaskGroup context managers and
+        task_id assignments within them.
+        """
+        cache_key = f"task_group_map:{dag_id}"
+        cached = self._cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        source = await self.get_dag_source(dag_id)
+        if not source:
+            return {}
+
+        mapping: dict[str, str] = {}
+        # Track current TaskGroup by indentation
+        group_stack: list[tuple[int, str]] = []  # (indent_level, group_name)
+
+        for line in source.splitlines():
+            stripped = line.lstrip()
+            if not stripped or stripped.startswith("#"):
+                continue  # Skip blank lines and comments
+            indent = len(line) - len(stripped)
+
+            # Pop groups that we've exited (dedented past)
+            while group_stack and indent <= group_stack[-1][0]:
+                group_stack.pop()
+
+            # Detect: with TaskGroup("GroupName", ...) as ...:
+            tg_match = re.match(r'with\s+TaskGroup\(\s*["\'](\w+)["\']', stripped)
+            if tg_match:
+                group_stack.append((indent, tg_match.group(1)))
+                continue
+
+            # Detect: task_id="TaskId" within an operator definition
+            tid_match = re.search(r'task_id\s*=\s*["\'](\w+)["\']', stripped)
+            if tid_match and group_stack:
+                mapping[tid_match.group(1)] = group_stack[-1][1]
+
+        if mapping:
+            self._cache.set(cache_key, mapping)
+        return mapping
 
     async def get_latest_dag_run_status(self, dag_id: str) -> dict:
         """Get the latest run status for a DAG. Returns status dict."""

@@ -82,15 +82,14 @@ class SensorService:
         all_pipelines = await self.pipeline_repo.get_all()
         task_id_to_pipeline: dict[str, object] = {}
         for p in all_pipelines:
-            tid = p.task_id or p.name.lower().replace(" ", "_")
-            task_id_to_pipeline[tid] = p
+            if p.task_id:
+                task_id_to_pipeline[p.task_id] = p
 
         # Status map
         status_map: dict[str, str] = {}
         for p in all_pipelines:
-            tid = p.task_id or p.name.lower().replace(" ", "_")
-            if p.airflow_status:
-                status_map[tid] = p.airflow_status.status
+            if p.task_id and p.airflow_status:
+                status_map[p.task_id] = p.airflow_status.status
 
         # BFS from each selected sensor, collecting downstream ETLs
         # Track which sensors reach which ETL task

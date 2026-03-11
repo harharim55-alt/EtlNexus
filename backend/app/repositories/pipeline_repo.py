@@ -7,6 +7,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.pipeline import Pipeline, PipelineField
 from app.models.run_history import PipelineRunHistory
+from app.models.visibility_grant import VisibilityGrant
 
 
 class PipelineRepository:
@@ -132,6 +133,109 @@ class PipelineRepository:
         pipeline.last_updated_at = datetime.utcnow()
         await self.session.commit()
         return pipeline
+
+    async def list_visible(
+        self,
+        *,
+        user_id: uuid.UUID | None = None,
+        user_team_ids: set[uuid.UUID] | None = None,
+        is_admin: bool = False,
+        query: str | None = None,
+    ) -> list[Pipeline]:
+        """Return pipelines filtered by team visibility + optional text search."""
+        base = (
+            select(Pipeline)
+            .options(selectinload(Pipeline.airflow_status))
+        )
+
+        if query:
+            pattern = f"%{query}%"
+            field_subq = (
+                select(PipelineField.pipeline_id)
+                .where(PipelineField.name.ilike(pattern))
+                .distinct()
+                .scalar_subquery()
+            )
+            base = base.where(
+                or_(
+                    Pipeline.name.ilike(pattern),
+                    Pipeline.description.ilike(pattern),
+                    Pipeline.id.in_(field_subq),
+                )
+            )
+
+        if not is_admin:
+            visibility_conditions = [Pipeline.team_id.is_(None)]
+
+            # Team-based visibility: user's own teams
+            if user_team_ids:
+                visibility_conditions.append(Pipeline.team_id.in_(user_team_ids))
+
+                # Grants targeting user's teams → specific pipeline
+                visibility_conditions.append(
+                    Pipeline.id.in_(
+                        select(VisibilityGrant.pipeline_id)
+                        .where(
+                            VisibilityGrant.grantee_team_id.in_(user_team_ids),
+                            VisibilityGrant.pipeline_id.isnot(None),
+                        )
+                        .scalar_subquery()
+                    )
+                )
+                # Grants targeting user's teams → all pipelines of a source team
+                visibility_conditions.append(
+                    Pipeline.team_id.in_(
+                        select(VisibilityGrant.source_team_id)
+                        .where(
+                            VisibilityGrant.grantee_team_id.in_(user_team_ids),
+                            VisibilityGrant.source_team_id.isnot(None),
+                        )
+                        .scalar_subquery()
+                    )
+                )
+
+            # Grants targeting specific user → specific pipeline
+            if user_id:
+                visibility_conditions.append(
+                    Pipeline.id.in_(
+                        select(VisibilityGrant.pipeline_id)
+                        .where(
+                            VisibilityGrant.grantee_user_id == user_id,
+                            VisibilityGrant.pipeline_id.isnot(None),
+                        )
+                        .scalar_subquery()
+                    )
+                )
+                # Grants targeting specific user → all pipelines of a source team
+                visibility_conditions.append(
+                    Pipeline.team_id.in_(
+                        select(VisibilityGrant.source_team_id)
+                        .where(
+                            VisibilityGrant.grantee_user_id == user_id,
+                            VisibilityGrant.source_team_id.isnot(None),
+                        )
+                        .scalar_subquery()
+                    )
+                )
+
+            base = base.where(or_(*visibility_conditions))
+
+        base = base.order_by(Pipeline.name).limit(200)
+        result = await self.session.execute(base)
+        return list(result.scalars().all())
+
+    async def set_team(
+        self,
+        pipeline_id: uuid.UUID,
+        team_name: str,
+        team_id: uuid.UUID,
+    ) -> None:
+        """Set the team ownership on a pipeline."""
+        pipeline = await self.get_by_id(pipeline_id)
+        if pipeline:
+            pipeline.team = team_name
+            pipeline.team_id = team_id
+            await self.session.flush()
 
     async def get_all_with_fields(self) -> list[Pipeline]:
         stmt = (

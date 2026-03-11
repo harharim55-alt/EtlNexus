@@ -70,7 +70,7 @@ function EtlNode({
   onClick?: () => void;
 }) {
   const cfg = STATUS_CONFIG[node.status] ?? STATUS_CONFIG.unknown;
-  const displayName = node.pipeline_name ?? node.task_id.replace(/_/g, " ");
+  const displayName = node.pipeline_name ?? node.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const isClickable = !!node.pipeline_id;
 
   return (
