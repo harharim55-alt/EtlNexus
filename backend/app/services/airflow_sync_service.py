@@ -18,6 +18,7 @@ from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
+from app.repositories.sensor_repo import SensorRepository
 from app.services.airflow_service import TASK_STATE_MAP
 
 logger = logging.getLogger(__name__)
@@ -34,6 +35,7 @@ class AirflowSyncService:
         self.resource_repo = ResourceRepository(session)
         self.airflow_repo = AirflowRepository(session)
         self.dag_task_repo = DagTaskRepository(session)
+        self.sensor_repo = SensorRepository(session)
 
     async def sync_pipelines_from_airflow(self) -> int:
         """Discover all tasks across all DAGs and register as pipelines + lineage.
@@ -55,6 +57,8 @@ class AirflowSyncService:
         # Collect unique task metadata across all DAGs.
         # A task can appear in multiple DAGs — we take the first occurrence's metadata.
         seen_tasks: dict[str, dict] = {}
+        # Sensor metadata (keyed by sensor_name)
+        seen_sensors: dict[str, dict] = {}
         # Resource configs per task per DAG (collected before dedup — need all occurrences)
         resource_by_dag: dict[str, dict[str, dict]] = {}
         # DAG task graph data: (dag_id, task_id) -> {downstream_task_ids, needs, prefers}
@@ -94,9 +98,9 @@ class AirflowSyncService:
                 op_kwargs = rendered.get("op_kwargs", {}) or {}
 
                 # Fall back to task definition params for upstream_failed tasks
-                if not op_kwargs.get("etl_name"):
+                if not op_kwargs.get("etl_name") and not op_kwargs.get("sensor_name"):
                     params = params_by_task.get(task_id, {})
-                    if params.get("etl_name"):
+                    if params.get("etl_name") or params.get("sensor_name"):
                         logger.debug(
                             "Using params fallback for task %s in DAG %s (state=%s)",
                             task_id, dag_id, inst.get("state", "?"),
@@ -104,6 +108,27 @@ class AirflowSyncService:
                         op_kwargs = params
 
                 op_kwargs_by_task[task_id] = op_kwargs
+
+                # Detect sensor tasks (sensor_name in op_kwargs)
+                sensor_name = op_kwargs.get("sensor_name")
+                if sensor_name:
+                    if sensor_name not in seen_sensors:
+                        log_content = await airflow_client.get_task_log(
+                            dag_id, dag_run_id, task_id
+                        )
+                        volume = self._parse_sensor_volume(log_content)
+                        description = op_kwargs.get("description") or self._parse_sensor_description(log_content, task_id)
+                        seen_sensors[sensor_name] = {
+                            "sensor_name": sensor_name,
+                            "team": op_kwargs.get("team", ""),
+                            "description": description,
+                            "volume_per_day": volume or op_kwargs.get("volume_per_day"),
+                            "dag_ids": [dag_id],
+                        }
+                    else:
+                        if dag_id not in seen_sensors[sensor_name]["dag_ids"]:
+                            seen_sensors[sensor_name]["dag_ids"].append(dag_id)
+                    continue
 
                 if not op_kwargs.get("etl_name"):
                     if task_id not in seen_tasks:
@@ -139,9 +164,11 @@ class AirflowSyncService:
                     "needs": op_kwargs.get("needs", []),
                 }
 
-            # Build dag_task_graph entries for all ETL tasks in this DAG
+            # Build dag_task_graph entries for all tasks in this DAG (ETLs + sensors)
             for task_id, op_kwargs in op_kwargs_by_task.items():
-                if not op_kwargs.get("etl_name"):
+                s_name = op_kwargs.get("sensor_name")
+                e_name = op_kwargs.get("etl_name")
+                if not s_name and not e_name:
                     continue
                 dag_task_graph.append({
                     "dag_id": dag_id,
@@ -149,6 +176,8 @@ class AirflowSyncService:
                     "downstream_task_ids": downstream_map.get(task_id, []),
                     "needs": op_kwargs.get("needs", []),
                     "prefers": op_kwargs.get("prefers", []),
+                    "task_group_id": op_kwargs.get("task_group") or None,
+                    "sensor_name": s_name,
                 })
 
         logger.info("Collected %d ETL tasks from %d DAGs", len(seen_tasks), len(all_dags))
@@ -255,10 +284,30 @@ class AirflowSyncService:
                         "Failed to sync resource config for %s in %s", task_id, dag_id
                     )
 
-        # Pass 4: Sync DAG task graph (membership + downstream edges)
+        # Pass 4: Upsert sensors
+        sensor_name_to_id: dict[str, uuid.UUID] = {}
+        for sensor_name, meta in seen_sensors.items():
+            display_name = self._task_id_to_display_name(sensor_name)
+            sensor = await self.sensor_repo.upsert({
+                "sensor_name": sensor_name,
+                "display_name": display_name,
+                "description": meta["description"],
+                "team": meta["team"],
+                "volume_per_day": meta["volume_per_day"],
+                "dag_ids": meta["dag_ids"],
+            })
+            sensor_name_to_id[sensor_name] = sensor.id
+
+        logger.info("Synced %d sensors from Airflow", len(seen_sensors))
+
+        # Pass 5: Sync DAG task graph (membership + downstream edges)
         current_pairs: set[tuple[str, str]] = set()
         for entry in dag_task_graph:
             entry["pipeline_id"] = task_id_to_pipeline_id.get(entry["task_id"])
+            # Link sensor entries to sensor records
+            s_name = entry.get("sensor_name")
+            if s_name:
+                entry["sensor_id"] = sensor_name_to_id.get(s_name)
             await self.dag_task_repo.upsert(entry)
             current_pairs.add((entry["dag_id"], entry["task_id"]))
 
@@ -268,8 +317,9 @@ class AirflowSyncService:
 
         await self.session.commit()
         logger.info(
-            "Synced %d pipelines, %d resource configs, %d dag_task entries from Airflow",
+            "Synced %d pipelines, %d sensors, %d resource configs, %d dag_task entries from Airflow",
             synced,
+            len(seen_sensors),
             resource_count,
             len(dag_task_graph),
         )
@@ -535,6 +585,10 @@ class AirflowSyncService:
             for (dag_id, dag_run_id), log_content in zip(needs_log_fetch, log_results):
                 try:
                     actuals = self._parse_resource_actual(log_content)
+                    plan_json = self._parse_execution_plan(log_content)
+                    if plan_json:
+                        actuals = actuals or {}
+                        actuals["execution_plan"] = plan_json
                     if actuals:
                         await self.resource_repo.update_run_actuals(
                             pipeline_id, dag_id, dag_run_id, actuals
@@ -651,3 +705,44 @@ class AirflowSyncService:
                 except json.JSONDecodeError:
                     pass
         return None
+
+    @staticmethod
+    def _parse_execution_plan(log: str) -> str | None:
+        """Extract execution plan JSON from task log."""
+        for line in log.splitlines():
+            if "ETL_EXECUTION_PLAN:" in line:
+                raw = line.split("ETL_EXECUTION_PLAN:", 1)[1].strip()
+                try:
+                    json.loads(raw)  # validate it's valid JSON
+                    return raw
+                except (json.JSONDecodeError, ValueError):
+                    pass
+        return None
+
+    @staticmethod
+    def _parse_sensor_volume(log_content: str) -> int | None:
+        """Parse SENSOR_VOLUME line from a sensor task's log output."""
+        if not log_content:
+            return None
+        for line in log_content.splitlines():
+            if "SENSOR_VOLUME:" in line:
+                parts = line.split("SENSOR_VOLUME:", 1)
+                if len(parts) == 2:
+                    try:
+                        return int(parts[1].strip())
+                    except ValueError:
+                        pass
+        return None
+
+    @staticmethod
+    def _parse_sensor_description(log_content: str, task_id: str) -> str:
+        """Parse SENSOR_DESCRIPTION line from a sensor task's log output."""
+        if log_content:
+            for line in log_content.splitlines():
+                if "SENSOR_DESCRIPTION:" in line:
+                    parts = line.split("SENSOR_DESCRIPTION:", 1)
+                    if len(parts) == 2:
+                        desc = parts[1].strip()
+                        if desc:
+                            return desc
+        return task_id.replace("_", " ").title()

@@ -9,6 +9,8 @@ from app.schemas.pipeline import (
     JoinSuggestionsResponse,
     PipelineDetail,
     PipelineListItem,
+    PipelineUpdateRequest,
+    PipelineUpdateResponse,
 )
 
 
@@ -43,6 +45,28 @@ class PipelineService:
             pipeline_list_cache.set("all", items)
         return items
 
+    async def update_pipeline_metadata(
+        self,
+        pipeline_id: uuid.UUID,
+        update: PipelineUpdateRequest,
+    ) -> PipelineUpdateResponse | None:
+        pipeline = await self.pipeline_repo.update_metadata(
+            pipeline_id,
+            description=update.description,
+            documentation=update.documentation,
+            updated_by=update.updated_by,
+        )
+        if not pipeline:
+            return None
+        pipeline_list_cache.clear()
+        return PipelineUpdateResponse(
+            id=str(pipeline.id),
+            description=pipeline.description,
+            documentation=pipeline.documentation,
+            last_updated_by=pipeline.last_updated_by,
+            last_updated_at=pipeline.last_updated_at,
+        )
+
     async def get_pipeline_detail(self, pipeline_id: uuid.UUID) -> PipelineDetail | None:
         pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
         if not pipeline:
@@ -73,6 +97,9 @@ class PipelineService:
             ],
             source_tables=sorted(source_tables),
             destination_tables=sorted(destination_tables),
+            documentation=pipeline.documentation,
+            last_updated_by=pipeline.last_updated_by,
+            last_updated_at=pipeline.last_updated_at,
             created_at=pipeline.created_at,
             updated_at=pipeline.updated_at,
         )

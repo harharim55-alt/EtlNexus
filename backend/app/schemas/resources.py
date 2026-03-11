@@ -17,6 +17,8 @@ class DurationRun(BaseModel):
     execution_date: str | None = None
     status: str = "unknown"
     dag_id: str = ""
+    spark_application_id: str | None = None
+    metrics_source: str | None = None
 
 
 class ActualUsage(BaseModel):
@@ -24,6 +26,16 @@ class ActualUsage(BaseModel):
     avg_executor_memory_peak_mb: int | None = None
     avg_cpu_utilization_pct: float | None = None
     avg_executors_active: int | None = None
+    # sparkMeasure extended metrics
+    avg_jvm_gc_time_ms: int | None = None
+    avg_shuffle_read_bytes: int | None = None
+    avg_shuffle_write_bytes: int | None = None
+    avg_input_bytes: int | None = None
+    avg_output_bytes: int | None = None
+    avg_memory_bytes_spilled: int | None = None
+    avg_disk_bytes_spilled: int | None = None
+    avg_peak_execution_memory: int | None = None
+    metrics_source: str | None = None
 
 
 class CapacityBar(BaseModel):

@@ -113,6 +113,26 @@ class PipelineRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def update_metadata(
+        self,
+        pipeline_id: uuid.UUID,
+        *,
+        description: str | None = None,
+        documentation: str | None = None,
+        updated_by: str = "System",
+    ) -> Pipeline | None:
+        pipeline = await self.get_by_id(pipeline_id)
+        if not pipeline:
+            return None
+        if description is not None:
+            pipeline.description = description
+        if documentation is not None:
+            pipeline.documentation = documentation
+        pipeline.last_updated_by = updated_by
+        pipeline.last_updated_at = datetime.utcnow()
+        await self.session.commit()
+        return pipeline
+
     async def get_all_with_fields(self) -> list[Pipeline]:
         stmt = (
             select(Pipeline)

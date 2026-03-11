@@ -2,8 +2,9 @@
 
 import uuid
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, distinct, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.dag_task import DagTask
 
@@ -41,6 +42,15 @@ class DagTaskRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_tasks_for_dag_with_pipeline(self, dag_id: str) -> list[DagTask]:
+        stmt = (
+            select(DagTask)
+            .where(DagTask.dag_id == dag_id)
+            .options(selectinload(DagTask.pipeline))
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_downstream_of(self, task_id: str) -> list[DagTask]:
         """Find all DagTask rows where task_id appears in another row's downstream_task_ids."""
         # Get all rows where this task_id has downstream tasks
@@ -57,6 +67,33 @@ class DagTaskRepository:
 
         # Return DagTask rows for those downstream task_ids (deduplicated by task_id)
         stmt = select(DagTask).where(DagTask.task_id.in_(downstream_task_ids))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_all_dag_ids(self) -> list[str]:
+        stmt = select(distinct(DagTask.dag_id)).order_by(DagTask.dag_id)
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def count_tasks_per_dag(self) -> dict[str, int]:
+        stmt = (
+            select(DagTask.dag_id, func.count().label("cnt"))
+            .group_by(DagTask.dag_id)
+        )
+        result = await self.session.execute(stmt)
+        return {row.dag_id: row.cnt for row in result.all()}
+
+    async def count_pipelines_per_dag(self) -> dict[str, int]:
+        stmt = (
+            select(DagTask.dag_id, func.count().label("cnt"))
+            .where(DagTask.pipeline_id.isnot(None))
+            .group_by(DagTask.dag_id)
+        )
+        result = await self.session.execute(stmt)
+        return {row.dag_id: row.cnt for row in result.all()}
+
+    async def get_all_entries(self) -> list[DagTask]:
+        stmt = select(DagTask)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

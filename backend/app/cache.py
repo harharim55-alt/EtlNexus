@@ -40,6 +40,9 @@ class TTLCache:
 pipeline_list_cache = TTLCache(ttl=30)       # list_pipelines (no query)
 schema_matrix_cache = TTLCache(ttl=60)       # schema matrix response
 topology_cache = TTLCache(ttl=30)            # topology per pipeline+dag
+dag_summary_cache = TTLCache(ttl=60)         # dag summary/statistics
+sensor_cache = TTLCache(ttl=60)              # sensor list
+sensor_topology_cache = TTLCache(ttl=30)     # sensor topology
 
 
 def clear_all() -> None:
@@ -47,4 +50,7 @@ def clear_all() -> None:
     pipeline_list_cache.clear()
     schema_matrix_cache.clear()
     topology_cache.clear()
+    dag_summary_cache.clear()
+    sensor_cache.clear()
+    sensor_topology_cache.clear()
     logger.debug("All application caches cleared")

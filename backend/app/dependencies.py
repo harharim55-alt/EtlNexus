@@ -9,12 +9,15 @@ from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.usage_repo import UsageRepository
 from app.repositories.resource_repo import ResourceRepository
+from app.repositories.sensor_repo import SensorRepository
 from app.services.ai_service import AIService
 from app.services.airflow_sync_service import AirflowSyncService
 from app.services.consumer_service import ConsumerService
+from app.services.dag_summary_service import DagSummaryService
 from app.services.pipeline_service import PipelineService
 from app.services.resource_service import ResourceService
 from app.services.schema_matrix_service import SchemaMatrixService
+from app.services.sensor_service import SensorService
 from app.services.usage_service import UsageService
 
 
@@ -87,6 +90,26 @@ def get_airflow_sync_service(
     session: AsyncSession = Depends(get_db_session),
 ) -> AirflowSyncService:
     return AirflowSyncService(session)
+
+
+def get_dag_summary_service(
+    dag_task_repo: DagTaskRepository = Depends(get_dag_task_repo),
+    resource_repo: ResourceRepository = Depends(get_resource_repo),
+    airflow_repo: AirflowRepository = Depends(get_airflow_repo),
+) -> DagSummaryService:
+    return DagSummaryService(dag_task_repo, resource_repo, airflow_repo)
+
+
+def get_sensor_repo(session: AsyncSession = Depends(get_db_session)) -> SensorRepository:
+    return SensorRepository(session)
+
+
+def get_sensor_service(
+    sensor_repo: SensorRepository = Depends(get_sensor_repo),
+    dag_task_repo: DagTaskRepository = Depends(get_dag_task_repo),
+    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
+) -> SensorService:
+    return SensorService(sensor_repo, dag_task_repo, pipeline_repo)
 
 
 def get_ai_service(

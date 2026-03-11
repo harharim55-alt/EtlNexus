@@ -7,6 +7,8 @@ from app.schemas.pipeline import (
     JoinSuggestionsResponse,
     PipelineDetail,
     PipelineListItem,
+    PipelineUpdateRequest,
+    PipelineUpdateResponse,
     SyncResponse,
 )
 from app.services.airflow_sync_service import AirflowSyncService
@@ -29,6 +31,18 @@ async def get_pipeline(
     service: PipelineService = Depends(get_pipeline_service),
 ):
     result = await service.get_pipeline_detail(pipeline_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return result
+
+
+@router.patch("/{pipeline_id}", response_model=PipelineUpdateResponse)
+async def update_pipeline(
+    pipeline_id: uuid.UUID,
+    body: PipelineUpdateRequest,
+    service: PipelineService = Depends(get_pipeline_service),
+):
+    result = await service.update_pipeline_metadata(pipeline_id, body)
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     return result

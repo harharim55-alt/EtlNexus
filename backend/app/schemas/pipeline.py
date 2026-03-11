@@ -36,10 +36,27 @@ class PipelineDetail(BaseModel):
     fields: list[PipelineFieldSchema] = []
     source_tables: list[str] = []
     destination_tables: list[str] = []
+    documentation: str | None = None
+    last_updated_by: str | None = None
+    last_updated_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
     model_config = {"from_attributes": True}
+
+
+class PipelineUpdateRequest(BaseModel):
+    description: str | None = None
+    documentation: str | None = None
+    updated_by: str = "System"
+
+
+class PipelineUpdateResponse(BaseModel):
+    id: str
+    description: str | None = None
+    documentation: str | None = None
+    last_updated_by: str | None = None
+    last_updated_at: datetime | None = None
 
 
 class SyncResponse(BaseModel):

@@ -1,5 +1,6 @@
 """Resource service — reads allocated configs and run history from DB."""
 
+import json
 import logging
 import re
 import uuid
@@ -60,16 +61,34 @@ class ResourceService:
                 execution_date=r.start_date.isoformat() if r.start_date else None,
                 status=r.status,
                 dag_id=r.dag_id,
+                spark_application_id=r.spark_application_id,
+                metrics_source=r.metrics_source,
             )
             for r in runs
             if r.duration_seconds is not None
         ]
+
+        # Determine dominant metrics source from recent runs
+        source_counts: dict[str, int] = {}
+        for r in runs:
+            if r.metrics_source:
+                source_counts[r.metrics_source] = source_counts.get(r.metrics_source, 0) + 1
+        dominant_source = max(source_counts, key=source_counts.get) if source_counts else None
 
         actual_usage = ActualUsage(
             avg_driver_memory_used_mb=stats.get("avg_driver_mem_used_mb"),
             avg_executor_memory_peak_mb=stats.get("avg_executor_mem_peak_mb"),
             avg_cpu_utilization_pct=stats.get("avg_cpu_pct"),
             avg_executors_active=stats.get("avg_executors_active"),
+            avg_jvm_gc_time_ms=stats.get("avg_jvm_gc_time_ms"),
+            avg_shuffle_read_bytes=stats.get("avg_shuffle_read_bytes"),
+            avg_shuffle_write_bytes=stats.get("avg_shuffle_write_bytes"),
+            avg_input_bytes=stats.get("avg_input_bytes"),
+            avg_output_bytes=stats.get("avg_output_bytes"),
+            avg_memory_bytes_spilled=stats.get("avg_memory_bytes_spilled"),
+            avg_disk_bytes_spilled=stats.get("avg_disk_bytes_spilled"),
+            avg_peak_execution_memory=stats.get("avg_peak_execution_memory"),
+            metrics_source=dominant_source,
         )
 
         # Find latest duration
@@ -94,6 +113,33 @@ class ResourceService:
             actual_usage=actual_usage,
             capacity=capacity,
         )
+
+    async def get_execution_plan(
+        self, pipeline_id: uuid.UUID
+    ) -> dict | None:
+        """Get the latest execution plan for a pipeline."""
+        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            return None
+
+        run = await self.resource_repo.get_latest_execution_plan(pipeline_id)
+        if not run or not run.execution_plan:
+            return None
+
+        try:
+            plan_data = json.loads(run.execution_plan)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        return {
+            "dag_id": run.dag_id,
+            "dag_run_id": run.dag_run_id,
+            "task_id": pipeline.task_id or pipeline.name,
+            "status": run.status,
+            "duration_seconds": run.duration_seconds,
+            "execution_date": run.start_date.isoformat() if run.start_date else None,
+            "execution_plan": plan_data,
+        }
 
     def _compute_capacity(
         self,
