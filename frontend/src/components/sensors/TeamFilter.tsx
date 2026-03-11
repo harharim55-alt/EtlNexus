@@ -1,32 +1,37 @@
 import { useSensorStore } from "@/stores/sensor-store";
 
 const TEAM_COLORS: Record<string, { bg: string; text: string; border: string }> = {
-  "Infrastructure Ops": {
-    bg: "bg-sky-500/10",
-    text: "text-sky-400",
-    border: "border-sky-500/20",
+  Dagger: {
+    bg: "bg-indigo-500/15",
+    text: "text-indigo-300",
+    border: "border-indigo-500/30",
   },
-  "Network Monitoring": {
-    bg: "bg-violet-500/10",
-    text: "text-violet-400",
-    border: "border-violet-500/20",
+  Vault: {
+    bg: "bg-indigo-500/15",
+    text: "text-indigo-300",
+    border: "border-indigo-500/30",
   },
-  "Security Engineering": {
-    bg: "bg-rose-500/10",
-    text: "text-rose-400",
-    border: "border-rose-500/20",
+  Prism: {
+    bg: "bg-indigo-500/15",
+    text: "text-indigo-300",
+    border: "border-indigo-500/30",
   },
-  "NOC Operations": {
-    bg: "bg-amber-500/10",
-    text: "text-amber-400",
-    border: "border-amber-500/20",
+  Relay: {
+    bg: "bg-indigo-500/15",
+    text: "text-indigo-300",
+    border: "border-indigo-500/30",
+  },
+  Oasis: {
+    bg: "bg-indigo-500/15",
+    text: "text-indigo-300",
+    border: "border-indigo-500/30",
   },
 };
 
 const DEFAULT_TEAM = {
-  bg: "bg-slate-500/10",
-  text: "text-slate-400",
-  border: "border-slate-500/20",
+  bg: "bg-indigo-500/15",
+  text: "text-indigo-300",
+  border: "border-indigo-500/30",
 };
 
 interface TeamFilterProps {
@@ -60,7 +65,7 @@ export function TeamFilter({ teams }: TeamFilterProps) {
             onClick={() => setTeamFilter(team)}
             className={`text-[10px] font-mono px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
               isActive
-                ? `${colors.text} ${colors.bg} ${colors.border}`
+                ? `${colors.text} ${colors.bg} ${colors.border} shadow-[0_0_10px_rgba(99,102,241,0.15)]`
                 : "text-slate-500 bg-white/[0.02] border-white/5 hover:border-white/15 hover:text-slate-400"
             }`}
           >

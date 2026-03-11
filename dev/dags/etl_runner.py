@@ -24,13 +24,16 @@ def run_etl(etl_name, spark_callable=None, **kwargs):
     """Execute an ETL task with real Spark metrics or simulated metrics.
 
     Args:
-        etl_name: Name of the ETL task.
+        etl_name: Name of the ETL task (PascalCase).
         spark_callable: Optional function(spark, **kwargs) that performs real
             PySpark work. If provided, a SparkSession is created and metrics
             are collected via sparkMeasure. If None, simulation mode is used.
         **kwargs: Airflow op_kwargs (resources, ti, needs, etc.)
     """
     print(f"ETL_START: {etl_name}")
+
+    # Module name = etl_name (PascalCase matches file names)
+    module_name = etl_name
 
     # Parse ETL code file for metadata
     etl_path = Path(f"/data/etl-code/dagger/{etl_name}.py")
@@ -78,7 +81,7 @@ def run_etl(etl_name, spark_callable=None, **kwargs):
 
     # Auto-create spark_callable from ETL class if not explicitly provided
     if spark_callable is None and etl_path.exists():
-        spark_callable = _make_etl_callable(etl_name, ti)
+        spark_callable = _make_etl_callable(etl_name, module_name, ti)
 
     if spark_callable is not None:
         # --- REAL MODE: run actual PySpark with metrics collection ---
@@ -253,11 +256,15 @@ def _mem_used_mb(alloc_str: str | None, utilization: float) -> int | None:
     return round(gb * utilization * 1024)
 
 
-def _make_etl_callable(etl_name: str, ti=None):
+def _make_etl_callable(etl_name: str, module_name: str, ti=None):
     """Create a spark_callable from an ETL class file.
 
     Dynamically imports the ETL module, finds the BaseETL subclass,
     and returns a callable that runs the ETL and extracts the Spark plan.
+
+    Args:
+        etl_name: PascalCase ETL name (for logging).
+        module_name: PascalCase module name (matches file name in dagger/).
     """
     from datetime import datetime, timedelta
 
@@ -272,9 +279,9 @@ def _make_etl_callable(etl_name: str, ti=None):
         sys.path.insert(0, etl_code_path)
 
     try:
-        mod = importlib.import_module(f"dagger.{etl_name}")
+        mod = importlib.import_module(f"dagger.{module_name}")
     except ImportError:
-        logger.warning("Could not import ETL module dagger.%s", etl_name)
+        logger.warning("Could not import ETL module dagger.%s", module_name)
         return None
 
     # Find the ETL class (has extract/transform/load methods)
@@ -291,7 +298,7 @@ def _make_etl_callable(etl_name: str, ti=None):
             break
 
     if etl_class is None:
-        logger.warning("No ETL class found in dagger.%s", etl_name)
+        logger.warning("No ETL class found in dagger.%s", module_name)
         return None
 
     def callable(spark, **kwargs):

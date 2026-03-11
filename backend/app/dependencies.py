@@ -10,6 +10,8 @@ from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.usage_repo import UsageRepository
 from app.repositories.resource_repo import ResourceRepository
 from app.repositories.sensor_repo import SensorRepository
+from app.repositories.team_repo import TeamRepository
+from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.ai_service import AIService
 from app.services.airflow_sync_service import AirflowSyncService
 from app.services.consumer_service import ConsumerService
@@ -18,7 +20,9 @@ from app.services.pipeline_service import PipelineService
 from app.services.resource_service import ResourceService
 from app.services.schema_matrix_service import SchemaMatrixService
 from app.services.sensor_service import SensorService
+from app.services.team_service import TeamService
 from app.services.usage_service import UsageService
+from app.services.visibility_service import VisibilityService
 
 
 # Repositories
@@ -116,3 +120,27 @@ def get_ai_service(
     pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
 ) -> AIService:
     return AIService(pipeline_repo)
+
+
+def get_team_repo(session: AsyncSession = Depends(get_db_session)) -> TeamRepository:
+    return TeamRepository(session)
+
+
+def get_visibility_grant_repo(
+    session: AsyncSession = Depends(get_db_session),
+) -> VisibilityGrantRepository:
+    return VisibilityGrantRepository(session)
+
+
+def get_team_service(
+    team_repo: TeamRepository = Depends(get_team_repo),
+    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
+) -> TeamService:
+    return TeamService(team_repo, pipeline_repo)
+
+
+def get_visibility_service(
+    grant_repo: VisibilityGrantRepository = Depends(get_visibility_grant_repo),
+    team_repo: TeamRepository = Depends(get_team_repo),
+) -> VisibilityService:
+    return VisibilityService(grant_repo, team_repo)

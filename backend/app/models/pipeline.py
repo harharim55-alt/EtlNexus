@@ -20,6 +20,10 @@ class Pipeline(Base):
     documentation: Mapped[str | None] = mapped_column(Text)
     last_updated_by: Mapped[str | None] = mapped_column(String(255))
     last_updated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    team: Mapped[str | None] = mapped_column(String(100), index=True)
+    team_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("teams.id", ondelete="SET NULL"), index=True, nullable=True
+    )
     created_at: Mapped[datetime] = mapped_column(default=func.now())
     updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now())
 
@@ -43,6 +47,7 @@ class Pipeline(Base):
     run_history: Mapped[list["PipelineRunHistory"]] = relationship(
         back_populates="pipeline", cascade="all, delete-orphan"
     )
+    owner_team: Mapped["Team | None"] = relationship(foreign_keys=[team_id])
 
 
 class PipelineField(Base):

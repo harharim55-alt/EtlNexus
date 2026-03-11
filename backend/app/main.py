@@ -8,7 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import ai, airflow, consumers, dag_summary, health, lineage, pipelines, resources, schema_matrix, sensors, topology, usage
+from app.routers import ai, airflow, auth, consumers, dag_summary, health, lineage, pipelines, resources, schema_matrix, sensors, teams, topology, usage, users, visibility
 from app.tasks.scheduler import setup_scheduler
 
 # Structured logging
@@ -50,6 +50,10 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("ETL Explorer Hub starting up")
 
+    # Initialize OIDC client (no-op if SSO_ENABLED=false)
+    from app.integrations.oidc_client import oidc_client
+    await oidc_client.initialize()
+
     # Run initial sync tasks on startup
     from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
     from app.tasks.airflow_poll_task import poll_airflow_statuses
@@ -81,6 +85,8 @@ async def lifespan(app: FastAPI):
     sched.shutdown(wait=False)
     from app.integrations.airflow_client import airflow_client
     await airflow_client.close()
+    from app.integrations.oidc_client import oidc_client as _oidc
+    await _oidc.close()
     from app.integrations.iceberg_client import iceberg_client
     iceberg_client.stop()
     logger.info("ETL Explorer Hub shutting down")
@@ -133,3 +139,7 @@ app.include_router(resources.router)
 app.include_router(dag_summary.router)
 app.include_router(sensors.router)
 app.include_router(ai.router)
+app.include_router(auth.router)
+app.include_router(teams.router)
+app.include_router(visibility.router)
+app.include_router(users.router)

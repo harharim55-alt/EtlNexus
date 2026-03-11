@@ -475,7 +475,7 @@ function CheatsheetPanel({ onClose }: { onClose: () => void }) {
 
 /* ── Empty state ──────────────────────────────────────────────────── */
 
-function EmptyDocState() {
+function EmptyDocState({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-4">
       <div className="size-12 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
@@ -486,7 +486,9 @@ function EmptyDocState() {
           No documentation yet
         </p>
         <p className="text-[11px] text-slate-600 mt-1">
-          Switch to Edit to start writing in Markdown
+          {canEdit
+            ? "Switch to Edit to start writing in Markdown"
+            : "Only team members can add documentation"}
         </p>
       </div>
     </div>
@@ -502,6 +504,7 @@ interface DocumentationModalProps {
   documentation: string | null;
   onSave: (documentation: string) => void;
   isSaving: boolean;
+  canEdit: boolean;
 }
 
 export function DocumentationModal({
@@ -511,6 +514,7 @@ export function DocumentationModal({
   documentation,
   onSave,
   isSaving,
+  canEdit,
 }: DocumentationModalProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [editValue, setEditValue] = useState(documentation ?? "");
@@ -615,12 +619,16 @@ export function DocumentationModal({
                 Preview
               </button>
               <button
-                onClick={() => setIsEditing(true)}
+                onClick={() => canEdit && setIsEditing(true)}
+                disabled={!canEdit}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
-                  isEditing
-                    ? "bg-white/[0.08] text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-300"
+                  !canEdit
+                    ? "text-slate-600 cursor-not-allowed opacity-40"
+                    : isEditing
+                      ? "bg-white/[0.08] text-white shadow-sm"
+                      : "text-slate-500 hover:text-slate-300"
                 }`}
+                title={!canEdit ? "You don't have permission to edit this pipeline's documentation" : undefined}
               >
                 <Edit3 className="size-3" />
                 Edit
@@ -628,7 +636,7 @@ export function DocumentationModal({
             </div>
 
             {/* Save (only in edit mode) */}
-            {isEditing && (
+            {isEditing && canEdit && (
               <button
                 onClick={handleSave}
                 disabled={isSaving}
@@ -707,7 +715,7 @@ export function DocumentationModal({
                   {previewContent}
                 </ReactMarkdown>
               ) : (
-                <EmptyDocState />
+                <EmptyDocState canEdit={canEdit} />
               )}
             </div>
           )}
@@ -722,7 +730,7 @@ export function DocumentationModal({
             </>
           ) : (
             <>
-              <span>Read-only preview</span>
+              <span>{canEdit ? "Read-only preview" : "View only — you don\u2019t have edit permissions"}</span>
               <span>Esc to close</span>
             </>
           )}

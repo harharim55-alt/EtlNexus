@@ -148,6 +148,21 @@ services:
         condition: service_completed_successfully
 
   # ============================================
+  # Dev-only: Keycloak (SSO)
+  # ============================================
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.2
+    command: start-dev --import-realm
+    environment:
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      KC_HTTP_PORT: 8090
+    volumes:
+      - ./dev/keycloak:/opt/keycloak/data/import
+    ports:
+      - "8090:8090"
+
+  # ============================================
   # Dev-only: Iceberg REST Catalog
   # ============================================
   iceberg-volume-init:

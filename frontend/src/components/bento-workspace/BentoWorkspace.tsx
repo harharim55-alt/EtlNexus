@@ -58,12 +58,13 @@ export function BentoWorkspace() {
       <BentoHeader
         pipeline={pipeline}
         onSaveDescription={(description) =>
-          updatePipeline({ description, updated_by: "User" })
+          updatePipeline({ description })
         }
         onSaveDocumentation={(documentation) =>
-          updatePipeline({ documentation, updated_by: "User" })
+          updatePipeline({ documentation })
         }
         isSaving={isSaving}
+        canEdit={pipeline.can_edit}
       />
 
       <div className="grid grid-cols-12 gap-6 mt-6">
@@ -87,7 +88,7 @@ export function BentoWorkspace() {
         {/* Row 3: Schema + Usage (left) | Join Intelligence + Consume (right) */}
         <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
           <SchemaViewer fields={pipeline.fields} />
-          <UsageCard etlName={pipeline.name.toLowerCase().replace(/ /g, "_").replace(/-/g, "_")} />
+          <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
         </div>
         <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
           <JoinIntelligence pipelineId={pipeline.id} />

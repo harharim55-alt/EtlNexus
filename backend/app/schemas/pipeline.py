@@ -21,6 +21,7 @@ class PipelineListItem(BaseModel):
     rows_per_day: str | None = None
     airflow_status: str = "unknown"
     success_rate: float | None = None
+    team: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -28,6 +29,7 @@ class PipelineListItem(BaseModel):
 class PipelineDetail(BaseModel):
     id: str
     name: str
+    task_id: str | None = None
     description: str | None = None
     category: str | None = None
     schedule: str | None = None
@@ -41,6 +43,9 @@ class PipelineDetail(BaseModel):
     last_updated_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    team: str | None = None
+    team_id: str | None = None
+    can_edit: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -48,7 +53,6 @@ class PipelineDetail(BaseModel):
 class PipelineUpdateRequest(BaseModel):
     description: str | None = None
     documentation: str | None = None
-    updated_by: str = "System"
 
 
 class PipelineUpdateResponse(BaseModel):

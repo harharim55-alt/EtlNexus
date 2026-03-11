@@ -10,7 +10,7 @@ CATALOG_URL = "http://iceberg-rest:8181"
 NAMESPACE = "dagger"
 
 TABLES = {
-    "bgp_route_sync": [
+    "BgpRouteSync": [
         {"id": 1, "name": "route_id", "type": "long", "required": False},
         {"id": 2, "name": "prefix", "type": "string", "required": False},
         {"id": 3, "name": "next_hop", "type": "string", "required": False},
@@ -20,7 +20,7 @@ TABLES = {
         {"id": 7, "name": "peer_id", "type": "long", "required": False},
         {"id": 8, "name": "synced_at", "type": "timestamp", "required": False},
     ],
-    "syslog_event_stream": [
+    "SyslogEventStream": [
         {"id": 1, "name": "event_id", "type": "long", "required": False},
         {"id": 2, "name": "source_host", "type": "string", "required": False},
         {"id": 3, "name": "facility", "type": "string", "required": False},
@@ -30,7 +30,7 @@ TABLES = {
         {"id": 7, "name": "event_time", "type": "timestamp", "required": False},
         {"id": 8, "name": "received_at", "type": "timestamp", "required": False},
     ],
-    "bandwidth_billing_aggregator": [
+    "BandwidthBillingAggregator": [
         {"id": 1, "name": "invoice_id", "type": "string", "required": False},
         {"id": 2, "name": "circuit_id", "type": "string", "required": False},
         {"id": 3, "name": "subscription_id", "type": "string", "required": False},
@@ -42,7 +42,7 @@ TABLES = {
         {"id": 9, "name": "period_end", "type": "timestamp", "required": False},
         {"id": 10, "name": "created_at", "type": "timestamp", "required": False},
     ],
-    "netflow_capture": [
+    "NetflowCapture": [
         {"id": 1, "name": "flow_id", "type": "string", "required": False},
         {"id": 2, "name": "src_ip", "type": "string", "required": False},
         {"id": 3, "name": "dst_ip", "type": "string", "required": False},
@@ -52,7 +52,7 @@ TABLES = {
         {"id": 7, "name": "bytes_transferred", "type": "long", "required": False},
         {"id": 8, "name": "collected_at", "type": "timestamp", "required": False},
     ],
-    "dns_record_sync": [
+    "DnsRecordSync": [
         {"id": 1, "name": "record_id", "type": "string", "required": False},
         {"id": 2, "name": "zone_name", "type": "string", "required": False},
         {"id": 3, "name": "record_type", "type": "string", "required": False},
@@ -62,7 +62,7 @@ TABLES = {
         {"id": 7, "name": "created_date", "type": "date", "required": False},
         {"id": 8, "name": "last_modified_date", "type": "timestamp", "required": False},
     ],
-    "switch_port_collector": [
+    "SwitchPortCollector": [
         {"id": 1, "name": "switch_id", "type": "long", "required": False},
         {"id": 2, "name": "port_number", "type": "string", "required": False},
         {"id": 3, "name": "mac_address", "type": "string", "required": False},
@@ -72,7 +72,7 @@ TABLES = {
         {"id": 7, "name": "port_speed", "type": "string", "required": False},
         {"id": 8, "name": "vlan_id", "type": "long", "required": False},
     ],
-    "device_fingerprint_enrichment": [
+    "DeviceFingerprintEnrichment": [
         {"id": 1, "name": "device_id", "type": "string", "required": False},
         {"id": 2, "name": "mac_address", "type": "string", "required": False},
         {"id": 3, "name": "hostname", "type": "string", "required": False},
@@ -82,7 +82,7 @@ TABLES = {
         {"id": 7, "name": "switch_port", "type": "string", "required": False},
         {"id": 8, "name": "enriched_at", "type": "timestamp", "required": False},
     ],
-    "bandwidth_cost_reconciliation": [
+    "BandwidthCostReconciliation": [
         {"id": 1, "name": "reconciliation_id", "type": "string", "required": False},
         {"id": 2, "name": "circuit_id", "type": "string", "required": False},
         {"id": 3, "name": "invoice_id", "type": "string", "required": False},
@@ -92,7 +92,7 @@ TABLES = {
         {"id": 7, "name": "status", "type": "string", "required": False},
         {"id": 8, "name": "reconciled_at", "type": "timestamp", "required": False},
     ],
-    "link_failure_prediction": [
+    "LinkFailurePrediction": [
         {"id": 1, "name": "link_id", "type": "string", "required": False},
         {"id": 2, "name": "hours_since_last_flap", "type": "long", "required": False},
         {"id": 3, "name": "avg_error_rate", "type": "double", "required": False},
@@ -102,7 +102,7 @@ TABLES = {
         {"id": 7, "name": "health_score", "type": "double", "required": False},
         {"id": 8, "name": "scored_at", "type": "timestamp", "required": False},
     ],
-    "incident_analytics_rollup": [
+    "IncidentAnalyticsRollup": [
         {"id": 1, "name": "period", "type": "string", "required": False},
         {"id": 2, "name": "total_incidents", "type": "long", "required": False},
         {"id": 3, "name": "avg_resolution_minutes", "type": "double", "required": False},
@@ -112,7 +112,7 @@ TABLES = {
         {"id": 7, "name": "escalation_rate", "type": "double", "required": False},
         {"id": 8, "name": "computed_at", "type": "timestamp", "required": False},
     ],
-    "noc_dashboard_snapshot": [
+    "NocDashboardSnapshot": [
         {"id": 1, "name": "snapshot_date", "type": "date", "required": False},
         {"id": 2, "name": "total_bandwidth_gbps", "type": "double", "required": False},
         {"id": 3, "name": "peak_throughput_gbps", "type": "double", "required": False},
@@ -122,7 +122,7 @@ TABLES = {
         {"id": 7, "name": "avg_latency_ms", "type": "double", "required": False},
         {"id": 8, "name": "generated_at", "type": "timestamp", "required": False},
     ],
-    "packet_inspection_enrichment": [
+    "PacketInspectionEnrichment": [
         {"id": 1, "name": "packet_id", "type": "string", "required": False},
         {"id": 2, "name": "src_ip", "type": "string", "required": False},
         {"id": 3, "name": "protocol", "type": "string", "required": False},
@@ -134,7 +134,7 @@ TABLES = {
         {"id": 9, "name": "first_seen_date", "type": "date", "required": False},
         {"id": 10, "name": "enriched_at", "type": "timestamp", "required": False},
     ],
-    "protocol_adoption_tracker": [
+    "ProtocolAdoptionTracker": [
         {"id": 1, "name": "protocol_name", "type": "string", "required": False},
         {"id": 2, "name": "report_date", "type": "date", "required": False},
         {"id": 3, "name": "unique_endpoints", "type": "long", "required": False},
@@ -144,7 +144,7 @@ TABLES = {
         {"id": 7, "name": "adoption_rate", "type": "double", "required": False},
         {"id": 8, "name": "computed_at", "type": "timestamp", "required": False},
     ],
-    "handshake_completion_analysis": [
+    "HandshakeCompletionAnalysis": [
         {"id": 1, "name": "handshake_type", "type": "string", "required": False},
         {"id": 2, "name": "phase_number", "type": "long", "required": False},
         {"id": 3, "name": "phase_name", "type": "string", "required": False},
@@ -155,7 +155,7 @@ TABLES = {
         {"id": 8, "name": "report_date", "type": "date", "required": False},
         {"id": 9, "name": "computed_at", "type": "timestamp", "required": False},
     ],
-    "ab_routing_experiment_engine": [
+    "AbRoutingExperimentEngine": [
         {"id": 1, "name": "experiment_id", "type": "string", "required": False},
         {"id": 2, "name": "route_variant", "type": "string", "required": False},
         {"id": 3, "name": "sample_size", "type": "long", "required": False},
@@ -165,7 +165,7 @@ TABLES = {
         {"id": 7, "name": "is_significant", "type": "boolean", "required": False},
         {"id": 8, "name": "computed_at", "type": "timestamp", "required": False},
     ],
-    "endpoint_activity_scoring": [
+    "EndpointActivityScoring": [
         {"id": 1, "name": "endpoint_id", "type": "string", "required": False},
         {"id": 2, "name": "activity_score", "type": "double", "required": False},
         {"id": 3, "name": "recency_score", "type": "double", "required": False},
@@ -175,7 +175,7 @@ TABLES = {
         {"id": 7, "name": "tier", "type": "string", "required": False},
         {"id": 8, "name": "scored_at", "type": "timestamp", "required": False},
     ],
-    "device_onboarding_monitor": [
+    "DeviceOnboardingMonitor": [
         {"id": 1, "name": "batch_date", "type": "date", "required": False},
         {"id": 2, "name": "phase_name", "type": "string", "required": False},
         {"id": 3, "name": "phase_order", "type": "long", "required": False},
@@ -185,7 +185,7 @@ TABLES = {
         {"id": 7, "name": "rejection_rate", "type": "double", "required": False},
         {"id": 8, "name": "computed_at", "type": "timestamp", "required": False},
     ],
-    "traffic_class_segments": [
+    "TrafficClassSegments": [
         {"id": 1, "name": "endpoint_id", "type": "string", "required": False},
         {"id": 2, "name": "traffic_class", "type": "string", "required": False},
         {"id": 3, "name": "previous_class", "type": "string", "required": False},
@@ -195,7 +195,7 @@ TABLES = {
         {"id": 7, "name": "last_active_at", "type": "timestamp", "required": False},
         {"id": 8, "name": "classified_at", "type": "timestamp", "required": False},
     ],
-    "dhcp_lease_sync": [
+    "DhcpLeaseSync": [
         {"id": 1, "name": "lease_id", "type": "long", "required": False},
         {"id": 2, "name": "ip_address", "type": "string", "required": False},
         {"id": 3, "name": "mac_address", "type": "string", "required": False},
@@ -205,7 +205,7 @@ TABLES = {
         {"id": 7, "name": "lease_start", "type": "timestamp", "required": False},
         {"id": 8, "name": "lease_expiry", "type": "timestamp", "required": False},
     ],
-    "http_access_log_ingest": [
+    "HttpAccessLogIngest": [
         {"id": 1, "name": "request_id", "type": "string", "required": False},
         {"id": 2, "name": "client_ip", "type": "string", "required": False},
         {"id": 3, "name": "request_path", "type": "string", "required": False},
@@ -215,7 +215,7 @@ TABLES = {
         {"id": 7, "name": "response_time_ms", "type": "long", "required": False},
         {"id": 8, "name": "request_time", "type": "timestamp", "required": False},
     ],
-    "traffic_attribution_model": [
+    "TrafficAttributionModel": [
         {"id": 1, "name": "attribution_id", "type": "string", "required": False},
         {"id": 2, "name": "flow_id", "type": "string", "required": False},
         {"id": 3, "name": "interface", "type": "string", "required": False},
@@ -225,7 +225,7 @@ TABLES = {
         {"id": 7, "name": "model_type", "type": "string", "required": False},
         {"id": 8, "name": "computed_at", "type": "timestamp", "required": False},
     ],
-    "threat_scoring_pipeline": [
+    "ThreatScoringPipeline": [
         {"id": 1, "name": "source_ip", "type": "string", "required": False},
         {"id": 2, "name": "threat_score", "type": "double", "required": False},
         {"id": 3, "name": "risk_bucket", "type": "string", "required": False},
@@ -235,7 +235,7 @@ TABLES = {
         {"id": 7, "name": "is_blocked", "type": "boolean", "required": False},
         {"id": 8, "name": "scored_at", "type": "timestamp", "required": False},
     ],
-    "peering_roi_calculator": [
+    "PeeringRoiCalculator": [
         {"id": 1, "name": "peer_id", "type": "string", "required": False},
         {"id": 2, "name": "peer_name", "type": "string", "required": False},
         {"id": 3, "name": "interface", "type": "string", "required": False},
@@ -245,7 +245,7 @@ TABLES = {
         {"id": 7, "name": "prefixes_exchanged", "type": "long", "required": False},
         {"id": 8, "name": "report_date", "type": "date", "required": False},
     ],
-    "capacity_planning_forecast": [
+    "CapacityPlanningForecast": [
         {"id": 1, "name": "forecast_id", "type": "string", "required": False},
         {"id": 2, "name": "period", "type": "string", "required": False},
         {"id": 3, "name": "current_utilization_pct", "type": "double", "required": False},
@@ -255,7 +255,7 @@ TABLES = {
         {"id": 7, "name": "recommended_upgrade_gbps", "type": "double", "required": False},
         {"id": 8, "name": "forecast_date", "type": "date", "required": False},
     ],
-    "mac_address_enrichment": [
+    "MacAddressEnrichment": [
         {"id": 1, "name": "mac_address", "type": "string", "required": False},
         {"id": 2, "name": "ip_address", "type": "string", "required": False},
         {"id": 3, "name": "total_flows", "type": "long", "required": False},
@@ -265,7 +265,7 @@ TABLES = {
         {"id": 7, "name": "days_since_last_seen", "type": "long", "required": False},
         {"id": 8, "name": "enriched_at", "type": "timestamp", "required": False},
     ],
-    "cdn_cost_reconciler": [
+    "CdnCostReconciler": [
         {"id": 1, "name": "cdn_provider", "type": "string", "required": False},
         {"id": 2, "name": "region", "type": "string", "required": False},
         {"id": 3, "name": "reported_bandwidth_gb", "type": "double", "required": False},
@@ -275,7 +275,7 @@ TABLES = {
         {"id": 7, "name": "requests_total", "type": "long", "required": False},
         {"id": 8, "name": "reconciled_at", "type": "timestamp", "required": False},
     ],
-    "weekly_network_digest": [
+    "WeeklyNetworkDigest": [
         {"id": 1, "name": "digest_id", "type": "string", "required": False},
         {"id": 2, "name": "week_start", "type": "date", "required": False},
         {"id": 3, "name": "total_bandwidth_tb", "type": "double", "required": False},

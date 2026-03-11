@@ -14,11 +14,13 @@ export interface PipelineListItem {
   rows_per_day: string | null;
   airflow_status: string;
   success_rate: number | null;
+  team: string | null;
 }
 
 export interface PipelineDetail {
   id: string;
   name: string;
+  task_id: string | null;
   description: string | null;
   category: string | null;
   schedule: string | null;
@@ -32,12 +34,14 @@ export interface PipelineDetail {
   last_updated_at: string | null;
   created_at: string | null;
   updated_at: string | null;
+  team: string | null;
+  team_id: string | null;
+  can_edit: boolean;
 }
 
 export interface PipelineUpdateRequest {
   description?: string | null;
   documentation?: string | null;
-  updated_by?: string;
 }
 
 export interface PipelineUpdateResponse {

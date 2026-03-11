@@ -1,10 +1,20 @@
 import { useEffect, useState } from "react";
-import { Search } from "lucide-react";
+import { Search, SlidersHorizontal } from "lucide-react";
 import { usePipelineStore } from "@/stores/pipeline-store";
 
 export function PipelineSearch() {
   const setSearchQuery = usePipelineStore((s) => s.setSearchQuery);
+  const filtersOpen = usePipelineStore((s) => s.filtersOpen);
+  const setFiltersOpen = usePipelineStore((s) => s.setFiltersOpen);
+  const teamFilters = usePipelineStore((s) => s.teamFilters);
+  const dagFilters = usePipelineStore((s) => s.dagFilters);
+  const statusFilters = usePipelineStore((s) => s.statusFilters);
   const [localQuery, setLocalQuery] = useState("");
+
+  const activeFilterCount =
+    (teamFilters.size > 0 ? 1 : 0) +
+    (dagFilters.size > 0 ? 1 : 0) +
+    (statusFilters.size > 0 ? 1 : 0);
 
   // Debounce search input by 300ms
   useEffect(() => {
@@ -15,15 +25,33 @@ export function PipelineSearch() {
   }, [localQuery, setSearchQuery]);
 
   return (
-    <div className="relative">
-      <Search className="h-4 w-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
-      <input
-        type="text"
-        placeholder="Search pipelines or fields..."
-        className="w-full bg-[#18181b] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
-        value={localQuery}
-        onChange={(e) => setLocalQuery(e.target.value)}
-      />
+    <div className="flex items-center gap-2">
+      <div className="relative flex-1">
+        <Search className="h-4 w-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+        <input
+          type="text"
+          placeholder="Search pipelines or fields..."
+          className="w-full bg-[#18181b] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
+          value={localQuery}
+          onChange={(e) => setLocalQuery(e.target.value)}
+        />
+      </div>
+      <button
+        type="button"
+        onClick={() => setFiltersOpen(!filtersOpen)}
+        className={`relative p-2 rounded-lg border transition-all duration-200 shrink-0 cursor-pointer ${
+          filtersOpen || activeFilterCount > 0
+            ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/25"
+            : "text-slate-500 bg-[#18181b] border-white/10 hover:text-slate-300 hover:border-white/20"
+        }`}
+      >
+        <SlidersHorizontal className="size-4" />
+        {activeFilterCount > 0 && (
+          <span className="absolute -top-1.5 -right-1.5 size-4 rounded-full bg-indigo-500 text-[9px] font-mono font-bold text-white flex items-center justify-center">
+            {activeFilterCount}
+          </span>
+        )}
+      </button>
     </div>
   );
 }

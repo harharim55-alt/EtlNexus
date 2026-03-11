@@ -31,6 +31,16 @@ class Settings(BaseSettings):
     spark_max_executor_cores: int = 32
     spark_max_total_executors: int = 20
 
+    # SSO / OIDC
+    sso_enabled: bool = False
+    sso_issuer_url: str = "http://keycloak:8090/realms/etlnexus"
+    sso_client_id: str = "etlnexus-app"
+    sso_audience: str = "etlnexus-app"
+    sso_groups_claim: str = "groups"
+    sso_role_claim: str = "realm_access.roles"
+    sso_admin_role: str = "admin"
+    sso_public_issuer_url: str = "http://localhost:8090/realms/etlnexus"
+
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
 

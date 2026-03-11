@@ -1,0 +1,167 @@
+{
+  "realm": "etlnexus",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": false,
+  "defaultRole": {
+    "name": "default-roles-etlnexus",
+    "description": "Composite role assigned to every new user",
+    "composite": true,
+    "clientRole": false,
+    "composites": {
+      "realm": ["member"]
+    }
+  },
+
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Full administrative access",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "etlnexus"
+      },
+      {
+        "name": "member",
+        "description": "Standard team member access",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "etlnexus"
+      },
+      {
+        "name": "viewer",
+        "description": "Read-only access",
+        "composite": false,
+        "clientRole": false,
+        "containerId": "etlnexus"
+      }
+    ]
+  },
+
+  "groups": [
+    { "name": "Dagger" },
+    { "name": "Vault" },
+    { "name": "Prism" },
+    { "name": "Relay" },
+    { "name": "Oasis" }
+  ],
+
+  "clients": [
+    {
+      "clientId": "etlnexus-app",
+      "name": "EtlNexus App",
+      "description": "EtlNexus frontend SPA",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": true,
+      "implicitFlowEnabled": false,
+      "serviceAccountsEnabled": false,
+      "authorizationServicesEnabled": false,
+      "frontchannelLogout": true,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:5173/*",
+        "http://localhost:5173"
+      ],
+      "webOrigins": [
+        "http://localhost:5173"
+      ],
+      "attributes": {
+        "post.logout.redirect.uris": "http://localhost:5173/*"
+      },
+      "protocolMappers": [
+        {
+          "name": "groups",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-group-membership-mapper",
+          "consentRequired": false,
+          "config": {
+            "full.path": "false",
+            "id.token.claim": "true",
+            "access.token.claim": "true",
+            "claim.name": "groups",
+            "userinfo.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+
+  "users": [
+    {
+      "username": "alice",
+      "email": "alice@example.com",
+      "firstName": "Alice",
+      "lastName": "Admin",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/Dagger"],
+      "realmRoles": ["admin"]
+    },
+    {
+      "username": "bob",
+      "email": "bob@example.com",
+      "firstName": "Bob",
+      "lastName": "Engineer",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/Vault", "/Prism"],
+      "realmRoles": ["member"]
+    },
+    {
+      "username": "charlie",
+      "email": "charlie@example.com",
+      "firstName": "Charlie",
+      "lastName": "Analyst",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/Relay"],
+      "realmRoles": ["member"]
+    },
+    {
+      "username": "diana",
+      "email": "diana@example.com",
+      "firstName": "Diana",
+      "lastName": "Operator",
+      "enabled": true,
+      "emailVerified": true,
+      "credentials": [
+        {
+          "type": "password",
+          "value": "password",
+          "temporary": false
+        }
+      ],
+      "groups": ["/Oasis"],
+      "realmRoles": ["member"]
+    }
+  ]
+}
