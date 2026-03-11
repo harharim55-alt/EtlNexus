@@ -1,5 +1,11 @@
 import apiClient from "./client";
-import type { PipelineListItem, PipelineDetail, JoinSuggestionsResponse } from "@/types/pipeline";
+import type {
+  PipelineListItem,
+  PipelineDetail,
+  JoinSuggestionsResponse,
+  PipelineUpdateRequest,
+  PipelineUpdateResponse,
+} from "@/types/pipeline";
 
 export async function fetchPipelines(query?: string): Promise<PipelineListItem[]> {
   const params = query ? { q: query } : {};
@@ -24,5 +30,16 @@ export interface SyncResponse {
 
 export async function syncPipeline(pipelineId: string): Promise<SyncResponse> {
   const { data } = await apiClient.post<SyncResponse>(`/pipelines/${pipelineId}/sync`);
+  return data;
+}
+
+export async function updatePipeline(
+  pipelineId: string,
+  body: PipelineUpdateRequest,
+): Promise<PipelineUpdateResponse> {
+  const { data } = await apiClient.patch<PipelineUpdateResponse>(
+    `/pipelines/${pipelineId}`,
+    body,
+  );
   return data;
 }

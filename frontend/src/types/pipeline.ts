@@ -27,8 +27,25 @@ export interface PipelineDetail {
   fields: PipelineField[];
   source_tables: string[];
   destination_tables: string[];
+  documentation: string | null;
+  last_updated_by: string | null;
+  last_updated_at: string | null;
   created_at: string | null;
   updated_at: string | null;
+}
+
+export interface PipelineUpdateRequest {
+  description?: string | null;
+  documentation?: string | null;
+  updated_by?: string;
+}
+
+export interface PipelineUpdateResponse {
+  id: string;
+  description: string | null;
+  documentation: string | null;
+  last_updated_by: string | null;
+  last_updated_at: string | null;
 }
 
 export interface JoinSuggestion {

@@ -1,4 +1,4 @@
-import { Activity, Database, Network, Sparkles } from "lucide-react";
+import { Activity, BarChart3, Database, Network, Radio, Sparkles } from "lucide-react";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useAirflowStatuses } from "@/hooks/use-airflow-status";
 import { NavIcon } from "./NavIcon";
@@ -32,6 +32,18 @@ export function Sidebar() {
           onClick={() => setActiveTab("matrix")}
           icon={<Network className="w-5 h-5" />}
           tooltip="Field Matrix"
+        />
+        <NavIcon
+          active={activeTab === "dags"}
+          onClick={() => setActiveTab("dags")}
+          icon={<BarChart3 className="w-5 h-5" />}
+          tooltip="DAG Summary"
+        />
+        <NavIcon
+          active={activeTab === "sensors"}
+          onClick={() => setActiveTab("sensors")}
+          icon={<Radio className="w-5 h-5" />}
+          tooltip="Sensors"
         />
         <NavIcon
           active={activeTab === "ai"}

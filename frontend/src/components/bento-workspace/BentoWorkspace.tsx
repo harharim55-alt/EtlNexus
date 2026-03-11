@@ -1,4 +1,5 @@
 import { usePipelineDetail } from "@/hooks/use-pipeline-detail";
+import { useUpdatePipeline } from "@/hooks/use-update-pipeline";
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shared/ErrorState";
@@ -10,10 +11,12 @@ import { ConsumeSnippet } from "./ConsumeSnippet";
 import { JoinIntelligence } from "./JoinIntelligence";
 import { UsageCard } from "./UsageCard";
 import { ResourcePerformanceCard } from "./ResourcePerformanceCard";
+import { TransformInspectorCard } from "./TransformInspectorCard";
 
 export function BentoWorkspace() {
   const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
   const { data: pipeline, isLoading, error, refetch } = usePipelineDetail(selectedPipelineId);
+  const { mutate: updatePipeline, isPending: isSaving } = useUpdatePipeline(selectedPipelineId ?? "");
 
   if (!selectedPipelineId) {
     return (
@@ -52,7 +55,16 @@ export function BentoWorkspace() {
 
   return (
     <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-      <BentoHeader pipeline={pipeline} />
+      <BentoHeader
+        pipeline={pipeline}
+        onSaveDescription={(description) =>
+          updatePipeline({ description, updated_by: "User" })
+        }
+        onSaveDocumentation={(documentation) =>
+          updatePipeline({ documentation, updated_by: "User" })
+        }
+        isSaving={isSaving}
+      />
 
       <div className="grid grid-cols-12 gap-6 mt-6">
         {/* Row 1: Lineage + Metrics */}
@@ -65,6 +77,11 @@ export function BentoWorkspace() {
         {/* Row 2: Resource & Performance */}
         {!pipeline.category?.toLowerCase().includes("api") && (
           <ResourcePerformanceCard pipelineId={pipeline.id} />
+        )}
+
+        {/* Row 2.5: Execution Plan Tree */}
+        {!pipeline.category?.toLowerCase().includes("api") && (
+          <TransformInspectorCard pipelineId={pipeline.id} />
         )}
 
         {/* Row 3: Schema + Usage (left) | Join Intelligence + Consume (right) */}

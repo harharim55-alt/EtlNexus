@@ -12,6 +12,8 @@ export interface DurationRun {
   execution_date: string | null;
   status: string;
   dag_id: string;
+  spark_application_id: string | null;
+  metrics_source: string | null;
 }
 
 export interface ActualUsage {
@@ -19,6 +21,16 @@ export interface ActualUsage {
   avg_executor_memory_peak_mb: number | null;
   avg_cpu_utilization_pct: number | null;
   avg_executors_active: number | null;
+  // sparkMeasure extended metrics
+  avg_jvm_gc_time_ms: number | null;
+  avg_shuffle_read_bytes: number | null;
+  avg_shuffle_write_bytes: number | null;
+  avg_input_bytes: number | null;
+  avg_output_bytes: number | null;
+  avg_memory_bytes_spilled: number | null;
+  avg_disk_bytes_spilled: number | null;
+  avg_peak_execution_memory: number | null;
+  metrics_source: string | null;
 }
 
 export interface CapacityBar {

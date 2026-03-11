@@ -1,8 +1,8 @@
-import { Gauge, HardDrive, Cpu, Server, MemoryStick, Clock, CheckCircle } from "lucide-react";
+import { Gauge, HardDrive, Cpu, Server, MemoryStick, Clock, CheckCircle, Activity, ArrowDownUp, Database } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResourceMetrics } from "@/hooks/use-resource-metrics";
 import { usePipelineStore } from "@/stores/pipeline-store";
-import type { CapacityBar as CapacityBarType, DurationRun, ResourceConfigEntry } from "@/types/resources";
+import type { ActualUsage, CapacityBar as CapacityBarType, DurationRun, ResourceConfigEntry } from "@/types/resources";
 
 interface ResourcePerformanceCardProps {
   pipelineId: string;
@@ -127,12 +127,7 @@ function ResourceSection({
   actualUsage,
 }: {
   configs: ResourceConfigEntry[];
-  actualUsage: {
-    avg_driver_memory_used_mb: number | null;
-    avg_executor_memory_peak_mb: number | null;
-    avg_cpu_utilization_pct: number | null;
-    avg_executors_active: number | null;
-  };
+  actualUsage: ActualUsage;
 }) {
   if (configs.length === 0) {
     return (
@@ -265,6 +260,126 @@ function CapacitySection({ bars }: { bars: CapacityBarType[] }) {
           </div>
         </div>
       ))}
+    </div>
+  );
+}
+
+function formatBytes(bytes: number | null): string {
+  if (bytes == null || bytes === 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB", "TB"];
+  const i = Math.floor(Math.log(Math.abs(bytes)) / Math.log(1024));
+  const idx = Math.min(i, units.length - 1);
+  return `${(bytes / Math.pow(1024, idx)).toFixed(idx > 1 ? 1 : 0)} ${units[idx]}`;
+}
+
+function formatMs(ms: number | null): string {
+  if (ms == null) return "—";
+  if (ms < 1000) return `${ms}ms`;
+  if (ms < 60_000) return `${(ms / 1000).toFixed(1)}s`;
+  return `${(ms / 60_000).toFixed(1)}m`;
+}
+
+function MetricsSourceBadge({ source }: { source: string | null }) {
+  if (!source) return null;
+  const isReal = source !== "simulation";
+  return (
+    <span
+      className={`ml-2 text-[8px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
+        isReal
+          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
+          : "bg-slate-500/10 text-slate-500 border border-slate-500/20"
+      }`}
+    >
+      {isReal ? "Real" : "Simulated"}
+    </span>
+  );
+}
+
+// --- Spark Internals Section (sparkMeasure metrics) ---
+function SparkInternalsSection({ actualUsage }: { actualUsage: ActualUsage }) {
+  const hasData =
+    actualUsage.metrics_source != null &&
+    actualUsage.metrics_source !== "simulation" &&
+    (actualUsage.avg_jvm_gc_time_ms != null ||
+      actualUsage.avg_shuffle_read_bytes != null ||
+      actualUsage.avg_input_bytes != null);
+
+  if (!hasData) return null;
+
+  const items = [
+    {
+      icon: Activity,
+      label: "GC Time",
+      value: formatMs(actualUsage.avg_jvm_gc_time_ms),
+      warn: (actualUsage.avg_jvm_gc_time_ms ?? 0) > 10_000,
+    },
+    {
+      icon: ArrowDownUp,
+      label: "Shuffle Read",
+      value: formatBytes(actualUsage.avg_shuffle_read_bytes),
+    },
+    {
+      icon: ArrowDownUp,
+      label: "Shuffle Write",
+      value: formatBytes(actualUsage.avg_shuffle_write_bytes),
+    },
+    {
+      icon: Database,
+      label: "Input",
+      value: formatBytes(actualUsage.avg_input_bytes),
+    },
+    {
+      icon: Database,
+      label: "Output",
+      value: formatBytes(actualUsage.avg_output_bytes),
+    },
+    {
+      icon: HardDrive,
+      label: "Mem Spill",
+      value: formatBytes(actualUsage.avg_memory_bytes_spilled),
+      warn: (actualUsage.avg_memory_bytes_spilled ?? 0) > 0,
+    },
+    {
+      icon: HardDrive,
+      label: "Disk Spill",
+      value: formatBytes(actualUsage.avg_disk_bytes_spilled),
+      warn: (actualUsage.avg_disk_bytes_spilled ?? 0) > 0,
+    },
+    {
+      icon: MemoryStick,
+      label: "Peak Exec Mem",
+      value: formatBytes(actualUsage.avg_peak_execution_memory),
+    },
+  ].filter((item) => item.value !== "0 B" && item.value !== "—");
+
+  if (items.length === 0) return null;
+
+  return (
+    <div className="mt-4 pt-3 border-t border-white/5">
+      <div className="flex items-center gap-1.5 mb-2.5">
+        <Activity className="w-3 h-3 text-slate-600" />
+        <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+          Spark Internals
+        </span>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {items.map((item) => {
+          const Icon = item.icon;
+          return (
+            <div key={item.label} className="flex items-start gap-1.5">
+              <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${item.warn ? "text-amber-500" : "text-slate-600"}`} />
+              <div className="min-w-0">
+                <div className="text-[8px] font-mono uppercase tracking-widest text-slate-600 truncate">
+                  {item.label}
+                </div>
+                <div className={`text-xs font-mono ${item.warn ? "text-amber-400" : "text-white"}`}>
+                  {item.value}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -415,11 +530,13 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
                   <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
                     Resources
                   </span>
+                  <MetricsSourceBadge source={data.actual_usage.metrics_source} />
                 </div>
                 <ResourceSection
                   configs={filteredConfigs}
                   actualUsage={data.actual_usage}
                 />
+                <SparkInternalsSection actualUsage={data.actual_usage} />
               </div>
 
               {/* Capacity */}

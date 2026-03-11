@@ -1,6 +1,8 @@
 export const TABS = {
   CATALOG: "catalog",
   MATRIX: "matrix",
+  DAGS: "dags",
+  SENSORS: "sensors",
   AI: "ai",
 } as const;
 

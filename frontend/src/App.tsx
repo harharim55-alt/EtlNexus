@@ -14,6 +14,16 @@ const SchemaMatrixView = lazy(() =>
     default: m.SchemaMatrixView,
   }))
 );
+const DagSummaryView = lazy(() =>
+  import("@/components/dag-summary/DagSummaryView").then((m) => ({
+    default: m.DagSummaryView,
+  }))
+);
+const SensorsView = lazy(() =>
+  import("@/components/sensors/SensorsView").then((m) => ({
+    default: m.SensorsView,
+  }))
+);
 const AIArchitectView = lazy(() =>
   import("@/components/ai-terminal/AIArchitectView").then((m) => ({
     default: m.AIArchitectView,
@@ -45,6 +55,16 @@ function App() {
         {activeTab === "matrix" && (
           <Suspense fallback={<TabSkeleton />}>
             <SchemaMatrixView />
+          </Suspense>
+        )}
+        {activeTab === "dags" && (
+          <Suspense fallback={<TabSkeleton />}>
+            <DagSummaryView />
+          </Suspense>
+        )}
+        {activeTab === "sensors" && (
+          <Suspense fallback={<TabSkeleton />}>
+            <SensorsView />
           </Suspense>
         )}
         {activeTab === "ai" && (
