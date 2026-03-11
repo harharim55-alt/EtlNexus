@@ -1,0 +1,71 @@
+import { BarChart3 } from "lucide-react";
+import { useDagSummary } from "@/hooks/use-dag-summary";
+import { LoadingState } from "@/components/shared/LoadingState";
+import { ErrorState } from "@/components/shared/ErrorState";
+import { EmptyState } from "@/components/shared/EmptyState";
+import { AggregateBar } from "./AggregateBar";
+import { DagCard } from "./DagCard";
+
+export function DagSummaryView() {
+  const { data, isLoading, error, refetch } = useDagSummary();
+
+  if (isLoading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <LoadingState />
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <ErrorState message="Failed to load DAG summary" onRetry={refetch} />
+      </div>
+    );
+  }
+
+  if (!data || data.dags.length === 0) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <EmptyState message="No DAGs found" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex-1 overflow-y-auto custom-scrollbar">
+      <div className="p-8 max-w-7xl mx-auto">
+        {/* Header */}
+        <div className="mb-8">
+          <div className="flex items-center gap-3 mb-2">
+            <div className="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
+              <BarChart3 className="w-5 h-5 text-indigo-400" />
+            </div>
+            <div>
+              <h1 className="text-xl font-semibold text-white">
+                DAG Operations Dashboard
+              </h1>
+              <p className="text-xs text-slate-500 font-mono mt-0.5">
+                {data.aggregate.total_dags} DAGs monitored &middot;{" "}
+                {data.aggregate.total_pipelines} pipelines
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* Aggregate Stats */}
+        <div className="mb-8">
+          <AggregateBar aggregate={data.aggregate} />
+        </div>
+
+        {/* DAG Cards Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          {data.dags.map((dag) => (
+            <DagCard key={dag.dag_id} dag={dag} />
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
