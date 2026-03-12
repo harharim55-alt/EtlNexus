@@ -26,5 +26,4 @@ class TeamService:
 
     async def get_team_pipelines(self, team_id: uuid.UUID) -> list:
         """Get all pipelines owned by this team."""
-        all_pipelines = await self.pipeline_repo.get_all()
-        return [p for p in all_pipelines if p.team_id == team_id]
+        return await self.pipeline_repo.get_by_team_id(team_id)

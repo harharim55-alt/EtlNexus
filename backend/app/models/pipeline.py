@@ -19,13 +19,13 @@ class Pipeline(Base):
     rows_per_day: Mapped[str | None] = mapped_column(String(50))
     documentation: Mapped[str | None] = mapped_column(Text)
     last_updated_by: Mapped[str | None] = mapped_column(String(255))
-    last_updated_at: Mapped[datetime | None] = mapped_column(DateTime)
+    last_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     team: Mapped[str | None] = mapped_column(String(100), index=True)
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("teams.id", ondelete="SET NULL"), index=True, nullable=True
     )
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
-    updated_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now())
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     fields: Mapped[list["PipelineField"]] = relationship(
         back_populates="pipeline", cascade="all, delete-orphan", order_by="PipelineField.ordinal_position"

@@ -44,7 +44,7 @@ async def get_pipeline(
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
 
-    # Compute can_edit server-side
+    # Compute can_edit server-side and enforce visibility
     if user.role == "admin":
         result.can_edit = True
     elif not result.team_id:
@@ -52,6 +52,16 @@ async def get_pipeline(
     else:
         pipeline_team_uuid = uuid.UUID(result.team_id)
         user_team_ids = {ut.team_id for ut in (user.team_memberships or [])}
+
+        # Enforce visibility — return 404 to prevent UUID enumeration
+        can_see = await grant_repo.user_can_see_pipeline(
+            pipeline_id=pipeline_id,
+            pipeline_team_id=pipeline_team_uuid,
+            user_id=user.id,
+            user_team_ids=user_team_ids,
+        )
+        if not can_see:
+            raise HTTPException(status_code=404, detail="Pipeline not found")
 
         if pipeline_team_uuid in user_team_ids:
             result.can_edit = True

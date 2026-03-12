@@ -85,12 +85,7 @@ class DagSummaryService:
 
             # Build per-task summaries
             task_summaries: list[DagTaskSummary] = []
-            success_count = 0
-            failed_count = 0
-            upstream_failed_count = 0
-            running_count = 0
-            queued_count = 0
-            unknown_count = 0
+            status_counts: dict[str, int] = {}
 
             # Map latest run durations by pipeline_id
             latest_dur_by_pipeline: dict[str, float] = {}
@@ -103,18 +98,7 @@ class DagSummaryService:
                 status_obj = status_by_pipeline.get(pid_str) if pid_str else None
                 task_status = status_obj.status if status_obj else "unknown"
 
-                if task_status == "success":
-                    success_count += 1
-                elif task_status == "failed":
-                    failed_count += 1
-                elif task_status == "upstream_failed":
-                    upstream_failed_count += 1
-                elif task_status == "running":
-                    running_count += 1
-                elif task_status == "queued":
-                    queued_count += 1
-                else:
-                    unknown_count += 1
+                status_counts[task_status] = status_counts.get(task_status, 0) + 1
 
                 pipeline_name = None
                 if task.pipeline:
@@ -130,12 +114,12 @@ class DagSummaryService:
                     task_group_id=task.task_group_id,
                 ))
 
-            all_success += success_count
+            all_success += status_counts.get("success", 0)
             all_total += tc
 
             sr = None
             if tc > 0:
-                sr = round((success_count / tc) * 100, 1)
+                sr = round((status_counts.get("success", 0) / tc) * 100, 1)
 
             # Latest run timing
             latest_start = None
@@ -176,12 +160,7 @@ class DagSummaryService:
                 avg_task_duration_seconds=avg_dur,
                 min_task_duration_seconds=min_dur,
                 max_task_duration_seconds=max_dur,
-                success_count=success_count,
-                failed_count=failed_count,
-                upstream_failed_count=upstream_failed_count,
-                running_count=running_count,
-                queued_count=queued_count,
-                unknown_count=unknown_count,
+                status_counts=status_counts,
                 success_rate=sr,
                 latest_run_start=latest_start,
                 latest_run_end=latest_end,

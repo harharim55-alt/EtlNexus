@@ -61,6 +61,15 @@ export function PipelineRegistry() {
     return dagSummary.dags.map((d) => d.dag_id).sort();
   }, [dagSummary]);
 
+  const availableStatuses = useMemo(() => {
+    if (!pipelines) return [];
+    const statuses = new Set<string>();
+    for (const p of pipelines) {
+      if (p.airflow_status) statuses.add(p.airflow_status);
+    }
+    return Array.from(statuses);
+  }, [pipelines]);
+
   // Apply client-side filters
   const filteredPipelines = useMemo(() => {
     if (!pipelines) return [];
@@ -154,7 +163,7 @@ export function PipelineRegistry() {
 
       {/* Filter drawer */}
       {filtersOpen && (
-        <PipelineFilters availableTeams={availableTeams} availableDags={availableDags} />
+        <PipelineFilters availableTeams={availableTeams} availableDags={availableDags} availableStatuses={availableStatuses} />
       )}
 
       {/* Active filter summary strip (when drawer closed) */}

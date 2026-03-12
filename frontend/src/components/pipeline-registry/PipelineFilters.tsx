@@ -1,12 +1,6 @@
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { X } from "lucide-react";
-
-const STATUS_CONFIG = [
-  { value: "success", label: "Success", dot: "bg-emerald-500", active: "text-emerald-300 bg-emerald-500/15 border-emerald-500/30" },
-  { value: "failed", label: "Failed", dot: "bg-rose-500", active: "text-rose-300 bg-rose-500/15 border-rose-500/30" },
-  { value: "running", label: "Running", dot: "bg-amber-500", active: "text-amber-300 bg-amber-500/15 border-amber-500/30" },
-  { value: "unknown", label: "Unknown", dot: "bg-slate-500", active: "text-slate-300 bg-slate-500/15 border-slate-500/30" },
-] as const;
+import { STATUS_CONFIG, STATUS_SEVERITY_ORDER } from "@/lib/status-config";
 
 const INACTIVE_PILL =
   "text-slate-500 bg-white/[0.02] border-white/5 hover:border-white/15 hover:text-slate-400";
@@ -21,13 +15,21 @@ function formatDagLabel(dagId: string) {
 interface PipelineFiltersProps {
   availableTeams: string[];
   availableDags: string[];
+  availableStatuses: string[];
 }
 
-export function PipelineFilters({ availableTeams, availableDags }: PipelineFiltersProps) {
+export function PipelineFilters({ availableTeams, availableDags, availableStatuses }: PipelineFiltersProps) {
   const { teamFilters, dagFilters, statusFilters, toggleFilter, clearAllFilters } =
     usePipelineStore();
 
   const hasActive = teamFilters.size > 0 || dagFilters.size > 0 || statusFilters.size > 0;
+
+  // Sort statuses by severity order, with unknown statuses at the end
+  const sortedStatuses = [...availableStatuses].sort((a, b) => {
+    const ai = STATUS_SEVERITY_ORDER.indexOf(a);
+    const bi = STATUS_SEVERITY_ORDER.indexOf(b);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+  });
 
   return (
     <div className="px-5 pb-4 pt-1 border-b border-white/5 animate-in fade-in slide-in-from-top-2 duration-200 space-y-3">
@@ -88,22 +90,27 @@ export function PipelineFilters({ availableTeams, availableDags }: PipelineFilte
         </FilterSection>
       )}
 
-      {/* Status section */}
-      <FilterSection label="Status">
-        {STATUS_CONFIG.map((s) => (
-          <button
-            key={s.value}
-            type="button"
-            onClick={() => toggleFilter("status", s.value)}
-            className={`text-[10px] font-mono px-2.5 py-1 rounded-full border transition-all cursor-pointer inline-flex items-center gap-1.5 ${
-              statusFilters.has(s.value) ? s.active : INACTIVE_PILL
-            }`}
-          >
-            <span className={`size-1.5 rounded-full ${s.dot}`} />
-            {s.label}
-          </button>
-        ))}
-      </FilterSection>
+      {/* Status section — dynamically populated from actual pipeline data */}
+      {sortedStatuses.length > 0 && (
+        <FilterSection label="Status">
+          {sortedStatuses.map((value) => {
+            const cfg = STATUS_CONFIG[value] ?? STATUS_CONFIG.unknown;
+            return (
+              <button
+                key={value}
+                type="button"
+                onClick={() => toggleFilter("status", value)}
+                className={`text-[10px] font-mono px-2.5 py-1 rounded-full border transition-all cursor-pointer inline-flex items-center gap-1.5 ${
+                  statusFilters.has(value) ? cfg.activePill : INACTIVE_PILL
+                }`}
+              >
+                <span className={`size-1.5 rounded-full ${cfg.dot.replace(" animate-pulse", "")}`} />
+                {cfg.label}
+              </button>
+            );
+          })}
+        </FilterSection>
+      )}
     </div>
   );
 }

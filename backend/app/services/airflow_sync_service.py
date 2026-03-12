@@ -22,7 +22,7 @@ from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
 from app.repositories.sensor_repo import SensorRepository
 from app.repositories.team_repo import TeamRepository
-from app.services.airflow_service import TASK_STATE_MAP
+from app.services.airflow_service import KNOWN_AIRFLOW_STATES, _STATUS_PRIORITY
 
 logger = logging.getLogger(__name__)
 
@@ -295,7 +295,7 @@ class AirflowSyncService:
                         "spark_executor_cores": effective.get("spark_executor_cores"),
                         "spark_num_executors": effective.get("spark_num_executors"),
                         "is_dag_override": bool(override),
-                        "synced_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                        "synced_at": datetime.now(timezone.utc),
                     })
                     resource_count += 1
                 except Exception:
@@ -440,11 +440,9 @@ class AirflowSyncService:
                     resource_by_dag[dag_id] = raw_resources
 
                 state = inst.get("state", "")
-                status = TASK_STATE_MAP.get(state, "unknown")
+                status = state if state in KNOWN_AIRFLOW_STATES else "unknown"
                 exec_date = run.get("execution_date") or run.get("logical_date")
-                if best_status is None or status == "running" or (
-                    status == "success" and best_status != "running"
-                ):
+                if best_status is None or _STATUS_PRIORITY.get(status, 13) < _STATUS_PRIORITY.get(best_status, 13):
                     best_status = status
                     best_dag_id = dag_id
                     best_exec_date = exec_date
@@ -525,7 +523,7 @@ class AirflowSyncService:
                     "spark_executor_cores": effective.get("spark_executor_cores"),
                     "spark_num_executors": effective.get("spark_num_executors"),
                     "is_dag_override": bool(override),
-                    "synced_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                    "synced_at": datetime.now(timezone.utc),
                 })
             except Exception:
                 logger.exception(
@@ -565,7 +563,7 @@ class AirflowSyncService:
                     continue
 
                 state = inst.get("state", "unknown")
-                status = TASK_STATE_MAP.get(state, "unknown")
+                status = state if state in KNOWN_AIRFLOW_STATES else "unknown"
                 duration = inst.get("duration")
                 if duration is None:
                     break
@@ -578,8 +576,8 @@ class AirflowSyncService:
                     "dag_id": dag_id,
                     "dag_run_id": dag_run_id,
                     "duration_seconds": duration,
-                    "start_date": start_date.replace(tzinfo=None) if start_date else None,
-                    "end_date": end_date.replace(tzinfo=None) if end_date else None,
+                    "start_date": start_date,
+                    "end_date": end_date,
                     "status": status,
                 })
                 if is_new:
@@ -629,19 +627,18 @@ class AirflowSyncService:
             if best_exec_date:
                 if isinstance(best_exec_date, str):
                     try:
-                        dt = datetime.fromisoformat(best_exec_date.replace("Z", "+00:00"))
-                        clean_exec_date = dt.replace(tzinfo=None)
+                        clean_exec_date = datetime.fromisoformat(best_exec_date.replace("Z", "+00:00"))
                     except ValueError:
                         pass
                 elif isinstance(best_exec_date, datetime):
-                    clean_exec_date = best_exec_date.replace(tzinfo=None)
+                    clean_exec_date = best_exec_date
 
             await self.airflow_repo.upsert({
                 "pipeline_id": pipeline_id,
                 "dag_id": best_dag_id,
                 "status": best_status,
                 "execution_date": clean_exec_date,
-                "last_checked_at": datetime.now(timezone.utc).replace(tzinfo=None),
+                "last_checked_at": datetime.now(timezone.utc),
             })
 
         await self.session.commit()

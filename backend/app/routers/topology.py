@@ -7,8 +7,10 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_user
 from app.cache import topology_cache
 from app.database import get_db_session
+from app.models.user import User
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.sensor_repo import SensorRepository
@@ -28,6 +30,7 @@ router = APIRouter(prefix="/api/pipelines", tags=["topology"])
 async def get_pipeline_topology(
     pipeline_id: uuid.UUID,
     dag_id: Optional[str] = Query(None, description="Filter topology to a specific DAG"),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
     cache_key = f"{pipeline_id}:{dag_id}"
@@ -191,6 +194,7 @@ async def get_pipeline_topology(
 async def get_upstream_topology(
     pipeline_id: uuid.UUID,
     dag_id: Optional[str] = Query(None, description="Filter to a specific DAG"),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
     """Return the full recursive upstream dependency subgraph via BFS through needs/prefers."""

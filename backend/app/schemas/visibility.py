@@ -1,5 +1,7 @@
 """Pydantic schemas for visibility grant endpoints."""
 
+from typing import Literal
+
 from pydantic import BaseModel
 
 
@@ -8,7 +10,7 @@ class VisibilityGrantRequest(BaseModel):
     grantee_user_id: str | None = None
     pipeline_id: str | None = None
     source_team_id: str | None = None
-    grant_level: str = "viewer"
+    grant_level: Literal["viewer", "editor"] = "viewer"
 
 
 class VisibilityGrantResponse(BaseModel):
@@ -21,7 +23,7 @@ class VisibilityGrantResponse(BaseModel):
     pipeline_id: str | None = None
     source_team_id: str | None = None
     source_team_name: str | None = None
-    grant_level: str = "viewer"
+    grant_level: Literal["viewer", "editor"] = "viewer"
     granted_by: str
     created_at: str
 

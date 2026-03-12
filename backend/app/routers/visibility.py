@@ -84,12 +84,6 @@ async def create_grant(
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=f"Invalid UUID: {exc}") from exc
 
-    if body.grant_level not in ("viewer", "editor"):
-        raise HTTPException(
-            status_code=400,
-            detail="grant_level must be 'viewer' or 'editor'",
-        )
-
     grant = await service.create_grant(
         pipeline_id=pipeline_uuid,
         source_team_id=source_team_uuid,

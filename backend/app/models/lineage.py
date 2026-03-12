@@ -20,7 +20,7 @@ class LineageEdge(Base):
     source_table: Mapped[str] = mapped_column(String(500))
     target_table: Mapped[str] = mapped_column(String(500))
     edge_type: Mapped[str] = mapped_column(String(20))  # "reads_from" | "writes_to"
-    discovered_at: Mapped[datetime] = mapped_column(default=func.now())
+    discovered_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     source_pipeline: Mapped["Pipeline | None"] = relationship(
         foreign_keys=[source_pipeline_id], back_populates="lineage_targets"

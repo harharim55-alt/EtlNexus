@@ -14,15 +14,18 @@ from app.repositories.sensor_repo import SensorRepository
 
 logger = logging.getLogger(__name__)
 
-TASK_STATE_MAP = {
-    "success": "success",
-    "failed": "failed",
-    "upstream_failed": "upstream_failed",
-    "running": "running",
-    "queued": "queued",
-    "scheduled": "running",
-    "deferred": "running",
-    "up_for_retry": "running",
+KNOWN_AIRFLOW_STATES = {
+    "success", "failed", "upstream_failed", "running", "queued",
+    "scheduled", "deferred", "up_for_retry", "up_for_reschedule",
+    "skipped", "removed", "restarting", "no_status",
+}
+
+# Lower number = higher priority when picking "best" status
+_STATUS_PRIORITY = {
+    "failed": 0, "upstream_failed": 1, "restarting": 2, "up_for_retry": 3,
+    "running": 4, "up_for_reschedule": 5, "queued": 6, "scheduled": 7,
+    "deferred": 8, "skipped": 9, "success": 10, "removed": 11,
+    "no_status": 12, "unknown": 13,
 }
 
 
@@ -92,11 +95,9 @@ class AirflowService:
                     # Check if this is a sensor task (only track from latest run)
                     if task_id in sensor_name_set and run is runs[0]:
                         state = task.get("state", "unknown")
-                        s_status = TASK_STATE_MAP.get(state, "unknown")
+                        s_status = state if state in KNOWN_AIRFLOW_STATES else "unknown"
                         existing = sensor_best_status.get(task_id)
-                        if existing is None or s_status == "success" or (
-                            s_status == "running" and existing != "success"
-                        ):
+                        if existing is None or _STATUS_PRIORITY.get(s_status, 13) < _STATUS_PRIORITY.get(existing, 13):
                             sensor_best_status[task_id] = s_status
                         continue
 
@@ -107,12 +108,9 @@ class AirflowService:
                     pid = str(pipeline.id)
 
                     state = task.get("state", "unknown")
-                    status = TASK_STATE_MAP.get(state, "unknown")
+                    status = state if state in KNOWN_AIRFLOW_STATES else "unknown"
 
-                    # Strip timezone for DB column
-                    clean_exec_date = (
-                        exec_date.replace(tzinfo=None) if exec_date else None
-                    )
+                    clean_exec_date = exec_date
 
                     # Record run history (duration + actual usage)
                     duration = task.get("duration")
@@ -125,12 +123,8 @@ class AirflowService:
                             "dag_id": dag_id,
                             "dag_run_id": dag_run_id,
                             "duration_seconds": duration,
-                            "start_date": (
-                                start_date.replace(tzinfo=None) if start_date else None
-                            ),
-                            "end_date": (
-                                end_date.replace(tzinfo=None) if end_date else None
-                            ),
+                            "start_date": start_date,
+                            "end_date": end_date,
                             "status": status,
                         })
 
@@ -183,9 +177,7 @@ class AirflowService:
                             "dag_id": dag_id,
                             "status": status,
                             "execution_date": clean_exec_date,
-                            "last_checked_at": datetime.now(timezone.utc).replace(
-                                tzinfo=None
-                            ),
+                            "last_checked_at": datetime.now(timezone.utc),
                         }
 
         # Upsert all collected statuses

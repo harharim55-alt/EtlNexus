@@ -23,7 +23,7 @@ from app.config import settings
 from app.database import get_db_session
 from app.integrations.oidc_client import oidc_client
 from app.models.user import User
-from app.models.user_team import UserTeam
+from app.services.user_auth_service import UserAuthService
 
 logger = logging.getLogger(__name__)
 
@@ -42,25 +42,11 @@ async def get_current_user(
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
     session: AsyncSession = Depends(get_db_session),
 ) -> User:
-    """Validate a Bearer JWT and return (or JIT-create) the matching User.
+    """Validate a Bearer JWT and return (or JIT-create) the matching User."""
+    auth_service = UserAuthService(session)
 
-    When ``settings.sso_enabled`` is ``False`` a stable default admin user
-    is returned without checking credentials.
-
-    Args:
-        request: FastAPI Request (injected automatically).
-        credentials: Bearer token from the Authorization header.
-        session: Async DB session.
-
-    Returns:
-        Authenticated and persisted User model instance.
-
-    Raises:
-        HTTPException(401): When SSO is enabled and the token is absent or
-            invalid.
-    """
     if not settings.sso_enabled:
-        return await _get_or_create_default_user(session)
+        return await auth_service.get_or_create_default_user()
 
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -68,10 +54,10 @@ async def get_current_user(
     try:
         claims = await oidc_client.validate_token(credentials.credentials)
     except Exception as exc:
-        logger.debug("JWT validation failed: %s", exc)
+        logger.warning("JWT validation failed: %s", exc)
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 
-    return await _upsert_user_from_claims(session, claims)
+    return await auth_service.upsert_from_claims(claims)
 
 
 async def get_current_user_optional(
@@ -238,108 +224,3 @@ def require_team_membership_or_editor_grant(pipeline_id_param: str = "pipeline_i
         )
 
     return _check
-
-
-# ---------------------------------------------------------------------------
-# Internal helpers
-# ---------------------------------------------------------------------------
-
-
-async def _upsert_user_from_claims(
-    session: AsyncSession,
-    claims: dict,
-) -> User:
-    """Create or update a User from decoded JWT claims and sync team memberships.
-
-    The user record is keyed on the ``sub`` claim.  On every login the
-    email, display_name, role, and last_login fields are refreshed.
-
-    Group memberships from the token are reconciled against the database:
-    new teams are created on first encounter (``source="sso"``), memberships
-    that are no longer present in the token are removed.
-
-    Args:
-        session: Active async DB session (not yet committed).
-        claims: Decoded JWT claims dict returned by ``oidc_client.validate_token``.
-
-    Returns:
-        Persisted and flushed User instance.
-    """
-    from app.repositories.team_repo import TeamRepository
-    from app.repositories.user_repo import UserRepository
-
-    user_repo = UserRepository(session)
-    team_repo = TeamRepository(session)
-
-    sub: str = claims.get("sub", "")
-    email: str = claims.get("email", "")
-    display_name: str = (
-        claims.get("preferred_username") or claims.get("name") or email
-    )
-    role: str = oidc_client.extract_role(claims)
-    groups: list[str] = oidc_client.extract_groups(claims)
-
-    # Upsert user row and refresh last_login
-    user = await user_repo.upsert_from_sso(sub, email, display_name, role)
-
-    # ---- Reconcile team memberships ----------------------------------------
-    current_team_ids: set[uuid.UUID] = {
-        ut.team_id for ut in user.team_memberships
-    }
-
-    # Resolve / create a Team row for each group in the token
-    sso_teams = []
-    for group_name in groups:
-        team = await team_repo.get_or_create(group_name, source="sso")
-        sso_teams.append(team)
-
-    sso_team_ids: set[uuid.UUID] = {t.id for t in sso_teams}
-
-    # Add memberships that are new in this token
-    for team in sso_teams:
-        if team.id not in current_team_ids:
-            membership = UserTeam(user_id=user.id, team_id=team.id)
-            session.add(membership)
-
-    # Remove memberships that are no longer in this token
-    for ut in list(user.team_memberships):
-        if ut.team_id not in sso_team_ids:
-            await session.delete(ut)
-
-    await session.flush()
-
-    # Expire cached relationship so selectinload re-executes
-    session.expire(user, ["team_memberships"])
-    user = await user_repo.get_by_sub(sub)
-    return user
-
-
-async def _get_or_create_default_user(session: AsyncSession) -> User:
-    """Return a stable default admin user for non-SSO deployments.
-
-    The user is keyed by ``sub="default-admin"``.  On first call the row is
-    inserted; subsequent calls find and return the existing record.
-
-    Args:
-        session: Active async DB session.
-
-    Returns:
-        The default admin User instance.
-    """
-    from app.repositories.user_repo import UserRepository
-
-    user_repo = UserRepository(session)
-    user = await user_repo.get_by_sub("default-admin")
-
-    if not user:
-        user = User(
-            id=uuid.uuid4(),
-            sub="default-admin",
-            email="admin@local",
-            display_name="Admin",
-            role="admin",
-        )
-        session.add(user)
-        await session.flush()
-
-    return user

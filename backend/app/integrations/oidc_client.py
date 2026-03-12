@@ -13,7 +13,8 @@ import logging
 import time
 
 import httpx
-from jose import JWTError, jwt
+import jwt as pyjwt
+from jwt.exceptions import PyJWTError as JWTError
 
 from app.config import settings
 
@@ -21,6 +22,9 @@ logger = logging.getLogger(__name__)
 
 # JWKS cache TTL in seconds (6 hours)
 _JWKS_TTL: float = 6 * 3600
+
+# Roles accepted by the application — anything else is treated as "member".
+VALID_ROLES: set[str] = {"admin", "member", "viewer"}
 
 
 class OIDCClient:
@@ -141,7 +145,7 @@ class OIDCClient:
 
         Verification steps:
         - Signature verified against cached JWKS (RS256).
-        - ``exp``, ``iss``, and ``aud`` claims are checked by python-jose.
+        - ``exp``, ``iss``, and ``aud`` claims are checked by the JWT library.
         - If the ``kid`` is not found in the cache a single JWKS refresh is
           attempted before raising.
 
@@ -160,7 +164,22 @@ class OIDCClient:
             JWTError: When the token is invalid, expired, or has an
                 unrecognised signature.
         """
-        unverified_header = jwt.get_unverified_header(token)
+        if not self._initialized:
+            # Attempt late initialization in case Keycloak came up after startup
+            logger.warning("OIDC client not initialized — attempting late initialization")
+            await self.initialize()
+            if not self._initialized:
+                raise JWTError(
+                    "OIDC client not initialized — Keycloak may be unreachable. "
+                    "Check SSO_ISSUER_URL and Keycloak availability."
+                )
+
+        # Proactively refresh stale JWKS
+        if self._is_jwks_stale():
+            logger.info("JWKS cache stale (>%ds) — refreshing", int(_JWKS_TTL))
+            await self._refresh_jwks()
+
+        unverified_header = pyjwt.get_unverified_header(token)
         kid: str = unverified_header.get("kid", "")
 
         signing_key = self._get_signing_key(kid)
@@ -176,32 +195,52 @@ class OIDCClient:
         if settings.sso_public_issuer_url:
             valid_issuers.append(settings.sso_public_issuer_url.rstrip("/"))
 
+        # Keycloak access tokens carry the client ID in "azp" rather than
+        # "aud" (which only appears in id_tokens).  Decode without strict aud
+        # verification, then validate azp/aud manually.
         last_exc: Exception = JWTError("Token validation failed")
         for issuer in valid_issuers:
             try:
-                claims = jwt.decode(
+                claims = pyjwt.decode(
                     token,
                     signing_key,
                     algorithms=["RS256"],
-                    audience=settings.sso_audience,
                     issuer=issuer,
+                    options={"verify_aud": False},
                 )
+                # Validate audience: accept either aud or azp matching the config
+                expected = settings.sso_audience
+                if expected:
+                    aud = claims.get("aud")
+                    azp = claims.get("azp", "")
+                    aud_ok = (
+                        aud == expected
+                        or (isinstance(aud, list) and expected in aud)
+                        or azp == expected
+                    )
+                    if not aud_ok:
+                        raise JWTError(
+                            f"Token audience/azp does not match '{expected}'"
+                        )
                 return claims
             except JWTError as exc:
                 last_exc = exc
 
         raise last_exc
 
-    def _get_signing_key(self, kid: str) -> dict | None:
-        """Find a JWK by its ``kid`` in the cached JWKS.
+    def _get_signing_key(self, kid: str) -> pyjwt.PyJWK | None:
+        """Find a JWK by its ``kid`` in the cached JWKS and return a PyJWK key.
 
         Args:
             kid: Key ID from the JWT header.
 
         Returns:
-            The JWK dict if found, otherwise ``None``.
+            A ``PyJWK`` instance if found, otherwise ``None``.
         """
-        return self._jwks.get(kid)
+        jwk_data = self._jwks.get(kid)
+        if jwk_data is None:
+            return None
+        return pyjwt.PyJWK(jwk_data)
 
     # ------------------------------------------------------------------
     # Claims extraction helpers
@@ -253,12 +292,15 @@ class OIDCClient:
 
         if isinstance(value, list):
             roles: list[str] = [r for r in value if isinstance(r, str)]
-            if settings.sso_admin_role in roles:
+            if settings.sso_admin_role in roles and settings.sso_admin_role in VALID_ROLES:
                 return settings.sso_admin_role
-            return roles[0] if roles else "member"
+            for r in roles:
+                if r in VALID_ROLES:
+                    return r
+            return "member"
 
         if isinstance(value, str):
-            return value
+            return value if value in VALID_ROLES else "member"
 
         return "member"
 

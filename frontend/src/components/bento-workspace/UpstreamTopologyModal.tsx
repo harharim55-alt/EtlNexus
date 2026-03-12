@@ -2,6 +2,7 @@ import { useEffect, useRef, useCallback, useMemo, useState } from "react";
 import { X, GitFork, Lock, Sparkles, Radio, Loader2 } from "lucide-react";
 import { useUpstreamTopology } from "@/hooks/use-upstream-topology";
 import { usePipelineStore } from "@/stores/pipeline-store";
+import { getStatusStyle, STATUS_CONFIG } from "@/lib/status-config";
 import type { UpstreamNode, UpstreamEdge } from "@/types/topology";
 
 /* ── Props ─────────────────────────────────────────────────────────── */
@@ -11,17 +12,6 @@ interface UpstreamTopologyModalProps {
   onClose: () => void;
   pipelineId: string;
 }
-
-/* ── Status config (shared palette) ────────────────────────────────── */
-
-const STATUS_CONFIG: Record<string, { dot: string; glow: string; label: string; text: string; bg: string }> = {
-  success:         { dot: "bg-emerald-400", glow: "shadow-[0_0_6px_rgba(52,211,153,0.6)]",  label: "Success",         text: "text-emerald-400/80", bg: "bg-emerald-500/8" },
-  failed:          { dot: "bg-rose-400",    glow: "shadow-[0_0_6px_rgba(251,113,133,0.6)]",  label: "Failed",          text: "text-rose-400/80",    bg: "bg-rose-500/8" },
-  upstream_failed: { dot: "bg-orange-400",  glow: "shadow-[0_0_6px_rgba(251,146,60,0.6)]",   label: "Upstream Failed", text: "text-orange-400/80",  bg: "bg-orange-500/8" },
-  running:         { dot: "bg-amber-400 animate-pulse", glow: "shadow-[0_0_6px_rgba(251,191,36,0.6)]", label: "Running", text: "text-amber-400/80", bg: "bg-amber-500/8" },
-  queued:          { dot: "bg-sky-400",     glow: "shadow-[0_0_6px_rgba(56,189,248,0.4)]",   label: "Queued",          text: "text-sky-400/80",     bg: "bg-sky-500/8" },
-  unknown:         { dot: "bg-slate-500",   glow: "",                                         label: "Unknown",         text: "text-slate-500",      bg: "bg-white/[0.02]" },
-};
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
 
@@ -241,7 +231,7 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
               <div className="w-px h-3 bg-white/[0.06]" />
               <div className="flex items-center gap-1">
                 {Object.entries(summary).map(([status, count]) => {
-                  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
+                  const cfg = getStatusStyle(status);
                   return (
                     <span key={status} className={`flex items-center gap-1 text-[8px] font-mono px-1.5 py-0.5 rounded ${cfg.text} ${cfg.bg}`}>
                       <span className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot.replace(" animate-pulse", "")}`} />
@@ -455,7 +445,7 @@ function NodeCard({
 }) {
   const displayName = node.pipeline_name ?? node.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const isClickable = !node.is_current && !!node.pipeline_id;
-  const cfg = STATUS_CONFIG[node.status] ?? STATUS_CONFIG.unknown;
+  const cfg = getStatusStyle(node.status);
 
   return (
     <button
@@ -505,7 +495,7 @@ function SensorNodeCard({
   isDimmed: boolean;
 }) {
   const displayName = node.pipeline_name ?? node.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
-  const cfg = STATUS_CONFIG[node.status] ?? STATUS_CONFIG.unknown;
+  const cfg = getStatusStyle(node.status);
 
   return (
     <div

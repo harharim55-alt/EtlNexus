@@ -21,7 +21,7 @@ class UserTeam(Base):
         ForeignKey("teams.id", ondelete="CASCADE"), index=True
     )
     role_in_team: Mapped[str] = mapped_column(String(50), default="member")
-    joined_at: Mapped[datetime] = mapped_column(default=func.now())
+    joined_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     user: Mapped["User"] = relationship(back_populates="team_memberships")
     team: Mapped["Team"] = relationship(back_populates="members")

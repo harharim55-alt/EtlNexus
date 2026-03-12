@@ -8,7 +8,7 @@ Both constraints are enforced by CHECK constraints.
 import uuid
 from datetime import datetime
 
-from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, func
+from sqlalchemy import CheckConstraint, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -27,6 +27,17 @@ class VisibilityGrant(Base):
             "(grantee_team_id IS NULL AND grantee_user_id IS NOT NULL)",
             name="ck_visibility_grant_grantee",
         ),
+        CheckConstraint(
+            "grant_level IN ('viewer', 'editor')",
+            name="ck_visibility_grants_grant_level",
+        ),
+        UniqueConstraint(
+            "grantee_team_id",
+            "grantee_user_id",
+            "pipeline_id",
+            "source_team_id",
+            name="uq_visibility_grant_target_grantee",
+        ),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -44,7 +55,7 @@ class VisibilityGrant(Base):
     )
     grant_level: Mapped[str] = mapped_column(String(20), default="viewer")
     granted_by: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     grantee_team: Mapped["Team"] = relationship(foreign_keys=[grantee_team_id])
     grantee_user: Mapped["User"] = relationship(foreign_keys=[grantee_user_id])

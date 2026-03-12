@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -84,7 +84,7 @@ class PipelineRepository:
         """Compute 30-day success rate for a batch of pipelines."""
         if not pipeline_ids:
             return {}
-        cutoff = datetime.utcnow() - timedelta(days=30)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
         stmt = (
             select(
                 PipelineRunHistory.pipeline_id,
@@ -130,7 +130,7 @@ class PipelineRepository:
         if documentation is not None:
             pipeline.documentation = documentation
         pipeline.last_updated_by = updated_by
-        pipeline.last_updated_at = datetime.utcnow()
+        pipeline.last_updated_at = datetime.now(timezone.utc)
         await self.session.commit()
         return pipeline
 
@@ -236,6 +236,17 @@ class PipelineRepository:
             pipeline.team = team_name
             pipeline.team_id = team_id
             await self.session.flush()
+
+    async def get_by_team_id(self, team_id: uuid.UUID) -> list[Pipeline]:
+        """Return pipelines owned by a specific team (uses ix_pipelines_team_id index)."""
+        stmt = (
+            select(Pipeline)
+            .options(selectinload(Pipeline.airflow_status))
+            .where(Pipeline.team_id == team_id)
+            .order_by(Pipeline.name)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
     async def get_all_with_fields(self) -> list[Pipeline]:
         stmt = (

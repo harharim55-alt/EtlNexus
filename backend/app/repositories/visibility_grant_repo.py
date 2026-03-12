@@ -2,11 +2,56 @@
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.visibility_grant import VisibilityGrant
+
+
+def _build_grant_conditions(
+    pipeline_id: uuid.UUID,
+    user_id: uuid.UUID,
+    user_team_ids: set[uuid.UUID],
+    pipeline_team_id: uuid.UUID | None,
+):
+    """Build OR-able SQLAlchemy conditions matching any grant that covers a pipeline.
+
+    Returns a list of BinaryExpression clauses covering:
+    - Direct pipeline grants to the user
+    - Direct pipeline grants to user's teams
+    - Source-team grants to the user
+    - Source-team grants to user's teams
+    """
+    conditions = []
+
+    # Direct pipeline grants → user
+    conditions.append(
+        (VisibilityGrant.grantee_user_id == user_id)
+        & (VisibilityGrant.pipeline_id == pipeline_id)
+    )
+
+    # Direct pipeline grants → user's teams
+    if user_team_ids:
+        conditions.append(
+            VisibilityGrant.grantee_team_id.in_(user_team_ids)
+            & (VisibilityGrant.pipeline_id == pipeline_id)
+        )
+
+    # Source-team grants → user
+    if pipeline_team_id:
+        conditions.append(
+            (VisibilityGrant.grantee_user_id == user_id)
+            & (VisibilityGrant.source_team_id == pipeline_team_id)
+        )
+        # Source-team grants → user's teams
+        if user_team_ids:
+            conditions.append(
+                VisibilityGrant.grantee_team_id.in_(user_team_ids)
+                & (VisibilityGrant.source_team_id == pipeline_team_id)
+            )
+
+    return conditions
 
 
 class VisibilityGrantRepository:
@@ -58,6 +103,36 @@ class VisibilityGrantRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def _find_existing_grant(
+        self,
+        grantee_team_id: uuid.UUID | None,
+        grantee_user_id: uuid.UUID | None,
+        pipeline_id: uuid.UUID | None,
+        source_team_id: uuid.UUID | None,
+    ) -> VisibilityGrant | None:
+        """Find an existing grant matching the same target+grantee combo."""
+        conditions = []
+        if grantee_team_id is not None:
+            conditions.append(VisibilityGrant.grantee_team_id == grantee_team_id)
+        else:
+            conditions.append(VisibilityGrant.grantee_team_id.is_(None))
+        if grantee_user_id is not None:
+            conditions.append(VisibilityGrant.grantee_user_id == grantee_user_id)
+        else:
+            conditions.append(VisibilityGrant.grantee_user_id.is_(None))
+        if pipeline_id is not None:
+            conditions.append(VisibilityGrant.pipeline_id == pipeline_id)
+        else:
+            conditions.append(VisibilityGrant.pipeline_id.is_(None))
+        if source_team_id is not None:
+            conditions.append(VisibilityGrant.source_team_id == source_team_id)
+        else:
+            conditions.append(VisibilityGrant.source_team_id.is_(None))
+
+        stmt = select(VisibilityGrant).where(*conditions)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def _refetch(self, grant_id: uuid.UUID) -> VisibilityGrant:
         """Re-fetch a grant with all relationships eagerly loaded."""
         stmt = (
@@ -79,7 +154,22 @@ class VisibilityGrantRepository:
         grantee_user_id: uuid.UUID | None = None,
         grant_level: str = "viewer",
     ) -> VisibilityGrant:
-        """Grant a specific pipeline's visibility to a team or user."""
+        """Grant a specific pipeline's visibility to a team or user.
+
+        If a matching grant already exists, updates its grant_level instead.
+        """
+        existing = await self._find_existing_grant(
+            grantee_team_id=grantee_team_id,
+            grantee_user_id=grantee_user_id,
+            pipeline_id=pipeline_id,
+            source_team_id=None,
+        )
+        if existing:
+            existing.grant_level = grant_level
+            existing.granted_by = granted_by
+            await self.session.flush()
+            return await self._refetch(existing.id)
+
         grant = VisibilityGrant(
             id=uuid.uuid4(),
             grantee_team_id=grantee_team_id,
@@ -101,7 +191,22 @@ class VisibilityGrantRepository:
         grantee_user_id: uuid.UUID | None = None,
         grant_level: str = "viewer",
     ) -> VisibilityGrant:
-        """Grant all pipelines of a team to another team or user."""
+        """Grant all pipelines of a team to another team or user.
+
+        If a matching grant already exists, updates its grant_level instead.
+        """
+        existing = await self._find_existing_grant(
+            grantee_team_id=grantee_team_id,
+            grantee_user_id=grantee_user_id,
+            pipeline_id=None,
+            source_team_id=source_team_id,
+        )
+        if existing:
+            existing.grant_level = grant_level
+            existing.granted_by = granted_by
+            await self.session.flush()
+            return await self._refetch(existing.id)
+
         grant = VisibilityGrant(
             id=uuid.uuid4(),
             grantee_team_id=grantee_team_id,
@@ -129,40 +234,11 @@ class VisibilityGrantRepository:
         pipeline_result = await self.session.execute(pipeline_stmt)
         pipeline_team_id = pipeline_result.scalar_one_or_none()
 
-        conditions = []
-
-        # Direct pipeline grants to this user
-        conditions.append(
-            (VisibilityGrant.grantee_user_id == user_id)
-            & (VisibilityGrant.pipeline_id == pipeline_id)
+        conditions = _build_grant_conditions(
+            pipeline_id, user_id, user_team_ids, pipeline_team_id
         )
 
-        # Direct pipeline grants to user's teams
-        if user_team_ids:
-            conditions.append(
-                VisibilityGrant.grantee_team_id.in_(user_team_ids)
-                & (VisibilityGrant.pipeline_id == pipeline_id)
-            )
-
-        # Team-level grants (source_team_id) to this user
-        if pipeline_team_id:
-            conditions.append(
-                (VisibilityGrant.grantee_user_id == user_id)
-                & (VisibilityGrant.source_team_id == pipeline_team_id)
-            )
-            # Team-level grants to user's teams
-            if user_team_ids:
-                conditions.append(
-                    VisibilityGrant.grantee_team_id.in_(user_team_ids)
-                    & (VisibilityGrant.source_team_id == pipeline_team_id)
-                )
-
-        from sqlalchemy import or_
-
-        stmt = (
-            select(VisibilityGrant.grant_level)
-            .where(or_(*conditions))
-        )
+        stmt = select(VisibilityGrant.grant_level).where(or_(*conditions))
         result = await self.session.execute(stmt)
         levels = [row[0] for row in result.all()]
         return "editor" in levels
@@ -175,34 +251,9 @@ class VisibilityGrantRepository:
         pipeline_team_id: uuid.UUID | None,
     ) -> str | None:
         """Return the highest grant level a user has for a pipeline, or None."""
-        from sqlalchemy import or_
-
-        conditions = []
-
-        # Direct pipeline grants to this user
-        conditions.append(
-            (VisibilityGrant.grantee_user_id == user_id)
-            & (VisibilityGrant.pipeline_id == pipeline_id)
+        conditions = _build_grant_conditions(
+            pipeline_id, user_id, user_team_ids, pipeline_team_id
         )
-
-        # Direct pipeline grants to user's teams
-        if user_team_ids:
-            conditions.append(
-                VisibilityGrant.grantee_team_id.in_(user_team_ids)
-                & (VisibilityGrant.pipeline_id == pipeline_id)
-            )
-
-        # Team-level grants (source_team_id) to this user
-        if pipeline_team_id:
-            conditions.append(
-                (VisibilityGrant.grantee_user_id == user_id)
-                & (VisibilityGrant.source_team_id == pipeline_team_id)
-            )
-            if user_team_ids:
-                conditions.append(
-                    VisibilityGrant.grantee_team_id.in_(user_team_ids)
-                    & (VisibilityGrant.source_team_id == pipeline_team_id)
-                )
 
         stmt = select(VisibilityGrant.grant_level).where(or_(*conditions))
         result = await self.session.execute(stmt)
@@ -213,6 +264,35 @@ class VisibilityGrantRepository:
         if "viewer" in levels:
             return "viewer"
         return None
+
+    async def user_can_see_pipeline(
+        self,
+        pipeline_id: uuid.UUID,
+        pipeline_team_id: uuid.UUID | None,
+        user_id: uuid.UUID,
+        user_team_ids: set[uuid.UUID],
+    ) -> bool:
+        """Check if a non-admin user has visibility to a specific pipeline.
+
+        Mirrors the conditions in ``PipelineRepository.list_visible``:
+        - Unassigned pipelines (no team) are visible to everyone.
+        - Pipeline belongs to one of the user's teams.
+        - A visibility grant targets this pipeline for the user or their teams.
+        - A visibility grant targets the pipeline's source team for the user or their teams.
+        """
+        if not pipeline_team_id:
+            return True
+
+        if pipeline_team_id in user_team_ids:
+            return True
+
+        conditions = _build_grant_conditions(
+            pipeline_id, user_id, user_team_ids, pipeline_team_id
+        )
+
+        stmt = select(VisibilityGrant.id).where(or_(*conditions)).limit(1)
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none() is not None
 
     async def delete_grant(self, grant_id: uuid.UUID) -> bool:
         """Delete a visibility grant by ID. Returns True if deleted, False if not found."""

@@ -1,9 +1,10 @@
 """User repository — async SQLAlchemy data access for users."""
 
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -46,31 +47,39 @@ class UserRepository:
         display_name: str,
         role: str,
     ) -> User:
-        """Create or update user from SSO claims. Updates last_login on every call."""
-        stmt = select(User).where(User.sub == sub)
-        result = await self.session.execute(stmt)
-        user = result.scalar_one_or_none()
+        """Create or update user from SSO claims. Updates last_login on every call.
 
-        if user:
-            user.email = email
-            user.display_name = display_name
-            user.role = role
-            user.last_login = datetime.utcnow()
-        else:
-            user = User(
+        Uses PostgreSQL ``INSERT ... ON CONFLICT DO UPDATE`` to handle
+        concurrent first-login requests atomically.
+        """
+        now = datetime.now(timezone.utc)
+        stmt = (
+            pg_insert(User)
+            .values(
                 id=uuid.uuid4(),
                 sub=sub,
                 email=email,
                 display_name=display_name,
                 role=role,
-                last_login=datetime.utcnow(),
+                last_login=now,
             )
-            self.session.add(user)
-
+            .on_conflict_do_update(
+                index_elements=["sub"],
+                set_={
+                    "email": email,
+                    "display_name": display_name,
+                    "role": role,
+                    "last_login": now,
+                },
+            )
+            .returning(User.id)
+        )
+        result = await self.session.execute(stmt)
+        user_id = result.scalar_one()
         await self.session.flush()
 
         # Reload with team memberships eagerly loaded
-        loaded = await self.get_by_id(user.id)
+        loaded = await self.get_by_id(user_id)
         assert loaded is not None
         return loaded
 
@@ -94,3 +103,9 @@ class UserRepository:
         user.role = role
         await self.session.flush()
         return user
+
+    async def count_by_role(self, role: str) -> int:
+        """Count users with the given role."""
+        stmt = select(func.count()).select_from(User).where(User.role == role)
+        result = await self.session.execute(stmt)
+        return result.scalar_one()

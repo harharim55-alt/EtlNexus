@@ -1,25 +1,12 @@
 import { Activity, Workflow, Globe } from "lucide-react";
 import { usePipelineUsage } from "@/hooks/use-pipeline-usage";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getStatusStyle } from "@/lib/status-config";
 import type { PipelineUsage } from "@/types/usage";
 
 interface UsageCardProps {
   etlName: string;
 }
-
-const STATUS_DOT: Record<string, string> = {
-  success: "bg-emerald-400",
-  failed: "bg-red-400",
-  running: "bg-amber-400 animate-pulse",
-  unknown: "bg-slate-500",
-};
-
-const STATUS_GLOW: Record<string, string> = {
-  success: "shadow-[0_0_8px_rgba(52,211,153,0.5)]",
-  failed: "shadow-[0_0_8px_rgba(248,113,113,0.5)]",
-  running: "shadow-[0_0_8px_rgba(251,191,36,0.5)]",
-  unknown: "",
-};
 
 function formatAccessCount(count: number): string {
   if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
@@ -30,8 +17,7 @@ function formatAccessCount(count: number): string {
 function UsageRow({ usage }: { usage: PipelineUsage }) {
   const TypeIcon = usage.usage_type === "api" ? Globe : Workflow;
   const typeLabel = usage.usage_type === "api" ? "API" : "ETL";
-  const statusDot = STATUS_DOT[usage.airflow_status ?? "unknown"] ?? STATUS_DOT.unknown;
-  const statusGlow = STATUS_GLOW[usage.airflow_status ?? "unknown"] ?? "";
+  const cfg = getStatusStyle(usage.airflow_status ?? "unknown");
 
   return (
     <div
@@ -43,7 +29,7 @@ function UsageRow({ usage }: { usage: PipelineUsage }) {
     >
       {/* Status dot */}
       <div
-        className={`w-2 h-2 rounded-full shrink-0 transition-transform duration-200 group-hover:scale-125 ${statusDot} ${statusGlow}`}
+        className={`w-2 h-2 rounded-full shrink-0 transition-transform duration-200 group-hover:scale-125 ${cfg.dot} ${cfg.glow}`}
       />
 
       {/* Name + type badge */}

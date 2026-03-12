@@ -1,29 +1,7 @@
 import { Check, Radio } from "lucide-react";
 import { useSensorStore } from "@/stores/sensor-store";
+import { getStatusStyle } from "@/lib/status-config";
 import type { Sensor } from "@/types/sensor";
-
-const STATUS_CONFIG: Record<string, { dot: string; glow: string; label: string }> = {
-  success: {
-    dot: "bg-emerald-400",
-    glow: "shadow-[0_0_8px_rgba(52,211,153,0.7)]",
-    label: "Success",
-  },
-  failed: {
-    dot: "bg-rose-400",
-    glow: "shadow-[0_0_8px_rgba(251,113,133,0.7)]",
-    label: "Failed",
-  },
-  running: {
-    dot: "bg-amber-400 animate-pulse",
-    glow: "shadow-[0_0_8px_rgba(251,191,36,0.7)]",
-    label: "Running",
-  },
-  unknown: {
-    dot: "bg-slate-500",
-    glow: "",
-    label: "Unknown",
-  },
-};
 
 const TEAM_TAG_COLORS: Record<string, string> = {
   "Infrastructure Ops": "text-sky-400/70 bg-sky-500/8 border-sky-500/15",
@@ -48,7 +26,7 @@ export function SensorCard({ sensor }: SensorCardProps) {
   const toggleSensor = useSensorStore((s) => s.toggleSensor);
   const isSelected = selectedSensors.includes(sensor.sensor_name);
   const status = sensor.status || "unknown";
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
+  const cfg = getStatusStyle(status);
   const teamColors =
     TEAM_TAG_COLORS[sensor.team || ""] ||
     "text-slate-400/70 bg-white/[0.03] border-white/5";

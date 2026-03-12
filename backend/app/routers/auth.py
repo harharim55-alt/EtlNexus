@@ -5,8 +5,7 @@ from fastapi import APIRouter, Depends
 from app.auth import get_current_user
 from app.config import settings
 from app.models.user import User
-from app.models.user_team import UserTeam
-from app.schemas.auth import AuthConfigResponse, TeamMembershipResponse, UserResponse
+from app.schemas.auth import AuthConfigResponse, UserResponse, user_to_response
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
 
@@ -28,27 +27,5 @@ async def get_auth_config() -> AuthConfigResponse:
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: User = Depends(get_current_user)) -> UserResponse:
-    """Return the current authenticated user with team memberships.
-
-    Args:
-        user: Injected by ``get_current_user`` after JWT validation.
-
-    Returns:
-        Full user record including team memberships and per-team roles.
-    """
-    teams = [
-        TeamMembershipResponse(
-            id=str(ut.team.id) if ut.team else str(ut.team_id),
-            name=ut.team.name if ut.team else "",
-            role_in_team=ut.role_in_team,
-        )
-        for ut in (user.team_memberships or [])
-        if isinstance(ut, UserTeam)
-    ]
-    return UserResponse(
-        id=str(user.id),
-        email=user.email,
-        display_name=user.display_name,
-        role=user.role,
-        teams=teams,
-    )
+    """Return the current authenticated user with team memberships."""
+    return user_to_response(user)

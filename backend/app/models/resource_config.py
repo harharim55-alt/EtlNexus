@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, func, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Integer, String, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -23,7 +23,7 @@ class PipelineResourceConfig(Base):
     spark_executor_cores: Mapped[int | None] = mapped_column(Integer, nullable=True)
     spark_num_executors: Mapped[int | None] = mapped_column(Integer, nullable=True)
     is_dag_override: Mapped[bool] = mapped_column(Boolean, default=False)
-    synced_at: Mapped[datetime] = mapped_column(default=func.now())
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     pipeline: Mapped["Pipeline"] = relationship(back_populates="resource_configs")
 

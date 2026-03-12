@@ -16,7 +16,7 @@ class Team(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, index=True)
     description: Mapped[str | None] = mapped_column(Text)
     source: Mapped[str] = mapped_column(String(50), default="sso")
-    created_at: Mapped[datetime] = mapped_column(default=func.now())
+    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     members: Mapped[list["UserTeam"]] = relationship(
         back_populates="team", cascade="all, delete-orphan"
