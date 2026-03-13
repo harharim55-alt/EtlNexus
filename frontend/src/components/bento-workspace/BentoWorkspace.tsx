@@ -20,7 +20,7 @@ export function BentoWorkspace() {
 
   if (!selectedPipelineId) {
     return (
-      <div className="flex-1 flex items-center justify-center text-slate-600">
+      <div data-section="bento-workspace" className="flex-1 flex items-center justify-center text-slate-600">
         <p className="text-sm font-mono">Select a pipeline to explore</p>
       </div>
     );
@@ -28,7 +28,7 @@ export function BentoWorkspace() {
 
   if (isLoading) {
     return (
-      <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+      <div data-section="bento-workspace" className="flex-1 overflow-y-auto p-8 custom-scrollbar">
         <Skeleton className="h-8 w-64 bg-white/5 mb-2" />
         <Skeleton className="h-5 w-96 bg-white/5 mb-8" />
         <div className="grid grid-cols-12 gap-6">
@@ -44,7 +44,7 @@ export function BentoWorkspace() {
 
   if (error || !pipeline) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="bento-workspace" className="flex-1 flex items-center justify-center">
         <ErrorState
           message="Failed to load pipeline details"
           onRetry={refetch}
@@ -54,7 +54,7 @@ export function BentoWorkspace() {
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
+    <div data-section="bento-workspace" className="flex-1 overflow-y-auto p-8 custom-scrollbar">
       <BentoHeader
         pipeline={pipeline}
         onSaveDescription={(description) =>

@@ -20,7 +20,7 @@ export function AdminView() {
   const { data: grants } = useAdminGrants(activeSubTab === "grants");
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div data-section="admin-panel" className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div className="shrink-0 px-8 pt-8 pb-4">
         <div className="flex items-center gap-3 mb-5">

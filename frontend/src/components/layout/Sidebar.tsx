@@ -1,7 +1,8 @@
-import { Activity, BarChart3, Database, LogOut, Network, Radio, Shield, Sparkles } from "lucide-react";
+import { Activity, BarChart3, Database, HelpCircle, LogOut, Network, Radio, Shield, Sparkles } from "lucide-react";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useAirflowStatuses } from "@/hooks/use-airflow-status";
 import { useAuthStore } from "@/stores/auth-store";
+import { useOnboardingStore } from "@/stores/onboarding-store";
 import { isAdmin } from "@/lib/permissions";
 import { AIRFLOW_URL } from "@/lib/config";
 import { useAuth } from "react-oidc-context";
@@ -57,48 +58,75 @@ export function Sidebar() {
 
       {/* Nav Icons */}
       <div className="flex-1 flex flex-col gap-4 w-full px-3">
-        <NavIcon
-          active={activeTab === "catalog"}
-          onClick={() => setActiveTab("catalog")}
-          icon={<Database className="w-5 h-5" />}
-          tooltip="ETL Catalog"
-        />
-        <NavIcon
-          active={activeTab === "matrix"}
-          onClick={() => setActiveTab("matrix")}
-          icon={<Network className="w-5 h-5" />}
-          tooltip="Field Matrix"
-        />
-        <NavIcon
-          active={activeTab === "dags"}
-          onClick={() => setActiveTab("dags")}
-          icon={<BarChart3 className="w-5 h-5" />}
-          tooltip="DAG Summary"
-        />
-        <NavIcon
-          active={activeTab === "sensors"}
-          onClick={() => setActiveTab("sensors")}
-          icon={<Radio className="w-5 h-5" />}
-          tooltip="Sensors"
-        />
-        <NavIcon
-          active={activeTab === "ai"}
-          onClick={() => setActiveTab("ai")}
-          icon={<Sparkles className="w-5 h-5" />}
-          tooltip="AI Architect"
-        />
-        {isAdmin(user) && (
+        <div data-nav-id="catalog">
           <NavIcon
-            active={activeTab === "admin"}
-            onClick={() => setActiveTab("admin")}
-            icon={<Shield className="w-5 h-5" />}
-            tooltip="Access Control"
+            active={activeTab === "catalog"}
+            onClick={() => setActiveTab("catalog")}
+            icon={<Database className="w-5 h-5" />}
+            tooltip="ETL Catalog"
           />
+        </div>
+        <div data-nav-id="matrix">
+          <NavIcon
+            active={activeTab === "matrix"}
+            onClick={() => setActiveTab("matrix")}
+            icon={<Network className="w-5 h-5" />}
+            tooltip="Field Matrix"
+          />
+        </div>
+        <div data-nav-id="dags">
+          <NavIcon
+            active={activeTab === "dags"}
+            onClick={() => setActiveTab("dags")}
+            icon={<BarChart3 className="w-5 h-5" />}
+            tooltip="DAG Summary"
+          />
+        </div>
+        <div data-nav-id="sensors">
+          <NavIcon
+            active={activeTab === "sensors"}
+            onClick={() => setActiveTab("sensors")}
+            icon={<Radio className="w-5 h-5" />}
+            tooltip="Sensors"
+          />
+        </div>
+        <div data-nav-id="ai">
+          <NavIcon
+            active={activeTab === "ai"}
+            onClick={() => setActiveTab("ai")}
+            icon={<Sparkles className="w-5 h-5" />}
+            tooltip="AI Architect"
+          />
+        </div>
+        {isAdmin(user) && (
+          <div data-nav-id="admin">
+            <NavIcon
+              active={activeTab === "admin"}
+              onClick={() => setActiveTab("admin")}
+              icon={<Shield className="w-5 h-5" />}
+              tooltip="Access Control"
+            />
+          </div>
         )}
       </div>
 
       {/* Airflow Status + User */}
       <div className="mt-auto flex flex-col items-center gap-4">
+        <Tooltip>
+          <TooltipTrigger
+            className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all duration-200 cursor-pointer"
+            onClick={() => useOnboardingStore.getState().startOnboarding()}
+          >
+            <HelpCircle className="size-4" />
+          </TooltipTrigger>
+          <TooltipContent
+            side="right"
+            className="bg-[#18181b] border-white/10 text-white text-xs font-medium"
+          >
+            Restart tour
+          </TooltipContent>
+        </Tooltip>
+
         <Tooltip>
           <TooltipTrigger>
             <a

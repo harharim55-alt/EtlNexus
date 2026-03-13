@@ -212,7 +212,7 @@ export function PipelineRegistry() {
   }, [lastVirtualItem?.index, flatItems.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
-    <div className="w-[400px] border-r border-white/5 flex flex-col bg-[#09090b] shrink-0">
+    <div data-section="pipeline-registry" className="w-[400px] border-r border-white/5 flex flex-col bg-[#09090b] shrink-0">
       <div className="p-6 border-b border-white/5">
         <h2 className="text-xl font-medium text-white tracking-tight mb-4">
           Pipeline Registry

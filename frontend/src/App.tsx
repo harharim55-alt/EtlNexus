@@ -6,6 +6,7 @@ import { isAdmin } from "@/lib/permissions";
 import { PipelineRegistry } from "@/components/pipeline-registry/PipelineRegistry";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuthBootstrap } from "@/components/auth/AuthProvider";
+import { OnboardingOverlay } from "@/components/onboarding/OnboardingOverlay";
 
 const BentoWorkspace = lazy(() =>
   import("@/components/bento-workspace/BentoWorkspace").then((m) => ({
@@ -51,43 +52,46 @@ function AppContent() {
   const user = useAuthStore((s) => s.user);
 
   return (
-    <AppShell>
-      <div className="flex h-full">
-        {activeTab === "catalog" && (
-          <>
-            <PipelineRegistry />
+    <>
+      <AppShell>
+        <div className="flex h-full">
+          {activeTab === "catalog" && (
+            <>
+              <PipelineRegistry />
+              <Suspense fallback={<TabSkeleton />}>
+                <BentoWorkspace />
+              </Suspense>
+            </>
+          )}
+          {activeTab === "matrix" && (
             <Suspense fallback={<TabSkeleton />}>
-              <BentoWorkspace />
+              <SchemaMatrixView />
             </Suspense>
-          </>
-        )}
-        {activeTab === "matrix" && (
-          <Suspense fallback={<TabSkeleton />}>
-            <SchemaMatrixView />
-          </Suspense>
-        )}
-        {activeTab === "dags" && (
-          <Suspense fallback={<TabSkeleton />}>
-            <DagSummaryView />
-          </Suspense>
-        )}
-        {activeTab === "sensors" && (
-          <Suspense fallback={<TabSkeleton />}>
-            <SensorsView />
-          </Suspense>
-        )}
-        {activeTab === "ai" && (
-          <Suspense fallback={<TabSkeleton />}>
-            <AIArchitectView />
-          </Suspense>
-        )}
-        {activeTab === "admin" && isAdmin(user) && (
-          <Suspense fallback={<TabSkeleton />}>
-            <AdminView />
-          </Suspense>
-        )}
-      </div>
-    </AppShell>
+          )}
+          {activeTab === "dags" && (
+            <Suspense fallback={<TabSkeleton />}>
+              <DagSummaryView />
+            </Suspense>
+          )}
+          {activeTab === "sensors" && (
+            <Suspense fallback={<TabSkeleton />}>
+              <SensorsView />
+            </Suspense>
+          )}
+          {activeTab === "ai" && (
+            <Suspense fallback={<TabSkeleton />}>
+              <AIArchitectView />
+            </Suspense>
+          )}
+          {activeTab === "admin" && isAdmin(user) && (
+            <Suspense fallback={<TabSkeleton />}>
+              <AdminView />
+            </Suspense>
+          )}
+        </div>
+      </AppShell>
+      <OnboardingOverlay />
+    </>
   );
 }
 
