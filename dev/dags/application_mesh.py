@@ -14,7 +14,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
 
 from etl_runner import run_etl
-from sensor_runner import run_sensor
+from sensor_runner import run_bouncer
 
 from daily.task_configs import (
     SwitchPortCollector_task_config,
@@ -58,37 +58,23 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Sensors group (data ingestion) ---
-    with TaskGroup("Prism-Sensors", prefix_group_id=True) as sensors:
-        SwitchTelemetrySensor = PythonOperator(
-            task_id="SwitchTelemetrySensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "SwitchTelemetrySensor",
-                "team": "Dagger",
-                "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-            },
+    # --- Bouncers group (data ingestion) ---
+    with TaskGroup("Prism-Bouncers", prefix_group_id=True) as bouncers:
+        SwitchTelemetryBouncer = PythonOperator(
+            task_id="SwitchTelemetryBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "SwitchTelemetrySensor",
-                "team": "Dagger",
+                "sensor_name": "SwitchTelemetryBouncer",
                 "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-                "volume_per_day": 2_400_000,
             },
         )
 
-        NetflowCollectorSensor = PythonOperator(
-            task_id="NetflowCollectorSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "NetflowCollectorSensor",
-                "team": "Prism",
-                "description": "Captures NetFlow/sFlow records from edge routers",
-            },
+        NetflowCollectorBouncer = PythonOperator(
+            task_id="NetflowCollectorBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "NetflowCollectorSensor",
-                "team": "Prism",
+                "sensor_name": "NetflowCollectorBouncer",
                 "description": "Captures NetFlow/sFlow records from edge routers",
-                "volume_per_day": 5_200_000,
             },
         )
 
@@ -98,17 +84,11 @@ with DAG(
             task_id="SwitchPortCollector",
             python_callable=run_etl,
             params={
-                "etl_name": "SwitchPortCollector",
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 03:00 UTC",
                 "needs": SwitchPortCollector_task_config.needs,
                 "prefers": SwitchPortCollector_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "SwitchPortCollector",
-                "needs": SwitchPortCollector_task_config.needs, "prefers": SwitchPortCollector_task_config.prefers,
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 03:00 UTC",
                 "resources": SwitchPortCollector_resources.resources,
             },
         )
@@ -117,17 +97,11 @@ with DAG(
             task_id="NetflowCapture",
             python_callable=run_etl,
             params={
-                "etl_name": "NetflowCapture",
-                "category": "Traffic Analytics",
-                "schedule": "Every 4 Hours",
                 "needs": NetflowCapture_task_config.needs,
                 "prefers": NetflowCapture_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "NetflowCapture",
-                "needs": NetflowCapture_task_config.needs, "prefers": NetflowCapture_task_config.prefers,
-                "category": "Traffic Analytics",
-                "schedule": "Every 4 Hours",
                 "resources": NetflowCapture_resources.resources,
             },
         )
@@ -136,17 +110,11 @@ with DAG(
             task_id="PacketInspectionEnrichment",
             python_callable=run_etl,
             params={
-                "etl_name": "PacketInspectionEnrichment",
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 03:30 UTC",
                 "needs": PacketInspectionEnrichment_task_config.needs,
                 "prefers": PacketInspectionEnrichment_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "PacketInspectionEnrichment",
-                "needs": PacketInspectionEnrichment_task_config.needs, "prefers": PacketInspectionEnrichment_task_config.prefers,
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 03:30 UTC",
                 "resources": PacketInspectionEnrichment_resources.resources,
             },
         )
@@ -157,17 +125,11 @@ with DAG(
             task_id="ProtocolAdoptionTracker",
             python_callable=run_etl,
             params={
-                "etl_name": "ProtocolAdoptionTracker",
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 04:00 UTC",
                 "needs": ProtocolAdoptionTracker_task_config.needs,
                 "prefers": ProtocolAdoptionTracker_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "ProtocolAdoptionTracker",
-                "needs": ProtocolAdoptionTracker_task_config.needs, "prefers": ProtocolAdoptionTracker_task_config.prefers,
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 04:00 UTC",
                 "resources": ProtocolAdoptionTracker_resources.resources,
             },
         )
@@ -176,17 +138,11 @@ with DAG(
             task_id="HandshakeCompletionAnalysis",
             python_callable=run_etl,
             params={
-                "etl_name": "HandshakeCompletionAnalysis",
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 04:00 UTC",
                 "needs": HandshakeCompletionAnalysis_task_config.needs,
                 "prefers": HandshakeCompletionAnalysis_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "HandshakeCompletionAnalysis",
-                "needs": HandshakeCompletionAnalysis_task_config.needs, "prefers": HandshakeCompletionAnalysis_task_config.prefers,
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 04:00 UTC",
                 "resources": HandshakeCompletionAnalysis_resources.resources,
             },
         )
@@ -195,17 +151,11 @@ with DAG(
             task_id="AbRoutingExperimentEngine",
             python_callable=run_etl,
             params={
-                "etl_name": "AbRoutingExperimentEngine",
-                "category": "Network Science",
-                "schedule": "Daily at 04:30 UTC",
                 "needs": AbRoutingExperimentEngine_task_config.needs,
                 "prefers": AbRoutingExperimentEngine_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "AbRoutingExperimentEngine",
-                "needs": AbRoutingExperimentEngine_task_config.needs, "prefers": AbRoutingExperimentEngine_task_config.prefers,
-                "category": "Network Science",
-                "schedule": "Daily at 04:30 UTC",
                 "resources": AbRoutingExperimentEngine_resources.resources,
             },
         )
@@ -214,17 +164,11 @@ with DAG(
             task_id="EndpointActivityScoring",
             python_callable=run_etl,
             params={
-                "etl_name": "EndpointActivityScoring",
-                "category": "Predictive Analytics",
-                "schedule": "Daily at 04:30 UTC",
                 "needs": EndpointActivityScoring_task_config.needs,
                 "prefers": EndpointActivityScoring_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "EndpointActivityScoring",
-                "needs": EndpointActivityScoring_task_config.needs, "prefers": EndpointActivityScoring_task_config.prefers,
-                "category": "Predictive Analytics",
-                "schedule": "Daily at 04:30 UTC",
                 "resources": EndpointActivityScoring_resources.resources,
             },
         )
@@ -233,17 +177,11 @@ with DAG(
             task_id="DeviceOnboardingMonitor",
             python_callable=run_etl,
             params={
-                "etl_name": "DeviceOnboardingMonitor",
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 04:00 UTC",
                 "needs": DeviceOnboardingMonitor_task_config.needs,
                 "prefers": DeviceOnboardingMonitor_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "DeviceOnboardingMonitor",
-                "needs": DeviceOnboardingMonitor_task_config.needs, "prefers": DeviceOnboardingMonitor_task_config.prefers,
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 04:00 UTC",
                 "resources": DeviceOnboardingMonitor_resources.resources,
             },
         )
@@ -252,17 +190,11 @@ with DAG(
             task_id="TrafficClassSegments",
             python_callable=run_etl,
             params={
-                "etl_name": "TrafficClassSegments",
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 05:00 UTC",
                 "needs": TrafficClassSegments_task_config.needs,
                 "prefers": TrafficClassSegments_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "TrafficClassSegments",
-                "needs": TrafficClassSegments_task_config.needs, "prefers": TrafficClassSegments_task_config.prefers,
-                "category": "Protocol Analytics",
-                "schedule": "Daily at 05:00 UTC",
                 "resources": TrafficClassSegments_resources.resources,
             },
         )
@@ -271,24 +203,18 @@ with DAG(
             task_id="CapacityMetricsApiDummy",
             python_callable=run_etl,
             params={
-                "etl_name": "CapacityMetricsApiDummy",
-                "category": "Network APIs",
-                "schedule": "On-demand (API)",
                 "needs": CapacityMetricsApiDummy_task_config.needs,
                 "prefers": CapacityMetricsApiDummy_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "CapacityMetricsApiDummy",
-                "needs": CapacityMetricsApiDummy_task_config.needs, "prefers": CapacityMetricsApiDummy_task_config.prefers,
-                "category": "Network APIs",
-                "schedule": "On-demand (API)",
                 "resources": CapacityMetricsApiDummy_resources.resources,
             },
         )
 
-    # --- Sensor wiring (sensors → root ETL tasks) ---
-    SwitchTelemetrySensor >> SwitchPortCollector
-    NetflowCollectorSensor >> NetflowCapture
+    # --- Bouncer wiring (bouncers → root ETL tasks) ---
+    SwitchTelemetryBouncer >> SwitchPortCollector
+    NetflowCollectorBouncer >> NetflowCapture
 
     # --- Dynamic dependency wiring from task configs ---
     etl_ops = {

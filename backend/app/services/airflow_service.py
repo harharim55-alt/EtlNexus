@@ -11,7 +11,7 @@ from app.integrations.airflow_client import airflow_client, strip_group_prefix
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
-from app.repositories.sensor_repo import SensorRepository
+from app.repositories.sensor_repo import BouncerRepository
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +39,7 @@ class AirflowService:
         self.airflow_repo = AirflowRepository(session)
         self.pipeline_repo = PipelineRepository(session)
         self.resource_repo = ResourceRepository(session)
-        self.sensor_repo = SensorRepository(session)
+        self.bouncer_repo = BouncerRepository(session)
 
     async def poll_all_statuses(self) -> int:
         """Poll Airflow network DAGs for task-level statuses and update database.
@@ -73,10 +73,10 @@ class AirflowService:
             if pipeline.task_id:
                 task_to_pipeline[pipeline.task_id] = pipeline
 
-        # Build sensor name set for quick lookup
-        all_sensors = await self.sensor_repo.get_all()
-        sensor_name_set = {s.sensor_name for s in all_sensors}
-        sensor_best_status: dict[str, str] = {}
+        # Build bouncer name set for quick lookup
+        all_bouncers = await self.bouncer_repo.get_all()
+        bouncer_name_set = {s.sensor_name for s in all_bouncers}
+        bouncer_best_status: dict[str, str] = {}
 
         best: dict[str, dict] = {}
         updated = 0
@@ -117,12 +117,12 @@ class AirflowService:
                 airflow_task_id = task.get("task_id")
                 task_id = strip_group_prefix(airflow_task_id) if airflow_task_id else None
 
-                if task_id in sensor_name_set and is_latest:
+                if task_id in bouncer_name_set and is_latest:
                     state = task.get("state", "unknown")
                     s_status = state if state in KNOWN_AIRFLOW_STATES else "unknown"
-                    existing = sensor_best_status.get(task_id)
+                    existing = bouncer_best_status.get(task_id)
                     if existing is None or _STATUS_PRIORITY.get(s_status, 13) < _STATUS_PRIORITY.get(existing, 13):
-                        sensor_best_status[task_id] = s_status
+                        bouncer_best_status[task_id] = s_status
                     continue
 
                 if task_id not in task_to_pipeline:
@@ -214,18 +214,18 @@ class AirflowService:
             await self.airflow_repo.upsert(entry)
             updated += 1
 
-        sensor_updated = 0
-        for sensor_name, status in sensor_best_status.items():
-            sensor = await self.sensor_repo.get_by_name(sensor_name)
-            if sensor:
-                sensor.status = status
-                sensor_updated += 1
+        bouncer_updated = 0
+        for sensor_name, status in bouncer_best_status.items():
+            bouncer = await self.bouncer_repo.get_by_name(sensor_name)
+            if bouncer:
+                bouncer.status = status
+                bouncer_updated += 1
 
         await self.session.commit()
         logger.info(
-            "Updated Airflow status for %d pipelines, %d sensors, recorded %d run history entries",
+            "Updated Airflow status for %d pipelines, %d bouncers, recorded %d run history entries",
             updated,
-            sensor_updated,
+            bouncer_updated,
             history_recorded,
         )
         return updated

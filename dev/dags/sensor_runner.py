@@ -1,6 +1,6 @@
-"""Shared sensor runner — simulates data-ingestion sensor execution.
+"""Shared bouncer runner — simulates data-ingestion bouncer execution.
 
-Unlike etl_runner.py, sensors get ALL metadata from op_kwargs.
+Unlike etl_runner.py, bouncers get ALL metadata from op_kwargs.
 No code-file reading, no ETL_WRITES_TO output.
 """
 
@@ -8,22 +8,17 @@ import random
 import time
 
 
-def run_sensor(sensor_name: str, **kwargs):
-    """Execute a simulated sensor task with volume logging."""
-    print(f"SENSOR_START: {sensor_name}")
+def run_bouncer(sensor_name: str, **kwargs):
+    """Execute a simulated bouncer task with description logging."""
+    print(f"BOUNCER_START: {sensor_name}")
 
     description = kwargs.get("description", "")
     if description:
-        print(f"SENSOR_DESCRIPTION: {description}")
+        print(f"BOUNCER_DESCRIPTION: {description}")
 
-    volume_per_day = kwargs.get("volume_per_day")
-
-    # Sensors are fast ingestion tasks — 2-6 seconds
+    # Bouncers are fast ingestion tasks — 2-6 seconds
     sleep_secs = random.uniform(2, 6)
-    print(f"SENSOR_SIMULATING: sleeping {sleep_secs:.1f}s")
+    print(f"BOUNCER_SIMULATING: sleeping {sleep_secs:.1f}s")
     time.sleep(sleep_secs)
 
-    if volume_per_day:
-        print(f"SENSOR_VOLUME: {volume_per_day}")
-
-    print(f"SENSOR_COMPLETE: {sensor_name}")
+    print(f"BOUNCER_COMPLETE: {sensor_name}")

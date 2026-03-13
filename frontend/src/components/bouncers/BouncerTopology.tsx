@@ -1,12 +1,12 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { ChevronRight, Radio, Workflow } from "lucide-react";
-import { useSensorTopology } from "@/hooks/use-sensors";
-import { useSensorStore } from "@/stores/sensor-store";
+import { useBouncerTopology } from "@/hooks/use-bouncers";
+import { useBouncerStore } from "@/stores/bouncer-store";
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStatusStyle } from "@/lib/status-config";
-import type { SensorTopologyNode } from "@/types/sensor";
+import type { BouncerTopologyNode } from "@/types/bouncer";
 
 function FlowArrow() {
   return (
@@ -34,7 +34,7 @@ function EtlNode({
   node,
   onClick,
 }: {
-  node: SensorTopologyNode;
+  node: BouncerTopologyNode;
   onClick?: () => void;
 }) {
   const cfg = getStatusStyle(node.status);
@@ -72,8 +72,8 @@ function EtlNode({
   );
 }
 
-function groupByDag(nodes: SensorTopologyNode[]): Record<string, SensorTopologyNode[]> {
-  const groups: Record<string, SensorTopologyNode[]> = {};
+function groupByDag(nodes: BouncerTopologyNode[]): Record<string, BouncerTopologyNode[]> {
+  const groups: Record<string, BouncerTopologyNode[]> = {};
   for (const n of nodes) {
     const key = n.dag_id || "unassigned";
     if (!groups[key]) groups[key] = [];
@@ -82,7 +82,7 @@ function groupByDag(nodes: SensorTopologyNode[]): Record<string, SensorTopologyN
   return groups;
 }
 
-function statusSummary(nodes: SensorTopologyNode[]) {
+function statusSummary(nodes: BouncerTopologyNode[]) {
   const counts: Record<string, number> = {};
   for (const n of nodes) {
     const s = n.status || "unknown";
@@ -98,7 +98,7 @@ function DagGroup({
   defaultOpen,
 }: {
   dagId: string;
-  nodes: SensorTopologyNode[];
+  nodes: BouncerTopologyNode[];
   onNodeClick: (id: string) => void;
   defaultOpen: boolean;
 }) {
@@ -176,29 +176,29 @@ function DagGroup({
   );
 }
 
-export function SensorTopology() {
-  const selectedSensors = useSensorStore((s) => s.selectedSensors);
-  const topologyMode = useSensorStore((s) => s.topologyMode);
-  const setTopologyMode = useSensorStore((s) => s.setTopologyMode);
+export function BouncerTopology() {
+  const selectedBouncers = useBouncerStore((s) => s.selectedBouncers);
+  const topologyMode = useBouncerStore((s) => s.topologyMode);
+  const setTopologyMode = useBouncerStore((s) => s.setTopologyMode);
   const setSelectedPipelineId = usePipelineStore((s) => s.setSelectedPipelineId);
   const setActiveTab = useNavigationStore((s) => s.setActiveTab);
 
-  const { data, isLoading } = useSensorTopology(selectedSensors, topologyMode);
+  const { data, isLoading } = useBouncerTopology(selectedBouncers, topologyMode);
 
   const navigateToEtl = (pipelineId: string) => {
     setSelectedPipelineId(pipelineId);
     setActiveTab("catalog");
   };
 
-  if (selectedSensors.length === 0) {
+  if (selectedBouncers.length === 0) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center px-6 py-12">
         <div className="bg-teal-500/5 p-4 rounded-2xl border border-teal-500/10 mb-4">
           <Radio className="w-8 h-8 text-teal-500/30" />
         </div>
-        <p className="text-sm text-slate-400 mb-1">No sensors selected</p>
+        <p className="text-sm text-slate-400 mb-1">No bouncers selected</p>
         <p className="text-[11px] text-slate-600 max-w-[240px]">
-          Select one or more sensors from the list to view downstream ETL dependencies
+          Select one or more bouncers from the list to view downstream ETL dependencies
         </p>
       </div>
     );
@@ -231,7 +231,7 @@ export function SensorTopology() {
           </span>
         </div>
 
-        {selectedSensors.length >= 2 && (
+        {selectedBouncers.length >= 2 && (
           <div className="flex items-center gap-1 bg-white/[0.03] rounded-lg p-0.5 border border-white/5">
             <button
               type="button"
@@ -261,19 +261,19 @@ export function SensorTopology() {
 
       {/* Topology content */}
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
-        {/* Selected sensors row */}
+        {/* Selected bouncers row */}
         <div className="mb-4">
           <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600 mb-2 block">
-            Selected Sensors
+            Selected Bouncers
           </span>
           <div className="flex flex-wrap gap-1.5">
-            {selectedSensors.map((name) => (
+            {selectedBouncers.map((name) => (
               <span
                 key={name}
                 className="inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1 rounded-full bg-teal-500/10 text-teal-300 border border-teal-500/20"
               >
                 <Radio className="w-2.5 h-2.5" />
-                {name.replace(/_/g, " ").replace(" sensor", "")}
+                {name.replace(/_/g, " ")}
               </span>
             ))}
           </div>

@@ -1,48 +1,48 @@
-"""Sensor service — business logic for sensor listing and topology traversal."""
+"""Bouncer service — business logic for bouncer listing and topology traversal."""
 
 import logging
 from collections import defaultdict
 
-from app.cache import sensor_cache, sensor_topology_cache
+from app.cache import bouncer_cache, bouncer_topology_cache
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
-from app.repositories.sensor_repo import SensorRepository
+from app.repositories.sensor_repo import BouncerRepository
 from app.schemas.sensor import (
-    SensorListResponse,
-    SensorResponse,
-    SensorTopologyNode,
-    SensorTopologyResponse,
+    BouncerListResponse,
+    BouncerResponse,
+    BouncerTopologyNode,
+    BouncerTopologyResponse,
 )
 
 logger = logging.getLogger(__name__)
 
 
-class SensorService:
+class BouncerService:
     def __init__(
         self,
-        sensor_repo: SensorRepository,
+        bouncer_repo: BouncerRepository,
         dag_task_repo: DagTaskRepository,
         pipeline_repo: PipelineRepository,
     ):
-        self.sensor_repo = sensor_repo
+        self.bouncer_repo = bouncer_repo
         self.dag_task_repo = dag_task_repo
         self.pipeline_repo = pipeline_repo
 
-    async def get_all_sensors(self, team: str | None = None) -> SensorListResponse:
-        cache_key = f"sensors:{team or 'all'}"
-        cached = sensor_cache.get(cache_key)
+    async def get_all_bouncers(self, team: str | None = None) -> BouncerListResponse:
+        cache_key = f"bouncers:{team or 'all'}"
+        cached = bouncer_cache.get(cache_key)
         if cached is not None:
             return cached
 
         if team:
-            sensors = await self.sensor_repo.get_by_team(team)
+            bouncers = await self.bouncer_repo.get_by_team(team)
         else:
-            sensors = await self.sensor_repo.get_all()
+            bouncers = await self.bouncer_repo.get_all()
 
-        teams = await self.sensor_repo.get_all_teams()
+        teams = await self.bouncer_repo.get_all_teams()
 
         items = [
-            SensorResponse(
+            BouncerResponse(
                 id=str(s.id),
                 sensor_name=s.sensor_name,
                 display_name=s.display_name,
@@ -52,18 +52,18 @@ class SensorService:
                 status=s.status,
                 dag_ids=s.dag_ids or [],
             )
-            for s in sensors
+            for s in bouncers
         ]
 
-        result = SensorListResponse(sensors=items, teams=teams)
-        sensor_cache.set(cache_key, result)
+        result = BouncerListResponse(bouncers=items, teams=teams)
+        bouncer_cache.set(cache_key, result)
         return result
 
-    async def get_sensor_topology(
-        self, sensor_names: list[str], mode: str = "union"
-    ) -> SensorTopologyResponse:
-        cache_key = f"topo:{'|'.join(sorted(sensor_names))}:{mode}"
-        cached = sensor_topology_cache.get(cache_key)
+    async def get_bouncer_topology(
+        self, bouncer_names: list[str], mode: str = "union"
+    ) -> BouncerTopologyResponse:
+        cache_key = f"topo:{'|'.join(sorted(bouncer_names))}:{mode}"
+        cached = bouncer_topology_cache.get(cache_key)
         if cached is not None:
             return cached
 
@@ -91,20 +91,19 @@ class SensorService:
             if p.task_id and p.airflow_status:
                 status_map[p.task_id] = p.airflow_status.status
 
-        # BFS from each selected sensor, collecting downstream ETLs
-        # Track which sensors reach which ETL task
-        sensor_to_reachable: dict[str, set[tuple[str, str]]] = {}
+        # BFS from each selected bouncer, collecting downstream ETLs
+        bouncer_to_reachable: dict[str, set[tuple[str, str]]] = {}
 
-        for sensor_name in sensor_names:
+        for bouncer_name in bouncer_names:
             reachable: set[tuple[str, str]] = set()  # (dag_id, task_id)
-            # Find all dag_task entries for this sensor
-            sensor_entries = [
-                dt for dt in all_dag_tasks if dt.sensor_name == sensor_name
+            # Find all dag_task entries for this bouncer
+            bouncer_entries = [
+                dt for dt in all_dag_tasks if dt.sensor_name == bouncer_name
             ]
 
-            for entry in sensor_entries:
+            for entry in bouncer_entries:
                 dag_id = entry.dag_id
-                # BFS from this sensor task in this DAG
+                # BFS from this bouncer task in this DAG
                 queue = list(entry.downstream_task_ids or [])
                 visited: set[str] = set()
 
@@ -114,7 +113,7 @@ class SensorService:
                         continue
                     visited.add(tid)
 
-                    # Only include ETL tasks (those with pipeline_id, not sensors)
+                    # Only include ETL tasks (those with pipeline_id, not bouncers)
                     dt_entry = task_index.get((dag_id, tid))
                     if dt_entry and not dt_entry.sensor_name:
                         reachable.add((dag_id, tid))
@@ -123,30 +122,30 @@ class SensorService:
                             if downstream_tid not in visited:
                                 queue.append(downstream_tid)
 
-            sensor_to_reachable[sensor_name] = reachable
+            bouncer_to_reachable[bouncer_name] = reachable
 
         # Apply mode: union or intersection
-        if not sensor_to_reachable:
+        if not bouncer_to_reachable:
             all_reachable: set[tuple[str, str]] = set()
         elif mode == "intersection":
-            sets = list(sensor_to_reachable.values())
+            sets = list(bouncer_to_reachable.values())
             all_reachable = sets[0].copy()
             for s in sets[1:]:
                 all_reachable &= s
         else:  # union
             all_reachable = set()
-            for s in sensor_to_reachable.values():
+            for s in bouncer_to_reachable.values():
                 all_reachable |= s
 
-        # Build reverse map: (dag_id, task_id) -> which sensors reach it
-        etl_sensors: dict[tuple[str, str], list[str]] = defaultdict(list)
-        for sensor_name, reachable in sensor_to_reachable.items():
+        # Build reverse map: (dag_id, task_id) -> which bouncers reach it
+        etl_bouncers: dict[tuple[str, str], list[str]] = defaultdict(list)
+        for bouncer_name, reachable in bouncer_to_reachable.items():
             for key in reachable:
                 if key in all_reachable:
-                    etl_sensors[key].append(sensor_name)
+                    etl_bouncers[key].append(bouncer_name)
 
         # Build response nodes
-        nodes: list[SensorTopologyNode] = []
+        nodes: list[BouncerTopologyNode] = []
         seen_tasks: set[str] = set()
 
         for dag_id, task_id in sorted(all_reachable):
@@ -157,22 +156,22 @@ class SensorService:
 
             pipeline = task_id_to_pipeline.get(task_id)
             nodes.append(
-                SensorTopologyNode(
+                BouncerTopologyNode(
                     task_id=task_id,
                     pipeline_name=pipeline.name if pipeline else None,
                     pipeline_id=str(pipeline.id) if pipeline else None,
                     status=status_map.get(task_id, "unknown"),
                     dag_id=dag_id,
-                    depends_on_sensors=sorted(
-                        set(etl_sensors.get((dag_id, task_id), []))
+                    depends_on_bouncers=sorted(
+                        set(etl_bouncers.get((dag_id, task_id), []))
                     ),
                 )
             )
 
-        result = SensorTopologyResponse(
-            selected_sensors=sensor_names,
+        result = BouncerTopologyResponse(
+            selected_bouncers=bouncer_names,
             downstream_etls=nodes,
             total_etl_count=len(nodes),
         )
-        sensor_topology_cache.set(cache_key, result)
+        bouncer_topology_cache.set(cache_key, result)
         return result

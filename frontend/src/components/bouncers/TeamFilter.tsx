@@ -1,4 +1,4 @@
-import { useSensorStore } from "@/stores/sensor-store";
+import { useBouncerStore } from "@/stores/bouncer-store";
 
 const TEAM_COLORS: Record<string, { bg: string; text: string; border: string }> = {
   Dagger: {
@@ -39,8 +39,8 @@ interface TeamFilterProps {
 }
 
 export function TeamFilter({ teams }: TeamFilterProps) {
-  const teamFilter = useSensorStore((s) => s.teamFilter);
-  const setTeamFilter = useSensorStore((s) => s.setTeamFilter);
+  const teamFilter = useBouncerStore((s) => s.teamFilter);
+  const setTeamFilter = useBouncerStore((s) => s.setTeamFilter);
 
   return (
     <div className="flex items-center gap-2 flex-wrap">

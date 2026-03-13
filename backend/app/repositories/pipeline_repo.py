@@ -72,6 +72,12 @@ class PipelineRepository:
         result = await self.session.execute(stmt)
         pipeline = result.scalar_one_or_none()
 
+        # Fallback: match by task_id if name lookup missed
+        if not pipeline and data.get("task_id"):
+            stmt2 = select(Pipeline).where(Pipeline.task_id == data["task_id"])
+            result2 = await self.session.execute(stmt2)
+            pipeline = result2.scalar_one_or_none()
+
         if pipeline:
             for key, value in data.items():
                 if key != "name" and hasattr(pipeline, key):

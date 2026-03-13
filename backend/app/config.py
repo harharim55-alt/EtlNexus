@@ -31,6 +31,9 @@ class Settings(BaseSettings):
     spark_max_executor_cores: int = 32
     spark_max_total_executors: int = 20
 
+    # Airflow Auto-Discovery
+    airflow_exclude_operator_types: str = "EmptyOperator,DummyOperator,BranchPythonOperator,TriggerDagRunOperator,ShortCircuitOperator"
+
     # SSO / OIDC
     sso_enabled: bool = False
     sso_issuer_url: str = "http://keycloak:8090/realms/etlnexus"

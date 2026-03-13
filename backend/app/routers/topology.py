@@ -11,10 +11,10 @@ from app.database import get_db_session
 from app.models.user import User
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
-from app.repositories.sensor_repo import SensorRepository
+from app.repositories.sensor_repo import BouncerRepository
 from app.schemas.topology import (
+    TopologyBouncer,
     TopologyGraph,
-    TopologySensor,
     TopologyTask,
     UpstreamEdge,
     UpstreamNode,
@@ -54,7 +54,7 @@ async def get_pipeline_topology(
             pipeline_task_id=my_task_id,
             pipeline_status="unknown",
             dag_ids=[],
-            upstream_sensors=[],
+            upstream_bouncers=[],
             upstream_needs=[],
             upstream_prefers=[],
             downstream=[],
@@ -82,7 +82,7 @@ async def get_pipeline_topology(
         for tid in (entry.needs or []) + (entry.prefers or []) + (entry.downstream_task_ids or []):
             task_group_lookup[(entry.dag_id, tid)] = None
 
-    # Fetch all tasks per active DAG (used for task_group lookup + sensor BFS)
+    # Fetch all tasks per active DAG (used for task_group lookup + bouncer BFS)
     active_dag_ids = {e.dag_id for e in active_entries}
     dag_tasks_by_dag: dict[str, list] = {}
     reverse_adj: dict[str, dict[str, set[str]]] = {}
@@ -96,8 +96,8 @@ async def get_pipeline_topology(
             for downstream_tid in dt.downstream_task_ids or []:
                 reverse_adj[adid][downstream_tid].add(dt.task_id)
 
-    # BFS upstream from current task to find ancestor sensors
-    found_sensors: dict[str, set[str]] = {}  # sensor_name -> dag_ids
+    # BFS upstream from current task to find ancestor bouncers
+    found_bouncers: dict[str, set[str]] = {}  # sensor_name -> dag_ids
     for adid in active_dag_ids:
         tid_to_dt = {dt.task_id: dt for dt in dag_tasks_by_dag[adid]}
         visited: set[str] = set()
@@ -109,23 +109,23 @@ async def get_pipeline_topology(
             visited.add(tid)
             dt_entry = tid_to_dt.get(tid)
             if dt_entry and dt_entry.sensor_name:
-                found_sensors.setdefault(dt_entry.sensor_name, set()).add(adid)
-                continue  # sensors are terminal roots
+                found_bouncers.setdefault(dt_entry.sensor_name, set()).add(adid)
+                continue  # bouncers are terminal roots
             for upstream_tid in reverse_adj[adid].get(tid, set()):
                 if upstream_tid not in visited:
                     queue.append(upstream_tid)
 
-    # Enrich sensors from DB
-    sensor_repo = SensorRepository(session)
-    sensor_names_list = list(found_sensors.keys())
-    sensors_db = await sensor_repo.get_by_names(sensor_names_list) if sensor_names_list else []
-    sensor_by_name = {s.sensor_name: s for s in sensors_db}
+    # Enrich bouncers from DB
+    bouncer_repo = BouncerRepository(session)
+    bouncer_names_list = list(found_bouncers.keys())
+    bouncers_db = await bouncer_repo.get_by_names(bouncer_names_list) if bouncer_names_list else []
+    bouncer_by_name = {s.sensor_name: s for s in bouncers_db}
 
-    upstream_sensors: list[TopologySensor] = []
-    for sname, dag_id_set in sorted(found_sensors.items()):
-        s = sensor_by_name.get(sname)
-        upstream_sensors.append(
-            TopologySensor(
+    upstream_bouncers_list: list[TopologyBouncer] = []
+    for sname, dag_id_set in sorted(found_bouncers.items()):
+        s = bouncer_by_name.get(sname)
+        upstream_bouncers_list.append(
+            TopologyBouncer(
                 sensor_name=sname,
                 display_name=s.display_name if s else sname.replace("_", " ").title(),
                 sensor_id=str(s.id) if s else None,
@@ -179,7 +179,7 @@ async def get_pipeline_topology(
         pipeline_task_id=my_task_id,
         pipeline_status=pipeline_status,
         dag_ids=all_dag_ids,
-        upstream_sensors=upstream_sensors,
+        upstream_bouncers=upstream_bouncers_list,
         upstream_needs=list(merged_needs.values()),
         upstream_prefers=list(merged_prefers.values()),
         downstream=list(merged_downstream.values()),
@@ -227,7 +227,7 @@ async def get_upstream_topology(
                 is_current=True,
             )],
             edges=[],
-            sensors=[],
+            bouncers=[],
             max_depth=0,
         )
 
@@ -245,7 +245,7 @@ async def get_upstream_topology(
     if cached is not None:
         return cached
 
-    # Load all tasks per active DAG into lookup + build reverse adjacency for sensor BFS
+    # Load all tasks per active DAG into lookup + build reverse adjacency for bouncer BFS
     tid_to_dt: dict[str, object] = {}  # task_id -> DagTask (first DAG wins)
     task_group_lookup: dict[str, str | None] = {}
     reverse_adj: dict[str, set[str]] = defaultdict(set)  # downstream_tid -> set of upstream tids
@@ -310,24 +310,24 @@ async def get_upstream_topology(
             if dep_tid not in visited:
                 queue.append((dep_tid, depth + 1))
 
-    # Sensor discovery: sensors connect to root ETLs via Airflow's >> operator.
-    # BFS upstream from all visited tasks using reverse_adj to find ancestor sensor tasks.
-    found_sensors: dict[str, set[str]] = {}  # sensor_name -> dag_ids
-    sensor_visited: set[str] = set()
-    sensor_queue = list(visited.keys())
-    while sensor_queue:
-        tid = sensor_queue.pop(0)
-        if tid in sensor_visited:
+    # Bouncer discovery: bouncers connect to root ETLs via Airflow's >> operator.
+    # BFS upstream from all visited tasks using reverse_adj to find ancestor bouncer tasks.
+    found_bouncers: dict[str, set[str]] = {}  # sensor_name -> dag_ids
+    bouncer_visited: set[str] = set()
+    bouncer_queue = list(visited.keys())
+    while bouncer_queue:
+        tid = bouncer_queue.pop(0)
+        if tid in bouncer_visited:
             continue
-        sensor_visited.add(tid)
+        bouncer_visited.add(tid)
         for upstream_tid in reverse_adj.get(tid, set()):
-            if upstream_tid in sensor_visited:
+            if upstream_tid in bouncer_visited:
                 continue
             dt_entry = tid_to_dt.get(upstream_tid)
             if dt_entry and dt_entry.sensor_name:
-                found_sensors.setdefault(dt_entry.sensor_name, set()).add(dag_id)
+                found_bouncers.setdefault(dt_entry.sensor_name, set()).add(dag_id)
             elif upstream_tid not in visited:
-                sensor_queue.append(upstream_tid)
+                bouncer_queue.append(upstream_tid)
 
     # Build ETL nodes
     nodes: list[UpstreamNode] = []
@@ -347,19 +347,19 @@ async def get_upstream_topology(
 
     max_depth = max(visited.values()) if visited else 0
 
-    # Enrich sensors from DB and add them as graph nodes with edges
-    sensor_repo = SensorRepository(session)
-    sensor_names_list = list(found_sensors.keys())
-    sensors_db = await sensor_repo.get_by_names(sensor_names_list) if sensor_names_list else []
-    sensor_by_name = {s.sensor_name: s for s in sensors_db}
+    # Enrich bouncers from DB and add them as graph nodes with edges
+    bouncer_repo = BouncerRepository(session)
+    bouncer_names_list = list(found_bouncers.keys())
+    bouncers_db = await bouncer_repo.get_by_names(bouncer_names_list) if bouncer_names_list else []
+    bouncer_by_name = {s.sensor_name: s for s in bouncers_db}
 
-    upstream_sensors: list[TopologySensor] = []
-    if found_sensors:
-        sensor_depth = max_depth + 1
-        for sname, dag_id_set in sorted(found_sensors.items()):
-            s = sensor_by_name.get(sname)
-            upstream_sensors.append(
-                TopologySensor(
+    upstream_bouncers_list: list[TopologyBouncer] = []
+    if found_bouncers:
+        bouncer_depth = max_depth + 1
+        for sname, dag_id_set in sorted(found_bouncers.items()):
+            s = bouncer_by_name.get(sname)
+            upstream_bouncers_list.append(
+                TopologyBouncer(
                     sensor_name=sname,
                     display_name=s.display_name if s else sname.replace("_", " ").title(),
                     sensor_id=str(s.id) if s else None,
@@ -370,24 +370,24 @@ async def get_upstream_topology(
                 )
             )
 
-            # Add sensor as a graph node at sensor_depth
-            sensor_dt = tid_to_dt.get(sname)
+            # Add bouncer as a graph node at bouncer_depth
+            bouncer_dt = tid_to_dt.get(sname)
             nodes.append(UpstreamNode(
                 task_id=sname,
                 pipeline_name=s.display_name if s else sname.replace("_", " ").title(),
                 pipeline_id=None,
                 status=s.status if s else "unknown",
-                dag_id=sensor_dt.dag_id if sensor_dt else dag_id,
+                dag_id=bouncer_dt.dag_id if bouncer_dt else dag_id,
                 task_group_id=None,
-                depth=sensor_depth,
+                depth=bouncer_depth,
                 is_current=False,
-                is_sensor=True,
-                sensor_name=sname,
+                is_bouncer=True,
+                bouncer_name=sname,
             ))
 
-            # Connect sensor to visited ETL tasks it feeds (via downstream_task_ids BFS)
-            if sensor_dt:
-                fwd_queue = list(sensor_dt.downstream_task_ids or [])
+            # Connect bouncer to visited ETL tasks it feeds (via downstream_task_ids BFS)
+            if bouncer_dt:
+                fwd_queue = list(bouncer_dt.downstream_task_ids or [])
                 fwd_seen: set[str] = set()
                 while fwd_queue:
                     next_tid = fwd_queue.pop(0)
@@ -408,7 +408,7 @@ async def get_upstream_topology(
                             if dtid not in fwd_seen:
                                 fwd_queue.append(dtid)
 
-        max_depth = sensor_depth
+        max_depth = bouncer_depth
 
     result = UpstreamTopologyGraph(
         pipeline_task_id=my_task_id,
@@ -417,7 +417,7 @@ async def get_upstream_topology(
         dag_ids=all_dag_ids,
         nodes=nodes,
         edges=edges,
-        sensors=upstream_sensors,
+        bouncers=upstream_bouncers_list,
         max_depth=max_depth,
     )
     topology_cache.set(cache_key, result)

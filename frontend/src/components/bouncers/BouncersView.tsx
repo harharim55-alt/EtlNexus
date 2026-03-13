@@ -1,22 +1,22 @@
 import { Radio } from "lucide-react";
-import { useSensors } from "@/hooks/use-sensors";
-import { useSensorStore } from "@/stores/sensor-store";
+import { useBouncers } from "@/hooks/use-bouncers";
+import { useBouncerStore } from "@/stores/bouncer-store";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { TeamFilter } from "./TeamFilter";
-import { SensorCard } from "./SensorCard";
-import { SensorTopology } from "./SensorTopology";
+import { BouncerCard } from "./BouncerCard";
+import { BouncerTopology } from "./BouncerTopology";
 
-export function SensorsView() {
-  const teamFilter = useSensorStore((s) => s.teamFilter);
-  const selectedSensors = useSensorStore((s) => s.selectedSensors);
-  const clearSensors = useSensorStore((s) => s.clearSensors);
-  const { data, isLoading, error, refetch } = useSensors(teamFilter);
+export function BouncersView() {
+  const teamFilter = useBouncerStore((s) => s.teamFilter);
+  const selectedBouncers = useBouncerStore((s) => s.selectedBouncers);
+  const clearBouncers = useBouncerStore((s) => s.clearBouncers);
+  const { data, isLoading, error, refetch } = useBouncers(teamFilter);
 
   if (isLoading) {
     return (
-      <div data-section="sensors-view" className="flex-1 flex items-center justify-center">
+      <div data-section="bouncers-view" className="flex-1 flex items-center justify-center">
         <LoadingState />
       </div>
     );
@@ -24,22 +24,22 @@ export function SensorsView() {
 
   if (error) {
     return (
-      <div data-section="sensors-view" className="flex-1 flex items-center justify-center">
-        <ErrorState message="Failed to load sensors" onRetry={refetch} />
+      <div data-section="bouncers-view" className="flex-1 flex items-center justify-center">
+        <ErrorState message="Failed to load bouncers" onRetry={refetch} />
       </div>
     );
   }
 
-  if (!data || data.sensors.length === 0) {
+  if (!data || data.bouncers.length === 0) {
     return (
-      <div data-section="sensors-view" className="flex-1 flex items-center justify-center">
-        <EmptyState message="No sensors found" />
+      <div data-section="bouncers-view" className="flex-1 flex items-center justify-center">
+        <EmptyState message="No bouncers found" />
       </div>
     );
   }
 
   return (
-    <div data-section="sensors-view" className="flex-1 flex flex-col min-h-0">
+    <div data-section="bouncers-view" className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div className="shrink-0 px-8 pt-8 pb-4">
         <div className="flex items-center justify-between mb-4">
@@ -49,21 +49,21 @@ export function SensorsView() {
             </div>
             <div>
               <h1 className="text-xl font-semibold text-white">
-                Sensor Dashboard
+                Bouncer Dashboard
               </h1>
               <p className="text-xs text-slate-500 font-mono mt-0.5">
-                {data.sensors.length} sensors across {data.teams.length} teams
+                {data.bouncers.length} bouncers across {data.teams.length} teams
               </p>
             </div>
           </div>
 
-          {selectedSensors.length > 0 && (
+          {selectedBouncers.length > 0 && (
             <button
               type="button"
-              onClick={clearSensors}
+              onClick={clearBouncers}
               className="text-[10px] font-mono px-3 py-1.5 rounded-lg border border-white/10 text-slate-400 hover:text-white hover:border-white/20 transition-all cursor-pointer"
             >
-              Clear selection ({selectedSensors.length})
+              Clear selection ({selectedBouncers.length})
             </button>
           )}
         </div>
@@ -74,18 +74,18 @@ export function SensorsView() {
 
       {/* Main content: Split layout */}
       <div className="flex-1 flex min-h-0">
-        {/* Left: Sensor grid */}
+        {/* Left: Bouncer grid */}
         <div className="w-[45%] border-r border-white/5 overflow-y-auto custom-scrollbar p-4">
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3">
-            {data.sensors.map((sensor) => (
-              <SensorCard key={sensor.id} sensor={sensor} />
+            {data.bouncers.map((bouncer) => (
+              <BouncerCard key={bouncer.id} bouncer={bouncer} />
             ))}
           </div>
         </div>
 
         {/* Right: Topology */}
         <div className="w-[55%] flex flex-col min-h-0">
-          <SensorTopology />
+          <BouncerTopology />
         </div>
       </div>
     </div>

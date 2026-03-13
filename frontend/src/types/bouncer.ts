@@ -1,4 +1,4 @@
-export interface Sensor {
+export interface Bouncer {
   id: string;
   sensor_name: string;
   display_name: string;
@@ -9,22 +9,22 @@ export interface Sensor {
   dag_ids: string[];
 }
 
-export interface SensorListResponse {
-  sensors: Sensor[];
+export interface BouncerListResponse {
+  bouncers: Bouncer[];
   teams: string[];
 }
 
-export interface SensorTopologyNode {
+export interface BouncerTopologyNode {
   task_id: string;
   pipeline_name: string | null;
   pipeline_id: string | null;
   status: string;
   dag_id: string;
-  depends_on_sensors: string[];
+  depends_on_bouncers: string[];
 }
 
-export interface SensorTopologyResponse {
-  selected_sensors: string[];
-  downstream_etls: SensorTopologyNode[];
+export interface BouncerTopologyResponse {
+  selected_bouncers: string[];
+  downstream_etls: BouncerTopologyNode[];
   total_etl_count: number;
 }

@@ -82,12 +82,12 @@ export function Sidebar() {
             tooltip="DAG Summary"
           />
         </div>
-        <div data-nav-id="sensors">
+        <div data-nav-id="bouncers">
           <NavIcon
-            active={activeTab === "sensors"}
-            onClick={() => setActiveTab("sensors")}
+            active={activeTab === "bouncers"}
+            onClick={() => setActiveTab("bouncers")}
             icon={<Radio className="w-5 h-5" />}
-            tooltip="Sensors"
+            tooltip="Bouncers"
           />
         </div>
         <div data-nav-id="ai">

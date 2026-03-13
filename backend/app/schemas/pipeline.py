@@ -18,6 +18,7 @@ class PipelineListItem(BaseModel):
     name: str
     description: str | None = None
     category: str | None = None
+    pipeline_type: str = "etl"
     schedule: str | None = None
     rows_per_day: str | None = None
     airflow_status: str = "unknown"
@@ -38,6 +39,7 @@ class PipelineDetail(BaseModel):
     task_id: str | None = None
     description: str | None = None
     category: str | None = None
+    pipeline_type: str = "etl"
     schedule: str | None = None
     rows_per_day: str | None = None
     airflow_status: str = "unknown"

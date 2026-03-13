@@ -25,9 +25,9 @@ function statusSummary(nodes: UpstreamNode[]) {
 }
 
 /** Determine the dominant incoming edge type for a node */
-function getNodeEdgeType(node: UpstreamNode, edges: UpstreamEdge[]): "needs" | "prefers" | "current" | "sensor" | "root" {
+function getNodeEdgeType(node: UpstreamNode, edges: UpstreamEdge[]): "needs" | "prefers" | "current" | "bouncer" | "root" {
   if (node.is_current) return "current";
-  if (node.is_sensor) return "sensor";
+  if (node.is_bouncer) return "bouncer";
   const incoming = edges.filter((e) => e.target_task_id === node.task_id);
   if (incoming.length === 0) return "root";
   if (incoming.some((e) => e.edge_type === "needs")) return "needs";
@@ -160,8 +160,8 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
   if (!open) return null;
 
   const dagIds = data?.dag_ids ?? [];
-  const etlNodes = data ? data.nodes.filter((n) => !n.is_sensor) : [];
-  const sensorNodes = data ? data.nodes.filter((n) => n.is_sensor) : [];
+  const etlNodes = data ? data.nodes.filter((n) => !n.is_bouncer) : [];
+  const bouncerNodes = data ? data.nodes.filter((n) => n.is_bouncer) : [];
   const summary = data ? statusSummary(etlNodes) : {};
 
   return (
@@ -225,7 +225,7 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
             <div className="flex items-center gap-2 shrink-0">
               <span className="text-[9px] font-mono text-slate-600">
                 {etlNodes.length} task{etlNodes.length !== 1 ? "s" : ""}
-                {sensorNodes.length > 0 && (<span className="text-slate-700"> + {sensorNodes.length} sensor{sensorNodes.length !== 1 ? "s" : ""}</span>)}
+                {bouncerNodes.length > 0 && (<span className="text-slate-700"> + {bouncerNodes.length} bouncer{bouncerNodes.length !== 1 ? "s" : ""}</span>)}
                 <span className="text-slate-700 ml-1">{maxDepth + 1} layer{maxDepth !== 0 ? "s" : ""}</span>
               </span>
               <div className="w-px h-3 bg-white/[0.06]" />
@@ -307,32 +307,32 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
                 })}
               </svg>
 
-              {/* Columns: deepest first → current last (sensors are at max depth) */}
+              {/* Columns: deepest first → current last (bouncers are at max depth) */}
               {[...columns].reverse().map((col, colIdx) => {
                 const depth = maxDepth - colIdx;
                 if (col.length === 0) return null;
                 const isCurrent = depth === 0;
-                const hasSensors = col.some((n) => n.is_sensor);
-                const isSensorLayer = col.every((n) => n.is_sensor);
+                const hasBouncers = col.some((n) => n.is_bouncer);
+                const isBouncerLayer = col.every((n) => n.is_bouncer);
                 return (
                   <div key={depth} className="flex flex-col shrink-0 self-center" style={{ marginRight: colIdx < maxDepth ? 64 : 0 }}>
                     <div className={`rounded-xl border p-3 pb-2 ${
                       isCurrent
                         ? "border-indigo-500/20 bg-indigo-500/[0.03] shadow-[0_0_30px_rgba(99,102,241,0.06)]"
-                        : isSensorLayer
+                        : isBouncerLayer
                           ? "border-teal-500/10 bg-teal-500/[0.02]"
                           : "border-white/[0.04] bg-white/[0.015]"
                     }`}>
                       {/* Column header */}
                       <div className="flex items-center justify-center gap-2 mb-3">
-                        {isSensorLayer && <Radio className="w-3 h-3 text-teal-400/50" />}
+                        {isBouncerLayer && <Radio className="w-3 h-3 text-teal-400/50" />}
                         <span className={`text-[9px] font-mono uppercase tracking-[0.15em] ${
-                          isCurrent ? "text-indigo-400/60" : isSensorLayer ? "text-teal-400/50" : "text-slate-600"
+                          isCurrent ? "text-indigo-400/60" : isBouncerLayer ? "text-teal-400/50" : "text-slate-600"
                         }`}>
-                          {isCurrent ? "Current" : isSensorLayer ? "Sensors" : hasSensors ? `Layer ${depth} + Sensors` : `Layer ${depth}`}
+                          {isCurrent ? "Current" : isBouncerLayer ? "Bouncers" : hasBouncers ? `Layer ${depth} + Bouncers` : `Layer ${depth}`}
                         </span>
                         <span className={`text-[8px] font-mono px-1.5 py-0.5 rounded-full ${
-                          isCurrent ? "text-indigo-400/40 bg-indigo-500/8" : isSensorLayer ? "text-teal-500/30 bg-teal-500/5" : "text-slate-700 bg-white/[0.03]"
+                          isCurrent ? "text-indigo-400/40 bg-indigo-500/8" : isBouncerLayer ? "text-teal-500/30 bg-teal-500/5" : "text-slate-700 bg-white/[0.03]"
                         }`}>
                           {col.length}
                         </span>
@@ -345,8 +345,8 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
                             onMouseEnter={() => setHoveredNode(node.task_id)}
                             onMouseLeave={() => setHoveredNode(null)}
                           >
-                            {node.is_sensor ? (
-                              <SensorNodeCard
+                            {node.is_bouncer ? (
+                              <BouncerNodeCard
                                 node={node}
                                 isHighlighted={hoveredNode !== null && (
                                   hoveredNode === node.task_id ||
@@ -403,7 +403,7 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
               </div>
               <div className="flex items-center gap-1.5">
                 <Radio className="w-2.5 h-2.5 text-teal-400/50" />
-                <span className="text-[8px] font-mono text-slate-500">sensor</span>
+                <span className="text-[8px] font-mono text-slate-500">bouncer</span>
               </div>
               <div className="w-px h-3 bg-white/[0.06]" />
               {Object.entries(STATUS_CONFIG).filter(([k]) => k !== "unknown").map(([key, cfg]) => (
@@ -426,7 +426,7 @@ const EDGE_BORDER: Record<string, string> = {
   needs: "border-l-orange-400/50",
   prefers: "border-l-sky-400/40",
   current: "border-l-indigo-400/60",
-  sensor: "border-l-teal-400/50",
+  bouncer: "border-l-teal-400/50",
   root: "border-l-slate-600/30",
 };
 
@@ -438,7 +438,7 @@ function NodeCard({
   onClick,
 }: {
   node: UpstreamNode;
-  edgeType: "needs" | "prefers" | "current" | "sensor" | "root";
+  edgeType: "needs" | "prefers" | "current" | "bouncer" | "root";
   isHighlighted: boolean;
   isDimmed: boolean;
   onClick: () => void;
@@ -485,7 +485,7 @@ function NodeCard({
 
 /* ── Sensor Node Card ─────────────────────────────────────────────── */
 
-function SensorNodeCard({
+function BouncerNodeCard({
   node,
   isHighlighted,
   isDimmed,
@@ -515,7 +515,7 @@ function SensorNodeCard({
           {displayName}
         </span>
         <span className="text-[9px] font-mono text-slate-600 block truncate">
-          {node.sensor_name ?? node.task_id}
+          {node.bouncer_name ?? node.task_id}
         </span>
       </div>
       <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${cfg.dot} ${cfg.glow}`} title={cfg.label} />

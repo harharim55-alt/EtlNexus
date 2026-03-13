@@ -184,6 +184,7 @@ class PipelineService:
             task_id=pipeline.task_id,
             description=pipeline.description,
             category=pipeline.category,
+            pipeline_type=self._detect_pipeline_type(pipeline.task_id),
             schedule=pipeline.schedule,
             rows_per_day=pipeline.rows_per_day,
             airflow_status=(
@@ -288,12 +289,20 @@ class PipelineService:
         return result
 
     @staticmethod
+    def _detect_pipeline_type(task_id: str | None) -> str:
+        """Derive pipeline type from task_id (same logic as AirflowSyncService._is_api)."""
+        if task_id and ("Api" in task_id or "API" in task_id):
+            return "api"
+        return "etl"
+
+    @staticmethod
     def _to_list_item(pipeline: Pipeline) -> PipelineListItem:
         return PipelineListItem(
             id=pipeline.id,
             name=pipeline.name,
             description=pipeline.description,
             category=pipeline.category,
+            pipeline_type=PipelineService._detect_pipeline_type(pipeline.task_id),
             schedule=pipeline.schedule,
             rows_per_day=pipeline.rows_per_day,
             airflow_status=(

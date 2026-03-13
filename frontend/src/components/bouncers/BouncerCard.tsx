@@ -1,7 +1,7 @@
 import { Check, Radio } from "lucide-react";
-import { useSensorStore } from "@/stores/sensor-store";
+import { useBouncerStore } from "@/stores/bouncer-store";
 import { getStatusStyle } from "@/lib/status-config";
-import type { Sensor } from "@/types/sensor";
+import type { Bouncer } from "@/types/bouncer";
 
 const TEAM_TAG_COLORS: Record<string, string> = {
   "Infrastructure Ops": "text-sky-400/70 bg-sky-500/8 border-sky-500/15",
@@ -17,24 +17,24 @@ function formatVolume(volume: number | null): string {
   return String(volume);
 }
 
-interface SensorCardProps {
-  sensor: Sensor;
+interface BouncerCardProps {
+  bouncer: Bouncer;
 }
 
-export function SensorCard({ sensor }: SensorCardProps) {
-  const selectedSensors = useSensorStore((s) => s.selectedSensors);
-  const toggleSensor = useSensorStore((s) => s.toggleSensor);
-  const isSelected = selectedSensors.includes(sensor.sensor_name);
-  const status = sensor.status || "unknown";
+export function BouncerCard({ bouncer }: BouncerCardProps) {
+  const selectedBouncers = useBouncerStore((s) => s.selectedBouncers);
+  const toggleBouncer = useBouncerStore((s) => s.toggleBouncer);
+  const isSelected = selectedBouncers.includes(bouncer.sensor_name);
+  const status = bouncer.status || "unknown";
   const cfg = getStatusStyle(status);
   const teamColors =
-    TEAM_TAG_COLORS[sensor.team || ""] ||
+    TEAM_TAG_COLORS[bouncer.team || ""] ||
     "text-slate-400/70 bg-white/[0.03] border-white/5";
 
   return (
     <button
       type="button"
-      onClick={() => toggleSensor(sensor.sensor_name)}
+      onClick={() => toggleBouncer(bouncer.sensor_name)}
       className={`
         group relative w-full text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer
         ${
@@ -80,11 +80,11 @@ export function SensorCard({ sensor }: SensorCardProps) {
                 isSelected ? "text-teal-200" : "text-slate-200"
               }`}
             >
-              {sensor.display_name}
+              {bouncer.display_name}
             </h4>
           </div>
           <p className="text-[9px] font-mono text-slate-600 truncate">
-            {sensor.sensor_name}
+            {bouncer.sensor_name}
           </p>
         </div>
       </div>
@@ -97,7 +97,7 @@ export function SensorCard({ sensor }: SensorCardProps) {
               isSelected ? "text-teal-300" : "text-white"
             }`}
           >
-            {formatVolume(sensor.volume_per_day)}
+            {formatVolume(bouncer.volume_per_day)}
           </span>
           <span className="text-[9px] font-mono text-slate-600 mb-0.5">
             events/day
@@ -106,30 +106,30 @@ export function SensorCard({ sensor }: SensorCardProps) {
       </div>
 
       {/* Team badge */}
-      {sensor.team && (
+      {bouncer.team && (
         <div className="mb-3">
           <span
             className={`inline-flex text-[9px] font-mono px-2 py-0.5 rounded-full border ${teamColors}`}
           >
-            {sensor.team}
+            {bouncer.team}
           </span>
         </div>
       )}
 
       {/* Description */}
-      {sensor.description && (
+      {bouncer.description && (
         <p className="text-[10px] text-slate-500 leading-relaxed line-clamp-2 mb-3">
-          {sensor.description}
+          {bouncer.description}
         </p>
       )}
 
       {/* DAG pills */}
-      {sensor.dag_ids.length > 0 && (
+      {bouncer.dag_ids.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap">
           <span className="text-[8px] font-mono uppercase tracking-widest text-slate-600 mr-0.5">
             DAGs
           </span>
-          {sensor.dag_ids.map((dagId) => (
+          {bouncer.dag_ids.map((dagId) => (
             <span
               key={dagId}
               className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-white/[0.03] text-slate-500 border border-white/5"

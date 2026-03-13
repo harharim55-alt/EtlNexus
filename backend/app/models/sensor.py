@@ -1,4 +1,4 @@
-"""Sensor model — represents data-ingestion root tasks discovered from Airflow."""
+"""Bouncer model — represents data-ingestion root tasks discovered from Airflow."""
 
 import uuid
 from datetime import datetime
@@ -9,7 +9,7 @@ from sqlalchemy.orm import Mapped, mapped_column
 from app.database import Base
 
 
-class Sensor(Base):
+class Bouncer(Base):
     __tablename__ = "sensors"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
