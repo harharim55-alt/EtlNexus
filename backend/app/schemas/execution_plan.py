@@ -15,6 +15,18 @@ class ExecutionPlanNode(BaseModel):
     children: list[ExecutionPlanNode] = []
 
 
+class ExecutionPlanRunSummary(BaseModel):
+    dag_run_id: str
+    dag_id: str
+    start_date: str | None = None
+    status: str
+
+
+class ExecutionPlanRunsResponse(BaseModel):
+    items: list[ExecutionPlanRunSummary] = []
+    total: int = 0
+
+
 class ExecutionPlanResponse(BaseModel):
     dag_id: str
     dag_run_id: str

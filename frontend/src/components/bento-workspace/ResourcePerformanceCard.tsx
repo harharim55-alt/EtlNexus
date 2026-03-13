@@ -1,4 +1,5 @@
 import { Gauge, HardDrive, Cpu, Server, MemoryStick, Clock, CheckCircle, Activity, ArrowDownUp, Database } from "lucide-react";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResourceMetrics } from "@/hooks/use-resource-metrics";
 import { usePipelineStore } from "@/stores/pipeline-store";
@@ -478,11 +479,14 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
 
   return (
     <div className="col-span-12 bg-[#18181b] border border-white/5 rounded-2xl p-5 flex flex-col">
-      <div className="flex items-center gap-2 mb-4">
-        <Gauge className="w-3.5 h-3.5 text-slate-500" />
-        <h3 className="text-[11px] font-mono uppercase tracking-widest text-slate-500">
-          Resource & Performance
-        </h3>
+      <div className="flex items-center justify-between mb-4">
+        <div className="flex items-center gap-2">
+          <Gauge className="w-3.5 h-3.5 text-slate-500" />
+          <h3 className="text-[11px] font-mono uppercase tracking-widest text-slate-500">
+            Resource & Performance
+          </h3>
+        </div>
+        <DateRangePicker />
       </div>
 
       {isLoading ? (

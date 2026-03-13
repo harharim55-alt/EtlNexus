@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends
 from app.auth import get_current_user
 from app.dependencies import get_dag_summary_service
 from app.models.user import User
+from app.schemas.date_range import DateRangeParams
 from app.schemas.dag_summary import DagSummaryResponse
 from app.services.dag_summary_service import DagSummaryService
 
@@ -13,7 +14,10 @@ router = APIRouter(prefix="/api/dags", tags=["dag-summary"])
 
 @router.get("/summary", response_model=DagSummaryResponse)
 async def get_dag_summary(
+    dates: DateRangeParams = Depends(),
     user: User = Depends(get_current_user),
     service: DagSummaryService = Depends(get_dag_summary_service),
 ):
-    return await service.get_dag_summaries()
+    return await service.get_dag_summaries(
+        date_from=dates.date_from, date_to=dates.date_to,
+    )

@@ -1,6 +1,7 @@
 """Service for DAG-level summary statistics."""
 
 import logging
+from datetime import datetime
 
 from app.cache import dag_summary_cache
 from app.integrations.airflow_client import airflow_client
@@ -16,7 +17,24 @@ from app.schemas.dag_summary import (
 
 logger = logging.getLogger(__name__)
 
-CACHE_KEY = "dag_summary"
+
+def _period_label(date_from: datetime | None, date_to: datetime | None) -> str:
+    """Derive a human-readable period label from date range."""
+    if not date_from:
+        return "30d"
+    if not date_to:
+        return "custom"
+    delta = date_to - date_from
+    days = delta.days
+    if days <= 1:
+        return "24h"
+    if days <= 7:
+        return "7d"
+    if days <= 30:
+        return "30d"
+    if days <= 90:
+        return "90d"
+    return "custom"
 
 
 class DagSummaryService:
@@ -30,16 +48,25 @@ class DagSummaryService:
         self.resource_repo = resource_repo
         self.airflow_repo = airflow_repo
 
-    async def get_dag_summaries(self) -> DagSummaryResponse:
-        cached = dag_summary_cache.get(CACHE_KEY)
+    async def get_dag_summaries(
+        self,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> DagSummaryResponse:
+        cache_key = f"dag_summary:{date_from}:{date_to}"
+        cached = dag_summary_cache.get(cache_key)
         if cached is not None:
             return cached
 
-        result = await self._build_dag_summaries()
-        dag_summary_cache.set(CACHE_KEY, result)
+        result = await self._build_dag_summaries(date_from=date_from, date_to=date_to)
+        dag_summary_cache.set(cache_key, result)
         return result
 
-    async def _build_dag_summaries(self) -> DagSummaryResponse:
+    async def _build_dag_summaries(
+        self,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> DagSummaryResponse:
         # Batch fetch all required data
         all_dag_ids = await self.dag_task_repo.get_all_dag_ids()
         task_counts = await self.dag_task_repo.count_tasks_per_dag()
@@ -70,15 +97,19 @@ class DagSummaryService:
             pc = pipeline_counts.get(dag_id, 0)
             total_pipelines += pc
 
-            # Run stats (30d)
-            run_stats = await self.resource_repo.get_dag_run_stats(dag_id)
+            # Run stats (date range or default 30d)
+            run_stats = await self.resource_repo.get_dag_run_stats(
+                dag_id, date_from=date_from, date_to=date_to,
+            )
             total_runs_30d += run_stats["dag_run_count"]
 
             # Latest run tasks
             latest_runs = await self.resource_repo.get_latest_runs_by_dag(dag_id)
 
             # Typical finish hour
-            finish_hour = await self.resource_repo.get_typical_finish_hour(dag_id)
+            finish_hour = await self.resource_repo.get_typical_finish_hour(
+                dag_id, date_from=date_from, date_to=date_to,
+            )
 
             # Tasks in this DAG (eager-load pipeline for name lookup)
             tasks_in_dag = await self.dag_task_repo.get_tasks_for_dag_with_pipeline(dag_id)
@@ -167,6 +198,7 @@ class DagSummaryService:
                 typical_finish_hour=finish_hour,
                 total_runs_30d=run_stats["dag_run_count"],
                 dag_success_rate_30d=run_stats["success_rate"],
+                period_label=_period_label(date_from, date_to),
                 tasks=task_summaries,
             ))
 
@@ -180,6 +212,7 @@ class DagSummaryService:
             active_dags=active_dags,
             overall_success_rate=overall_sr,
             total_runs_30d=total_runs_30d,
+            period_label=_period_label(date_from, date_to),
         )
 
         return DagSummaryResponse(aggregate=aggregate, dags=dags)

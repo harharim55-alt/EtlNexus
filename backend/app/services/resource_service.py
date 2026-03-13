@@ -4,6 +4,7 @@ import json
 import logging
 import re
 import uuid
+from datetime import datetime
 
 from app.config import settings
 from app.repositories.pipeline_repo import PipelineRepository
@@ -29,7 +30,10 @@ class ResourceService:
         self.pipeline_repo = pipeline_repo
 
     async def get_resource_metrics(
-        self, pipeline_id: uuid.UUID
+        self,
+        pipeline_id: uuid.UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
     ) -> ResourceMetricsResponse | None:
         pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
         if not pipeline:
@@ -39,8 +43,12 @@ class ResourceService:
         configs = await self.resource_repo.get_configs_by_pipeline(pipeline_id)
 
         # Run history + stats
-        runs = await self.resource_repo.get_recent_runs(pipeline_id, limit=20)
-        stats = await self.resource_repo.get_run_stats(pipeline_id)
+        runs = await self.resource_repo.get_recent_runs(
+            pipeline_id, limit=20, date_from=date_from, date_to=date_to,
+        )
+        stats = await self.resource_repo.get_run_stats(
+            pipeline_id, date_from=date_from, date_to=date_to,
+        )
 
         # Build response
         resource_configs = [
@@ -115,14 +123,22 @@ class ResourceService:
         )
 
     async def get_execution_plan(
-        self, pipeline_id: uuid.UUID
+        self,
+        pipeline_id: uuid.UUID,
+        dag_run_id: str | None = None,
     ) -> dict | None:
-        """Get the latest execution plan for a pipeline."""
+        """Get a specific or latest execution plan for a pipeline."""
         pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
         if not pipeline:
             return None
 
-        run = await self.resource_repo.get_latest_execution_plan(pipeline_id)
+        if dag_run_id:
+            run = await self.resource_repo.get_execution_plan_by_run(
+                pipeline_id, dag_run_id,
+            )
+        else:
+            run = await self.resource_repo.get_latest_execution_plan(pipeline_id)
+
         if not run or not run.execution_plan:
             return None
 
@@ -140,6 +156,21 @@ class ResourceService:
             "execution_date": run.start_date.isoformat() if run.start_date else None,
             "execution_plan": plan_data,
         }
+
+    async def get_execution_plan_runs(
+        self,
+        pipeline_id: uuid.UUID,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> dict:
+        """List paginated runs that have execution plans."""
+        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            return {"items": [], "total": 0}
+        items, total = await self.resource_repo.get_execution_plan_runs(
+            pipeline_id, skip=skip, limit=limit,
+        )
+        return {"items": items, "total": total}
 
     def _compute_capacity(
         self,

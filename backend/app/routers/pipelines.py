@@ -14,6 +14,7 @@ from app.models.user import User
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.revision_repo import RevisionRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
+from app.schemas.date_range import DateRangeParams
 from app.schemas.pipeline import (
     JoinSuggestionsResponse,
     PipelineDetail,
@@ -35,6 +36,7 @@ async def list_pipelines(
     q: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=500),
+    dates: DateRangeParams = Depends(),
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
@@ -51,6 +53,8 @@ async def list_pipelines(
         is_admin=is_admin,
         skip=skip,
         limit=limit,
+        date_from=dates.date_from,
+        date_to=dates.date_to,
     )
 
 

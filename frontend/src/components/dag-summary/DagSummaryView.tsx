@@ -3,6 +3,7 @@ import { useDagSummary } from "@/hooks/use-dag-summary";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import { AggregateBar } from "./AggregateBar";
 import { DagCard } from "./DagCard";
 
@@ -38,19 +39,22 @@ export function DagSummaryView() {
       <div className="p-8 max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
-          <div className="flex items-center gap-3 mb-2">
-            <div className="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
-              <BarChart3 className="w-5 h-5 text-indigo-400" />
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center gap-3">
+              <div className="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
+                <BarChart3 className="w-5 h-5 text-indigo-400" />
+              </div>
+              <div>
+                <h1 className="text-xl font-semibold text-white">
+                  DAG Operations Dashboard
+                </h1>
+                <p className="text-xs text-slate-500 font-mono mt-0.5">
+                  {data.aggregate.total_dags} DAGs monitored &middot;{" "}
+                  {data.aggregate.total_pipelines} pipelines
+                </p>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl font-semibold text-white">
-                DAG Operations Dashboard
-              </h1>
-              <p className="text-xs text-slate-500 font-mono mt-0.5">
-                {data.aggregate.total_dags} DAGs monitored &middot;{" "}
-                {data.aggregate.total_pipelines} pipelines
-              </p>
-            </div>
+            <DateRangePicker />
           </div>
         </div>
 

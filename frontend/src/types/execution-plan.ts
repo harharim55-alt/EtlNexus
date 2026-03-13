@@ -8,6 +8,18 @@ export interface ExecutionPlanNode {
   children: ExecutionPlanNode[];
 }
 
+export interface ExecutionPlanRunSummary {
+  dag_run_id: string;
+  dag_id: string;
+  start_date: string | null;
+  status: string;
+}
+
+export interface ExecutionPlanRunsResponse {
+  items: ExecutionPlanRunSummary[];
+  total: number;
+}
+
 export interface ExecutionPlanResponse {
   dag_id: string;
   dag_run_id: string;

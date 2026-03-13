@@ -93,12 +93,22 @@ class PipelineRepository:
         return pipeline
 
     async def get_success_rates(
-        self, pipeline_ids: list[uuid.UUID]
+        self,
+        pipeline_ids: list[uuid.UUID],
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
     ) -> dict[uuid.UUID, float]:
-        """Compute 30-day success rate for a batch of pipelines."""
+        """Compute success rate for a batch of pipelines (date range or default 30d)."""
         if not pipeline_ids:
             return {}
-        cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+        cutoff = date_from or (datetime.now(timezone.utc) - timedelta(days=30))
+        conditions = [
+            PipelineRunHistory.pipeline_id.in_(pipeline_ids),
+            PipelineRunHistory.duration_seconds.isnot(None),
+            PipelineRunHistory.start_date >= cutoff,
+        ]
+        if date_to:
+            conditions.append(PipelineRunHistory.start_date <= date_to)
         stmt = (
             select(
                 PipelineRunHistory.pipeline_id,
@@ -107,11 +117,7 @@ class PipelineRepository:
                     case((PipelineRunHistory.status == "success", 1), else_=0)
                 ).label("successes"),
             )
-            .where(
-                PipelineRunHistory.pipeline_id.in_(pipeline_ids),
-                PipelineRunHistory.duration_seconds.isnot(None),
-                PipelineRunHistory.start_date >= cutoff,
-            )
+            .where(*conditions)
             .group_by(PipelineRunHistory.pipeline_id)
         )
         result = await self.session.execute(stmt)
@@ -162,6 +168,8 @@ class PipelineRepository:
         query: str | None = None,
         skip: int = 0,
         limit: int = 200,
+        last_run_after: datetime | None = None,
+        last_run_before: datetime | None = None,
     ) -> tuple[list[Pipeline], int]:
         """Return pipelines filtered by team visibility + optional text search.
 
@@ -169,6 +177,21 @@ class PipelineRepository:
         count before offset/limit pagination.
         """
         conditions = []
+
+        # Filter by last run start_date range
+        if last_run_after or last_run_before:
+            run_conditions = [PipelineRunHistory.start_date.isnot(None)]
+            if last_run_after:
+                run_conditions.append(PipelineRunHistory.start_date >= last_run_after)
+            if last_run_before:
+                run_conditions.append(PipelineRunHistory.start_date <= last_run_before)
+            run_subq = (
+                select(PipelineRunHistory.pipeline_id)
+                .where(*run_conditions)
+                .distinct()
+                .scalar_subquery()
+            )
+            conditions.append(Pipeline.id.in_(run_subq))
 
         if query:
             pattern = f"%{_escape_like(query)}%"

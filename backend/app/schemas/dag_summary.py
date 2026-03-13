@@ -36,9 +36,10 @@ class DagSummary(BaseModel):
     latest_run_end: str | None = None
     typical_finish_hour: str | None = None
 
-    # 30-day history
+    # Period-based history (default 30d, adjusts with date range)
     total_runs_30d: int = 0
     dag_success_rate_30d: float | None = None
+    period_label: str = "30d"
 
     tasks: list[DagTaskSummary] = []
 
@@ -49,6 +50,7 @@ class DagSummaryAggregate(BaseModel):
     active_dags: int = 0
     overall_success_rate: float | None = None
     total_runs_30d: int = 0
+    period_label: str = "30d"
 
 
 class DagSummaryResponse(BaseModel):

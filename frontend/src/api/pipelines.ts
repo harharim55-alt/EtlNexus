@@ -12,9 +12,10 @@ export async function fetchPipelines(
   query?: string,
   skip = 0,
   limit = 50,
+  dateParams?: Record<string, string>,
 ): Promise<PipelineListResponse> {
   const { data } = await apiClient.get<PipelineListResponse>("/pipelines", {
-    params: { q: query, skip, limit },
+    params: { q: query, skip, limit, ...dateParams },
   });
   return data;
 }
