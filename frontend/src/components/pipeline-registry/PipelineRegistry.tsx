@@ -116,7 +116,7 @@ export function PipelineRegistry() {
     const groups = new Map<string, PipelineListItemType[]>();
 
     for (const pipeline of filteredPipelines) {
-      const group = pipeline.category?.toLowerCase().includes("api") ? "API" : "ETL";
+      const group = pipeline.pipeline_type === "api" ? "API" : "ETL";
       if (!groups.has(group)) {
         groups.set(group, []);
       }

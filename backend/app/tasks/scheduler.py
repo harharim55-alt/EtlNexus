@@ -87,6 +87,7 @@ async def run_startup_sync() -> None:
         from app.tasks.airflow_poll_task import poll_airflow_statuses
         from app.tasks.catalog_sync_task import sync_from_catalog
         from app.tasks.seed_usage_data import seed_usage_data
+        from app.tasks.seed_bouncer_volumes import seed_bouncer_volumes
 
         pipeline_sync_ok = False
         try:
@@ -94,6 +95,11 @@ async def run_startup_sync() -> None:
             pipeline_sync_ok = True
         except Exception:
             logger.exception("Startup pipeline sync failed")
+
+        try:
+            await seed_bouncer_volumes()
+        except Exception:
+            logger.exception("Startup seed bouncer volumes failed")
 
         try:
             await seed_usage_data()

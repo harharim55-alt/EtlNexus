@@ -44,7 +44,7 @@ export const PipelineListItem = memo(function PipelineListItem({
         />
       </div>
       <div className="text-xs text-slate-500 font-mono mb-3">
-        {pipeline.category?.toLowerCase().includes("api") ? "API" : "ETL"}
+        {pipeline.pipeline_type === "api" ? "API" : "ETL"}
       </div>
       <div className="flex gap-2 text-[10px] font-mono">
         {pipeline.schedule && (
