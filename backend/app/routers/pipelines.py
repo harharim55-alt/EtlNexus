@@ -7,17 +7,21 @@ from app.dependencies import (
     get_airflow_sync_service,
     get_pipeline_repo,
     get_pipeline_service,
+    get_revision_repo,
     get_visibility_grant_repo,
 )
-from app.repositories.pipeline_repo import PipelineRepository
 from app.models.user import User
+from app.repositories.pipeline_repo import PipelineRepository
+from app.repositories.revision_repo import RevisionRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.schemas.pipeline import (
     JoinSuggestionsResponse,
     PipelineDetail,
     PipelineListResponse,
+    PipelineRevisionResponse,
     PipelineUpdateRequest,
     PipelineUpdateResponse,
+    RevisionListResponse,
     SyncResponse,
 )
 from app.services.airflow_sync_service import AirflowSyncService
@@ -83,11 +87,16 @@ async def update_pipeline(
     body: PipelineUpdateRequest,
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
+    revision_repo: RevisionRepository = Depends(get_revision_repo),
 ):
     # Reuse pipeline loaded by require_team_membership_or_editor_grant
     preloaded = getattr(request.state, "pipeline", None)
     result = await service.update_pipeline_metadata(
-        pipeline_id, body, updated_by=user.display_name, preloaded_pipeline=preloaded
+        pipeline_id,
+        body,
+        updated_by=user.display_name,
+        preloaded_pipeline=preloaded,
+        revision_repo=revision_repo,
     )
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
@@ -109,6 +118,47 @@ async def sync_pipeline(
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.get("/{pipeline_id}/revisions", response_model=RevisionListResponse)
+async def list_revisions(
+    pipeline_id: uuid.UUID,
+    field: str | None = Query(None, pattern="^(description|documentation)$"),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=200),
+    user: User = Depends(get_current_user),
+    revision_repo: RevisionRepository = Depends(get_revision_repo),
+):
+    items, total = await revision_repo.list_by_pipeline(
+        pipeline_id, field_name=field, skip=skip, limit=limit
+    )
+    return RevisionListResponse(
+        items=[PipelineRevisionResponse.model_validate(r) for r in items],
+        total=total,
+    )
+
+
+@router.post(
+    "/{pipeline_id}/revisions/{revision_id}/restore",
+    response_model=PipelineUpdateResponse,
+    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+)
+async def restore_revision(
+    pipeline_id: uuid.UUID,
+    revision_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    service: PipelineService = Depends(get_pipeline_service),
+    revision_repo: RevisionRepository = Depends(get_revision_repo),
+):
+    result = await service.restore_revision(
+        pipeline_id,
+        revision_id,
+        restored_by=user.display_name,
+        revision_repo=revision_repo,
+    )
+    if not result:
+        raise HTTPException(status_code=404, detail="Pipeline or revision not found")
+    return result
 
 
 @router.get("/{pipeline_id}/joins", response_model=JoinSuggestionsResponse)

@@ -24,7 +24,9 @@ import {
   Languages,
   PanelTopClose,
   HelpCircle,
+  History,
 } from "lucide-react";
+import { RevisionHistoryPanel } from "./RevisionHistoryPanel";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkDirective from "remark-directive";
@@ -517,9 +519,12 @@ function EmptyDocState({ canEdit }: { canEdit: boolean }) {
 
 /* ── Component ─────────────────────────────────────────────────────── */
 
+type ModalTab = "preview" | "edit" | "history";
+
 interface DocumentationModalProps {
   open: boolean;
   onClose: () => void;
+  pipelineId: string;
   pipelineName: string;
   documentation: string | null;
   onSave: (documentation: string) => void;
@@ -530,17 +535,20 @@ interface DocumentationModalProps {
 export function DocumentationModal({
   open,
   onClose,
+  pipelineId,
   pipelineName,
   documentation,
   onSave,
   isSaving,
   canEdit,
 }: DocumentationModalProps) {
-  const [isEditing, setIsEditing] = useState(false);
+  const [activeTab, setActiveTab] = useState<ModalTab>("preview");
   const [editValue, setEditValue] = useState(documentation ?? "");
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+
+  const isEditing = activeTab === "edit";
 
   const lines = useMemo(() => editValue.split("\n"), [editValue]);
   const previewContent = editValue || documentation || "";
@@ -551,7 +559,7 @@ export function DocumentationModal({
 
   useEffect(() => {
     if (open) {
-      setIsEditing(false);
+      setActiveTab("preview");
       setEditValue(documentation ?? "");
       setCheatsheetOpen(false);
     }
@@ -587,7 +595,7 @@ export function DocumentationModal({
 
   const handleSave = () => {
     onSave(editValue);
-    setIsEditing(false);
+    setActiveTab("preview");
   };
 
   const syncGutterScroll = () => {
@@ -625,12 +633,12 @@ export function DocumentationModal({
           </div>
 
           <div className="flex items-center gap-3">
-            {/* Segmented control: Preview / Edit */}
+            {/* Segmented control: Preview / Edit / History */}
             <div className="flex bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.06]">
               <button
-                onClick={() => { setIsEditing(false); setCheatsheetOpen(false); }}
+                onClick={() => { setActiveTab("preview"); setCheatsheetOpen(false); }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
-                  !isEditing
+                  activeTab === "preview"
                     ? "bg-white/[0.08] text-white shadow-sm"
                     : "text-slate-500 hover:text-slate-300"
                 }`}
@@ -639,12 +647,12 @@ export function DocumentationModal({
                 Preview
               </button>
               <button
-                onClick={() => canEdit && setIsEditing(true)}
+                onClick={() => canEdit && setActiveTab("edit")}
                 disabled={!canEdit}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
                   !canEdit
                     ? "text-slate-600 cursor-not-allowed opacity-40"
-                    : isEditing
+                    : activeTab === "edit"
                       ? "bg-white/[0.08] text-white shadow-sm"
                       : "text-slate-500 hover:text-slate-300"
                 }`}
@@ -652,6 +660,17 @@ export function DocumentationModal({
               >
                 <Edit3 className="size-3" />
                 Edit
+              </button>
+              <button
+                onClick={() => { setActiveTab("history"); setCheatsheetOpen(false); }}
+                className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
+                  activeTab === "history"
+                    ? "bg-white/[0.08] text-white shadow-sm"
+                    : "text-slate-500 hover:text-slate-300"
+                }`}
+              >
+                <History className="size-3" />
+                History
               </button>
             </div>
 
@@ -696,7 +715,7 @@ export function DocumentationModal({
 
         {/* ── Body ───────────────────────────────────────────────── */}
         <div className="flex-1 overflow-auto bg-[#09090b] custom-scrollbar">
-          {isEditing ? (
+          {activeTab === "edit" ? (
             <div className="flex h-full">
               {/* Line number gutter */}
               <div
@@ -724,6 +743,13 @@ export function DocumentationModal({
                 spellCheck={false}
               />
             </div>
+          ) : activeTab === "history" ? (
+            <RevisionHistoryPanel
+              pipelineId={pipelineId}
+              field="documentation"
+              canEdit={canEdit}
+              onRestored={() => setActiveTab("preview")}
+            />
           ) : (
             <div className="p-10 max-w-4xl mx-auto">
               {previewContent.trim() ? (
@@ -743,10 +769,15 @@ export function DocumentationModal({
 
         {/* ── Footer ─────────────────────────────────────────────── */}
         <div className="px-7 py-2.5 bg-[#111116] border-t border-white/[0.08] text-[11px] font-mono text-slate-600 flex justify-between shrink-0">
-          {isEditing ? (
+          {activeTab === "edit" ? (
             <>
               <span>Markdown + GFM &middot; Use toolbar for formatting</span>
               <span>Ctrl+S to save &middot; Esc to close</span>
+            </>
+          ) : activeTab === "history" ? (
+            <>
+              <span>Revision history &middot; Previous versions of documentation</span>
+              <span>Esc to close</span>
             </>
           ) : (
             <>

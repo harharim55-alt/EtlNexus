@@ -8,6 +8,8 @@ import {
   RefreshCw,
   Users,
   ExternalLink,
+  History,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -20,6 +22,7 @@ import { useSyncPipeline } from "@/hooks/use-sync-pipeline";
 import { useTopology } from "@/hooks/use-topology";
 import type { PipelineDetail } from "@/types/pipeline";
 import { DocumentationModal } from "./DocumentationModal";
+import { CompactRevisionList } from "./RevisionHistoryPanel";
 import { AIRFLOW_URL } from "@/lib/config";
 
 interface BentoHeaderProps {
@@ -54,11 +57,26 @@ export function BentoHeader({
   const [editValue, setEditValue] = useState(pipeline.description ?? "");
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [docOpen, setDocOpen] = useState(false);
+  const [descHistoryOpen, setDescHistoryOpen] = useState(false);
+  const descHistoryRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     setEditValue(pipeline.description ?? "");
     setIsEditingDesc(false);
+    setDescHistoryOpen(false);
   }, [pipeline.id, pipeline.description]);
+
+  // Close description history popover on outside click
+  useEffect(() => {
+    if (!descHistoryOpen) return;
+    const handleClick = (e: MouseEvent) => {
+      if (descHistoryRef.current && !descHistoryRef.current.contains(e.target as Node)) {
+        setDescHistoryOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [descHistoryOpen]);
 
   useEffect(() => {
     if (isEditingDesc && textareaRef.current) {
@@ -247,18 +265,46 @@ export function BentoHeader({
                   <span className="text-slate-600 italic">No description</span>
                 )}
               </p>
-              {canEdit && (
-                <button
-                  onClick={() => {
-                    setEditValue(pipeline.description ?? "");
-                    setIsEditingDesc(true);
-                  }}
-                  className="absolute top-0 right-0 p-1.5 text-slate-600 hover:text-indigo-400 opacity-0 group-hover/desc:opacity-100 transition-all duration-200 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20"
-                  title="Edit Description"
-                >
-                  <Edit3 className="size-3.5" />
-                </button>
-              )}
+              <div className="absolute top-0 right-0 flex items-center gap-0.5 opacity-0 group-hover/desc:opacity-100 transition-all duration-200">
+                {/* Description history */}
+                <div className="relative" ref={descHistoryRef}>
+                  <button
+                    onClick={() => setDescHistoryOpen((v) => !v)}
+                    className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20 transition-all duration-200"
+                    title="Description history"
+                  >
+                    <History className="size-3.5" />
+                  </button>
+                  {descHistoryOpen && (
+                    <div className="absolute top-full right-0 mt-1 z-50 w-80 bg-[#111116] border border-white/[0.08] rounded-xl shadow-2xl shadow-black/50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+                      <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center justify-between">
+                        <span className="text-[11px] font-semibold text-white tracking-tight">Description History</span>
+                        <button onClick={() => setDescHistoryOpen(false)} className="p-0.5 text-slate-500 hover:text-white transition-colors rounded">
+                          <X className="size-3" />
+                        </button>
+                      </div>
+                      <CompactRevisionList
+                        pipelineId={pipeline.id}
+                        canEdit={canEdit}
+                        onRestored={() => setDescHistoryOpen(false)}
+                      />
+                    </div>
+                  )}
+                </div>
+                {/* Edit description */}
+                {canEdit && (
+                  <button
+                    onClick={() => {
+                      setEditValue(pipeline.description ?? "");
+                      setIsEditingDesc(true);
+                    }}
+                    className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20 transition-all duration-200"
+                    title="Edit Description"
+                  >
+                    <Edit3 className="size-3.5" />
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>
@@ -267,6 +313,7 @@ export function BentoHeader({
       <DocumentationModal
         open={docOpen}
         onClose={() => setDocOpen(false)}
+        pipelineId={pipeline.id}
         pipelineName={pipeline.name}
         documentation={pipeline.documentation}
         onSave={(doc) => {

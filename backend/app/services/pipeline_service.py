@@ -4,6 +4,7 @@ from app.cache import join_suggestions_cache, pipeline_list_cache
 from app.models.pipeline import Pipeline
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
+from app.repositories.revision_repo import RevisionRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.schemas.pipeline import (
     JoinSuggestion,
@@ -77,13 +78,85 @@ class PipelineService:
         update: PipelineUpdateRequest,
         updated_by: str = "System",
         preloaded_pipeline: "Pipeline | None" = None,
+        revision_repo: RevisionRepository | None = None,
     ) -> PipelineUpdateResponse | None:
+        # Load pipeline to snapshot previous values for revisions
+        pipeline = preloaded_pipeline or await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            return None
+
+        # Snapshot previous values before applying changes
+        if revision_repo:
+            if update.description is not None and update.description != pipeline.description:
+                await revision_repo.create(
+                    pipeline_id=pipeline_id,
+                    field_name="description",
+                    content=pipeline.description,
+                    changed_by=updated_by,
+                    change_source="user",
+                )
+            if update.documentation is not None and update.documentation != pipeline.documentation:
+                await revision_repo.create(
+                    pipeline_id=pipeline_id,
+                    field_name="documentation",
+                    content=pipeline.documentation,
+                    changed_by=updated_by,
+                    change_source="user",
+                )
+
         pipeline = await self.pipeline_repo.update_metadata(
             pipeline_id,
             description=update.description,
             documentation=update.documentation,
             updated_by=updated_by,
-            pipeline=preloaded_pipeline,
+            pipeline=pipeline,
+            set_description_edited=(update.description is not None),
+        )
+        if not pipeline:
+            return None
+        pipeline_list_cache.clear()
+        return PipelineUpdateResponse(
+            id=pipeline.id,
+            description=pipeline.description,
+            documentation=pipeline.documentation,
+            last_updated_by=pipeline.last_updated_by,
+            last_updated_at=pipeline.last_updated_at,
+        )
+
+    async def restore_revision(
+        self,
+        pipeline_id: uuid.UUID,
+        revision_id: uuid.UUID,
+        restored_by: str,
+        revision_repo: RevisionRepository,
+    ) -> PipelineUpdateResponse | None:
+        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            return None
+
+        revision = await revision_repo.get_by_id(revision_id)
+        if not revision or revision.pipeline_id != pipeline_id:
+            return None
+
+        # Snapshot current state before restoring
+        field_name = revision.field_name
+        current_content = getattr(pipeline, field_name)
+        await revision_repo.create(
+            pipeline_id=pipeline_id,
+            field_name=field_name,
+            content=current_content,
+            changed_by=restored_by,
+            change_source="restore",
+        )
+
+        # Apply the restored content
+        kwargs = {field_name: revision.content}
+        pipeline = await self.pipeline_repo.update_metadata(
+            pipeline_id,
+            **kwargs,
+            updated_by=restored_by,
+            pipeline=pipeline,
+            set_description_edited=(field_name == "description"),
         )
         if not pipeline:
             return None

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -27,6 +27,9 @@ class Pipeline(Base):
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("teams.id", ondelete="SET NULL"), index=True, nullable=True
     )
+    description_edited_by_user: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
@@ -51,6 +54,10 @@ class Pipeline(Base):
         back_populates="pipeline", cascade="all, delete-orphan"
     )
     owner_team: Mapped["Team | None"] = relationship(foreign_keys=[team_id])
+    revisions: Mapped[list["PipelineRevision"]] = relationship(
+        back_populates="pipeline", cascade="all, delete-orphan",
+        order_by="PipelineRevision.created_at.desc()"
+    )
 
 
 class PipelineField(Base):
@@ -72,3 +79,4 @@ from app.models.airflow_status import AirflowRunStatus  # noqa: E402, F401
 from app.models.lineage import LineageEdge  # noqa: E402, F401
 from app.models.resource_config import PipelineResourceConfig  # noqa: E402, F401
 from app.models.run_history import PipelineRunHistory  # noqa: E402, F401
+from app.models.pipeline_revision import PipelineRevision  # noqa: E402, F401
