@@ -49,7 +49,7 @@ export function SchemaMatrixView() {
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="schema-matrix" className="flex-1 flex items-center justify-center">
         <LoadingState />
       </div>
     );
@@ -57,7 +57,7 @@ export function SchemaMatrixView() {
 
   if (error) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="schema-matrix" className="flex-1 flex items-center justify-center">
         <ErrorState message="Failed to load schema matrix" onRetry={refetch} />
       </div>
     );
@@ -65,7 +65,7 @@ export function SchemaMatrixView() {
 
   if (fields.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="schema-matrix" className="flex-1 flex items-center justify-center">
         <EmptyState message="No shared fields found across pipelines" />
       </div>
     );
@@ -74,7 +74,7 @@ export function SchemaMatrixView() {
   const totalLabel = total > 0 ? total : fields.length;
 
   return (
-    <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
+    <div ref={scrollRef} data-section="schema-matrix" className="flex-1 overflow-y-auto custom-scrollbar">
       <div className="p-8">
         {/* Header */}
         <div className="mb-6">

@@ -16,7 +16,7 @@ export function SensorsView() {
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="sensors-view" className="flex-1 flex items-center justify-center">
         <LoadingState />
       </div>
     );
@@ -24,7 +24,7 @@ export function SensorsView() {
 
   if (error) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="sensors-view" className="flex-1 flex items-center justify-center">
         <ErrorState message="Failed to load sensors" onRetry={refetch} />
       </div>
     );
@@ -32,14 +32,14 @@ export function SensorsView() {
 
   if (!data || data.sensors.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="sensors-view" className="flex-1 flex items-center justify-center">
         <EmptyState message="No sensors found" />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 flex flex-col min-h-0">
+    <div data-section="sensors-view" className="flex-1 flex flex-col min-h-0">
       {/* Header */}
       <div className="shrink-0 px-8 pt-8 pb-4">
         <div className="flex items-center justify-between mb-4">

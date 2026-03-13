@@ -11,7 +11,7 @@ export function DagSummaryView() {
 
   if (isLoading) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="dag-dashboard" className="flex-1 flex items-center justify-center">
         <LoadingState />
       </div>
     );
@@ -19,7 +19,7 @@ export function DagSummaryView() {
 
   if (error) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="dag-dashboard" className="flex-1 flex items-center justify-center">
         <ErrorState message="Failed to load DAG summary" onRetry={refetch} />
       </div>
     );
@@ -27,14 +27,14 @@ export function DagSummaryView() {
 
   if (!data || data.dags.length === 0) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div data-section="dag-dashboard" className="flex-1 flex items-center justify-center">
         <EmptyState message="No DAGs found" />
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto custom-scrollbar">
+    <div data-section="dag-dashboard" className="flex-1 overflow-y-auto custom-scrollbar">
       <div className="p-8 max-w-7xl mx-auto">
         {/* Header */}
         <div className="mb-8">
