@@ -18,9 +18,10 @@ class UsageRepository:
         return list(result.scalars().all())
 
     async def get_enrichment_map(self, etl_name: str) -> dict[str, PipelineUsage]:
-        """Return usage records keyed by normalized consumer_name for enrichment lookup."""
+        """Return usage records keyed by consumer_name for enrichment lookup.
+
+        Keys are stored as-is (consumer_name matches the task_id format used
+        in dag_tasks, e.g. PascalCase like 'BgpRouteSync').
+        """
         usages = await self.get_by_etl_name(etl_name)
-        return {
-            u.consumer_name.lower().replace(" ", "_").replace("-", "_"): u
-            for u in usages
-        }
+        return {u.consumer_name: u for u in usages}

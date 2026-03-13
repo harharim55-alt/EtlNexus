@@ -12,8 +12,13 @@ class SensorRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_all(self) -> list[Sensor]:
-        stmt = select(Sensor).order_by(Sensor.display_name)
+    async def get_all(self, skip: int = 0, limit: int = 200) -> list[Sensor]:
+        stmt = (
+            select(Sensor)
+            .order_by(Sensor.display_name)
+            .offset(skip)
+            .limit(limit)
+        )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

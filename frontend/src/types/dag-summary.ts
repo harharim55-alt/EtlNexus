@@ -19,12 +19,7 @@ export interface DagSummary {
   avg_task_duration_seconds: number | null;
   min_task_duration_seconds: number | null;
   max_task_duration_seconds: number | null;
-  success_count: number;
-  failed_count: number;
-  upstream_failed_count: number;
-  running_count: number;
-  queued_count: number;
-  unknown_count: number;
+  status_counts: Record<string, number>;
   success_rate: number | null;
   latest_run_start: string | null;
   latest_run_end: string | null;

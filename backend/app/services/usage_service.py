@@ -1,6 +1,7 @@
 """Usage service — finds downstream consumers from cached DAG data, enriches with PostgreSQL data."""
 
 import logging
+import re
 
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
@@ -8,10 +9,6 @@ from app.repositories.usage_repo import UsageRepository
 from app.schemas.usage import PipelineUsageResponse, PipelineUsageSchema
 
 logger = logging.getLogger(__name__)
-
-
-def _to_task_id(name: str) -> str:
-    return name.lower().replace(" ", "_").replace("-", "_")
 
 
 class UsageService:
@@ -36,9 +33,9 @@ class UsageService:
         if not dag_entries:
             return PipelineUsageResponse(usages=[])
 
-        # 2. Build pipeline lookup (task_id -> Pipeline)
+        # 2. Build pipeline lookup by task_id (PascalCase)
         all_pipelines = await self.pipeline_repo.get_all()
-        task_id_to_pipeline = {_to_task_id(p.name): p for p in all_pipelines}
+        task_id_to_pipeline = {p.task_id: p for p in all_pipelines if p.task_id}
 
         # 3. Collect downstream task_ids + status across all DAGs
         downstream_info: dict[str, dict] = {}
@@ -65,7 +62,7 @@ class UsageService:
                         "dag_id": entry.dag_id,
                     }
 
-        # 4. Load enrichment from PostgreSQL
+        # 4. Load enrichment from PostgreSQL (keyed by etl_name = task_id)
         enrichment = await self.usage_repo.get_enrichment_map(etl_name)
 
         # 5. Build downstream consumer entries
@@ -82,7 +79,7 @@ class UsageService:
             consumer_entries.append(
                 PipelineUsageSchema(
                     id=str(p.id) if p else tid,
-                    consumer_name=p.name if p else tid.replace("_", " ").title(),
+                    consumer_name=p.name if p else re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", tid).replace("_", " ").strip().title(),
                     usage_type="api" if "api" in p_category.lower() else "etl",
                     description=enrich.description if enrich else None,
                     last_accessed_at=enrich.last_accessed_at if enrich else None,
@@ -101,7 +98,7 @@ class UsageService:
         usages: list[PipelineUsageSchema] = [
             PipelineUsageSchema(
                 id=str(current_pipeline.id) if current_pipeline else etl_name,
-                consumer_name=current_pipeline.name if current_pipeline else etl_name.replace("_", " ").title(),
+                consumer_name=current_pipeline.name if current_pipeline else re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", etl_name).replace("_", " ").strip().title(),
                 usage_type="api" if "api" in current_category.lower() else "etl",
                 description=current_pipeline.description if current_pipeline else None,
                 last_accessed_at=self_entry.last_accessed_at if self_entry else None,

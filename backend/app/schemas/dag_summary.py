@@ -27,13 +27,8 @@ class DagSummary(BaseModel):
     min_task_duration_seconds: float | None = None
     max_task_duration_seconds: float | None = None
 
-    # Status counts (from current Airflow statuses)
-    success_count: int = 0
-    failed_count: int = 0
-    upstream_failed_count: int = 0
-    running_count: int = 0
-    queued_count: int = 0
-    unknown_count: int = 0
+    # Status counts (from current Airflow statuses) — dynamic keys, one per Airflow state
+    status_counts: dict[str, int] = {}
     success_rate: float | None = None
 
     # Timing

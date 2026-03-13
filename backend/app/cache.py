@@ -43,6 +43,8 @@ topology_cache = TTLCache(ttl=30)            # topology per pipeline+dag
 dag_summary_cache = TTLCache(ttl=60)         # dag summary/statistics
 sensor_cache = TTLCache(ttl=60)              # sensor list
 sensor_topology_cache = TTLCache(ttl=30)     # sensor topology
+grant_level_cache = TTLCache(ttl=30)         # per-user grant level for pipeline
+join_suggestions_cache = TTLCache(ttl=60)    # join suggestions per pipeline
 
 
 def clear_all() -> None:
@@ -53,4 +55,6 @@ def clear_all() -> None:
     dag_summary_cache.clear()
     sensor_cache.clear()
     sensor_topology_cache.clear()
+    grant_level_cache.clear()
+    join_suggestions_cache.clear()
     logger.debug("All application caches cleared")

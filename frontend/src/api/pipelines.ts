@@ -1,15 +1,20 @@
 import apiClient from "./client";
 import type {
-  PipelineListItem,
+  PipelineListResponse,
   PipelineDetail,
   JoinSuggestionsResponse,
   PipelineUpdateRequest,
   PipelineUpdateResponse,
 } from "@/types/pipeline";
 
-export async function fetchPipelines(query?: string): Promise<PipelineListItem[]> {
-  const params = query ? { q: query } : {};
-  const { data } = await apiClient.get<PipelineListItem[]>("/pipelines", { params });
+export async function fetchPipelines(
+  query?: string,
+  skip = 0,
+  limit = 50,
+): Promise<PipelineListResponse> {
+  const { data } = await apiClient.get<PipelineListResponse>("/pipelines", {
+    params: { q: query, skip, limit },
+  });
   return data;
 }
 

@@ -8,8 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import ai, airflow, consumers, dag_summary, health, lineage, pipelines, resources, schema_matrix, sensors, topology, usage
-from app.tasks.scheduler import setup_scheduler
+from app.routers import ai, airflow, auth, consumers, dag_summary, health, lineage, pipelines, resources, schema_matrix, sensors, teams, topology, usage, users, visibility
 
 # Structured logging
 logging.config.dictConfig({
@@ -50,25 +49,25 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("ETL Explorer Hub starting up")
 
-    # Run initial sync tasks on startup
-    from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
-    from app.tasks.airflow_poll_task import poll_airflow_statuses
-    from app.tasks.catalog_sync_task import sync_from_catalog
-    from app.tasks.seed_usage_data import seed_usage_data
+    # Initialize OIDC client (no-op if SSO_ENABLED=false)
+    from app.integrations.oidc_client import oidc_client
+    await oidc_client.initialize()
 
-    async def _startup_sync():
-        try:
-            await sync_pipelines_from_airflow()
-            await seed_usage_data()
-            # Catalog sync runs after pipeline sync to match schemas to existing pipelines
-            await sync_from_catalog()
-            # Poll only after sync creates pipelines — avoids race on shared tables
-            await poll_airflow_statuses()
-        except Exception:
-            logger.exception("Startup sync failed — app will serve stale/empty data")
+    from app.tasks.scheduler import setup_scheduler, run_startup_sync
 
-    # Run initial syncs in background — don't block app startup
-    asyncio.create_task(_startup_sync())
+    # Run initial syncs in background — don't block app startup.
+    # run_startup_sync waits for Airflow readiness and acquires _sync_lock.
+    startup_task = asyncio.create_task(run_startup_sync(), name="startup_sync")
+
+    def _on_startup_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            logger.warning("Startup sync was cancelled")
+        elif exc := task.exception():
+            logger.error("Startup sync failed: %s", exc)
+        else:
+            logger.info("Startup sync completed successfully")
+
+    startup_task.add_done_callback(_on_startup_done)
 
     # Start background scheduler
     sched = setup_scheduler()
@@ -78,9 +77,14 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if not startup_task.done():
+        startup_task.cancel()
+        logger.info("Cancelled in-progress startup sync")
     sched.shutdown(wait=False)
     from app.integrations.airflow_client import airflow_client
     await airflow_client.close()
+    from app.integrations.oidc_client import oidc_client as _oidc
+    await _oidc.close()
     from app.integrations.iceberg_client import iceberg_client
     iceberg_client.stop()
     logger.info("ETL Explorer Hub shutting down")
@@ -133,3 +137,7 @@ app.include_router(resources.router)
 app.include_router(dag_summary.router)
 app.include_router(sensors.router)
 app.include_router(ai.router)
+app.include_router(auth.router)
+app.include_router(teams.router)
+app.include_router(visibility.router)
+app.include_router(users.router)

@@ -1,8 +1,11 @@
 import { lazy, Suspense } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useNavigationStore } from "@/stores/navigation-store";
+import { useAuthStore } from "@/stores/auth-store";
+import { isAdmin } from "@/lib/permissions";
 import { PipelineRegistry } from "@/components/pipeline-registry/PipelineRegistry";
 import { Skeleton } from "@/components/ui/skeleton";
+import { AuthBootstrap } from "@/components/auth/AuthProvider";
 
 const BentoWorkspace = lazy(() =>
   import("@/components/bento-workspace/BentoWorkspace").then((m) => ({
@@ -29,6 +32,11 @@ const AIArchitectView = lazy(() =>
     default: m.AIArchitectView,
   }))
 );
+const AdminView = lazy(() =>
+  import("@/components/admin/AdminView").then((m) => ({
+    default: m.AdminView,
+  }))
+);
 
 function TabSkeleton() {
   return (
@@ -38,8 +46,9 @@ function TabSkeleton() {
   );
 }
 
-function App() {
+function AppContent() {
   const activeTab = useNavigationStore((s) => s.activeTab);
+  const user = useAuthStore((s) => s.user);
 
   return (
     <AppShell>
@@ -72,8 +81,21 @@ function App() {
             <AIArchitectView />
           </Suspense>
         )}
+        {activeTab === "admin" && isAdmin(user) && (
+          <Suspense fallback={<TabSkeleton />}>
+            <AdminView />
+          </Suspense>
+        )}
       </div>
     </AppShell>
+  );
+}
+
+function App() {
+  return (
+    <AuthBootstrap>
+      <AppContent />
+    </AuthBootstrap>
   );
 }
 

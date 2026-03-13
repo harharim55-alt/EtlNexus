@@ -6,6 +6,8 @@ import {
   User,
   Calendar,
   RefreshCw,
+  Users,
+  ExternalLink,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -15,14 +17,17 @@ import {
 } from "@/components/ui/tooltip";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { useSyncPipeline } from "@/hooks/use-sync-pipeline";
+import { useTopology } from "@/hooks/use-topology";
 import type { PipelineDetail } from "@/types/pipeline";
 import { DocumentationModal } from "./DocumentationModal";
+import { AIRFLOW_URL } from "@/lib/config";
 
 interface BentoHeaderProps {
   pipeline: PipelineDetail;
   onSaveDescription: (description: string) => void;
   onSaveDocumentation: (documentation: string) => void;
   isSaving: boolean;
+  canEdit: boolean;
 }
 
 function formatDate(iso: string | null): string {
@@ -40,8 +45,10 @@ export function BentoHeader({
   onSaveDescription,
   onSaveDocumentation,
   isSaving,
+  canEdit,
 }: BentoHeaderProps) {
   const { mutate: sync, isPending: isSyncing } = useSyncPipeline(pipeline.id);
+  const { data: topology } = useTopology(pipeline.id);
 
   const [isEditingDesc, setIsEditingDesc] = useState(false);
   const [editValue, setEditValue] = useState(pipeline.description ?? "");
@@ -96,6 +103,12 @@ export function BentoHeader({
                 {pipeline.category}
               </span>
             )}
+            {pipeline.team && (
+              <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/[0.08] px-2.5 py-1 rounded-md border border-emerald-500/15 shrink-0">
+                <Users className="size-3" />
+                {pipeline.team}
+              </span>
+            )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
@@ -137,6 +150,34 @@ export function BentoHeader({
               </TooltipContent>
             </Tooltip>
 
+            {/* Open in Airflow */}
+            {topology?.dag_ids?.[0] && pipeline.task_id && (
+              <Tooltip>
+                <TooltipTrigger
+                  render={
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() =>
+                        window.open(
+                          `${AIRFLOW_URL}/dags/${topology.dag_ids[0]}/grid?task_id=${pipeline.task_id}`,
+                          "_blank",
+                          "noopener,noreferrer",
+                        )
+                      }
+                      className="border-white/10 bg-white/[0.03] text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 transition-all duration-200"
+                    />
+                  }
+                >
+                  <ExternalLink className="size-3.5" />
+                  <span className="text-xs">Airflow</span>
+                </TooltipTrigger>
+                <TooltipContent side="bottom">
+                  Open in Airflow ({topology.dag_ids[0]})
+                </TooltipContent>
+              </Tooltip>
+            )}
+
             {/* Sync button */}
             <Tooltip>
               <TooltipTrigger
@@ -166,7 +207,7 @@ export function BentoHeader({
 
         {/* ── Editable description ───────────────────────────────── */}
         <div className="mt-3">
-          {isEditingDesc ? (
+          {isEditingDesc && canEdit ? (
             <div className="animate-in fade-in duration-200">
               <textarea
                 ref={textareaRef}
@@ -206,16 +247,18 @@ export function BentoHeader({
                   <span className="text-slate-600 italic">No description</span>
                 )}
               </p>
-              <button
-                onClick={() => {
-                  setEditValue(pipeline.description ?? "");
-                  setIsEditingDesc(true);
-                }}
-                className="absolute top-0 right-0 p-1.5 text-slate-600 hover:text-indigo-400 opacity-0 group-hover/desc:opacity-100 transition-all duration-200 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20"
-                title="Edit Description"
-              >
-                <Edit3 className="size-3.5" />
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => {
+                    setEditValue(pipeline.description ?? "");
+                    setIsEditingDesc(true);
+                  }}
+                  className="absolute top-0 right-0 p-1.5 text-slate-600 hover:text-indigo-400 opacity-0 group-hover/desc:opacity-100 transition-all duration-200 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20"
+                  title="Edit Description"
+                >
+                  <Edit3 className="size-3.5" />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -231,6 +274,7 @@ export function BentoHeader({
           setDocOpen(false);
         }}
         isSaving={isSaving}
+        canEdit={canEdit}
       />
     </>
   );

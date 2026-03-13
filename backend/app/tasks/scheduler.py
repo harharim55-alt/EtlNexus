@@ -17,74 +17,137 @@ logger = logging.getLogger(__name__)
 
 scheduler = AsyncIOScheduler()
 
-# Prevents concurrent sync/poll from overlapping (startup vs catch-up vs interval)
+# Separate locks allow sync and poll to run independently
 _sync_lock = asyncio.Lock()
+_poll_lock = asyncio.Lock()
 
 
 async def _guarded_sync() -> None:
-    """Run pipeline sync + poll under a lock so they never overlap."""
+    """Run pipeline sync under its own lock."""
     if _sync_lock.locked():
         logger.info("Skipping sync — another sync is already running")
         return
     async with _sync_lock:
         from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
-        from app.tasks.airflow_poll_task import poll_airflow_statuses
         try:
             await sync_pipelines_from_airflow()
-            await poll_airflow_statuses()
         except Exception:
-            logger.exception("Scheduled sync/poll cycle failed")
+            logger.exception("Scheduled pipeline sync failed")
         finally:
             from app.cache import clear_all
             clear_all()
 
 
 async def _guarded_poll() -> None:
-    """Run poll under a lock so it doesn't overlap with sync."""
-    if _sync_lock.locked():
-        logger.info("Skipping poll — a sync is already running")
+    """Run status poll under its own lock."""
+    if _poll_lock.locked():
+        logger.info("Skipping poll — another poll is already running")
         return
-    async with _sync_lock:
+    async with _poll_lock:
         from app.tasks.airflow_poll_task import poll_airflow_statuses
         try:
             await poll_airflow_statuses()
         except Exception:
-            logger.exception("Scheduled poll failed")
+            logger.exception("Scheduled status poll failed")
         finally:
             from app.cache import clear_all
             clear_all()
+
+
+async def run_startup_sync() -> None:
+    """Run the initial sync at startup, waiting for Airflow to be ready.
+
+    Waits for Airflow health (up to 5 min), then runs all sync tasks under
+    _sync_lock to prevent overlap with scheduled jobs.  Each task has its own
+    error handling so independent tasks proceed even if others fail.
+    """
+    from app.integrations.airflow_client import airflow_client
+
+    # Wait for Airflow to become available (up to 5 min, poll every 15s)
+    max_attempts = 20
+    for attempt in range(1, max_attempts + 1):
+        if await airflow_client.check_health():
+            logger.info("Airflow is ready (attempt %d)", attempt)
+            break
+        if attempt < max_attempts:
+            logger.info(
+                "Airflow not ready (attempt %d/%d), retrying in 15s",
+                attempt, max_attempts,
+            )
+            await asyncio.sleep(15)
+    else:
+        logger.warning(
+            "Airflow not available after %d attempts — scheduler will retry at next interval",
+            max_attempts,
+        )
+        return
+
+    async with _sync_lock:
+        from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
+        from app.tasks.airflow_poll_task import poll_airflow_statuses
+        from app.tasks.catalog_sync_task import sync_from_catalog
+        from app.tasks.seed_usage_data import seed_usage_data
+
+        pipeline_sync_ok = False
+        try:
+            await sync_pipelines_from_airflow()
+            pipeline_sync_ok = True
+        except Exception:
+            logger.exception("Startup pipeline sync failed")
+
+        try:
+            await seed_usage_data()
+        except Exception:
+            logger.exception("Startup seed usage data failed")
+
+        try:
+            await sync_from_catalog()
+        except Exception:
+            logger.exception("Startup catalog sync failed")
+
+        if pipeline_sync_ok:
+            try:
+                await poll_airflow_statuses()
+            except Exception:
+                logger.exception("Startup status poll failed")
+        else:
+            logger.warning("Skipping startup poll — pipeline sync did not succeed")
+
+        from app.cache import clear_all
+        clear_all()
 
 
 def setup_scheduler() -> AsyncIOScheduler:
     """Configure and return the scheduler with all background tasks.
 
     Jobs start after their first interval, NOT immediately — the initial
-    sync is handled by _startup_sync in main.py to ensure correct ordering.
-    Sync and poll are guarded by _sync_lock to prevent concurrent DB mutations.
+    sync is handled by run_startup_sync() which waits for Airflow readiness
+    and runs under _sync_lock to prevent concurrent DB mutations.
     """
     from app.tasks.catalog_sync_task import sync_from_catalog
 
     now = datetime.now(timezone.utc)
 
-    # Airflow pipeline discovery + poll (guarded against overlap)
+    # Airflow pipeline discovery (independent from poll)
     scheduler.add_job(
         _guarded_sync,
         "interval",
         minutes=settings.airflow_poll_interval_minutes,
         id="airflow_pipeline_sync",
-        name="Airflow Pipeline Discovery + Poll",
+        name="Airflow Pipeline Discovery",
         replace_existing=True,
         next_run_time=now + timedelta(minutes=settings.airflow_poll_interval_minutes),
     )
 
-    # One-shot catch-up sync 5 minutes after startup (Airflow may not be ready at boot)
+    # Airflow status poll (runs independently, offset by 2 min)
     scheduler.add_job(
-        _guarded_sync,
-        "date",
-        run_date=now + timedelta(minutes=5),
-        id="airflow_catchup_sync",
-        name="Airflow Catch-up Sync (5min)",
+        _guarded_poll,
+        "interval",
+        minutes=settings.airflow_poll_interval_minutes,
+        id="airflow_status_poll",
+        name="Airflow Status Poll",
         replace_existing=True,
+        next_run_time=now + timedelta(minutes=settings.airflow_poll_interval_minutes, seconds=120),
     )
 
     # Catalog sync (every 2 hours)
@@ -99,7 +162,8 @@ def setup_scheduler() -> AsyncIOScheduler:
     )
 
     logger.info(
-        "Scheduler configured: catchup=5min, airflow_sync_poll=%dmin, catalog_sync=2h",
+        "Scheduler configured: airflow_sync=%dmin, airflow_poll=%dmin, catalog_sync=2h",
+        settings.airflow_poll_interval_minutes,
         settings.airflow_poll_interval_minutes,
     )
     return scheduler

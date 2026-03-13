@@ -29,29 +29,23 @@ class CatalogSyncService:
 
         synced = 0
         for table_schema in schemas:
-            display_name = self._table_to_display_name(table_schema.table_name)
+            task_id = table_schema.table_name  # PascalCase, e.g. "SwitchPortCollector"
 
-            # Find existing pipeline by name (created by git sync)
+            # Find existing pipeline by task_id (PascalCase match)
             stmt = (
                 select(Pipeline)
                 .options(selectinload(Pipeline.fields))
-                .where(Pipeline.name == display_name)
+                .where(Pipeline.task_id == task_id)
             )
             result = await self.session.execute(stmt)
             pipeline = result.scalar_one_or_none()
 
             if not pipeline:
-                # Create new pipeline if not discovered from Git
-                pipeline = Pipeline(
-                    name=display_name,
-                    description=(
-                        f"Discovered from Iceberg catalog: "
-                        f"{table_schema.namespace}.{table_schema.table_name}"
-                    ),
-                    category="Iceberg",
+                logger.debug(
+                    "No pipeline with task_id=%s — skipping Iceberg schema",
+                    task_id,
                 )
-                self.session.add(pipeline)
-                await self.session.flush()
+                continue
 
             if table_schema.fields:
                 await self._sync_fields(pipeline, table_schema.fields)

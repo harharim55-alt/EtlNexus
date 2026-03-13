@@ -1,12 +1,13 @@
 """Airflow integration service — polls network DAG task statuses and updates the database."""
 
+import asyncio
 import json
 import logging
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.integrations.airflow_client import airflow_client
+from app.integrations.airflow_client import airflow_client, strip_group_prefix
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
@@ -14,15 +15,21 @@ from app.repositories.sensor_repo import SensorRepository
 
 logger = logging.getLogger(__name__)
 
-TASK_STATE_MAP = {
-    "success": "success",
-    "failed": "failed",
-    "upstream_failed": "upstream_failed",
-    "running": "running",
-    "queued": "queued",
-    "scheduled": "running",
-    "deferred": "running",
-    "up_for_retry": "running",
+# Limits concurrent Airflow API calls during poll (mirrors sync semaphore)
+_POLL_SEMAPHORE = asyncio.Semaphore(6)
+
+KNOWN_AIRFLOW_STATES = {
+    "success", "failed", "upstream_failed", "running", "queued",
+    "scheduled", "deferred", "up_for_retry", "up_for_reschedule",
+    "skipped", "removed", "restarting", "no_status",
+}
+
+# Lower number = higher priority when picking "best" status
+_STATUS_PRIORITY = {
+    "failed": 0, "upstream_failed": 1, "restarting": 2, "up_for_retry": 3,
+    "running": 4, "up_for_reschedule": 5, "queued": 6, "scheduled": 7,
+    "deferred": 8, "skipped": 9, "success": 10, "removed": 11,
+    "no_status": 12, "unknown": 13,
 }
 
 
@@ -37,8 +44,13 @@ class AirflowService:
     async def poll_all_statuses(self) -> int:
         """Poll Airflow network DAGs for task-level statuses and update database.
 
-        Each DAG is a network containing multiple ETL tasks.
-        Also records run history (duration + actual resource usage) for statistics.
+        Uses phased parallel fetching to minimize sequential API calls:
+        Phase 1: Parallel fetch dag_runs for all DAGs
+        Phase 2: Parallel fetch task_instances for all (dag, run) pairs
+        Phase 3: Sequential DB writes + collect log-fetch needs
+        Phase 4: Parallel fetch all needed logs
+        Phase 5: Sequential DB writes for actuals + status upserts
+
         Returns the number of pipelines updated.
         """
         pipelines = await self.pipeline_repo.get_all()
@@ -51,149 +63,157 @@ class AirflowService:
             logger.warning("Could not fetch DAGs from Airflow")
             return 0
 
-        # Build map: task_id → pipeline (prefer stored task_id, fall back to name conversion)
+        async def _limited(coro):
+            async with _POLL_SEMAPHORE:
+                return await coro
+
+        # Build map: task_id → pipeline
         task_to_pipeline = {}
         for pipeline in pipelines:
-            tid = pipeline.task_id or self._pipeline_to_dag_id(pipeline.name)
-            task_to_pipeline[tid] = pipeline
+            if pipeline.task_id:
+                task_to_pipeline[pipeline.task_id] = pipeline
 
         # Build sensor name set for quick lookup
         all_sensors = await self.sensor_repo.get_all()
         sensor_name_set = {s.sensor_name for s in all_sensors}
         sensor_best_status: dict[str, str] = {}
 
-        # Track best status per pipeline (most recent execution wins)
         best: dict[str, dict] = {}
         updated = 0
         history_recorded = 0
 
-        for dag_info in all_dags:
-            dag_id = dag_info["dag_id"]
+        all_dag_ids = [d["dag_id"] for d in all_dags]
 
-            # Fetch last 5 runs for history (was limit=1)
-            runs = await airflow_client.get_dag_runs(dag_id, limit=5)
+        # Phase 1: Parallel fetch dag_runs (5 per DAG)
+        runs_results = await asyncio.gather(*[
+            _limited(airflow_client.get_dag_runs(did, limit=5))
+            for did in all_dag_ids
+        ])
+
+        # Phase 2: Collect (dag_id, run, is_latest) and parallel fetch task instances
+        run_entries: list[tuple[str, dict, bool]] = []  # (dag_id, run, is_latest)
+        for dag_id, runs in zip(all_dag_ids, runs_results):
             if not runs:
                 continue
+            for i, run in enumerate(runs):
+                if run.get("dag_run_id"):
+                    run_entries.append((dag_id, run, i == 0))
 
-            for run in runs:
-                dag_run_id = run.get("dag_run_id")
-                if not dag_run_id:
+        instances_results = await asyncio.gather(*[
+            _limited(airflow_client.get_task_instances(dag_id, run["dag_run_id"]))
+            for dag_id, run, _ in run_entries
+        ])
+
+        # Phase 3: Process instances, record history, collect log-fetch needs
+        log_fetch_requests: list[tuple[str, str, str, object, str]] = []
+        # (dag_id, dag_run_id, airflow_task_id, pipeline, status)
+
+        for (dag_id, run, is_latest), tasks in zip(run_entries, instances_results):
+            dag_run_id = run["dag_run_id"]
+            exec_date_str = run.get("execution_date")
+            exec_date = self._parse_datetime(exec_date_str)
+
+            for task in tasks:
+                airflow_task_id = task.get("task_id")
+                task_id = strip_group_prefix(airflow_task_id) if airflow_task_id else None
+
+                if task_id in sensor_name_set and is_latest:
+                    state = task.get("state", "unknown")
+                    s_status = state if state in KNOWN_AIRFLOW_STATES else "unknown"
+                    existing = sensor_best_status.get(task_id)
+                    if existing is None or _STATUS_PRIORITY.get(s_status, 13) < _STATUS_PRIORITY.get(existing, 13):
+                        sensor_best_status[task_id] = s_status
                     continue
 
-                exec_date_str = run.get("execution_date")
-                exec_date = self._parse_datetime(exec_date_str)
+                if task_id not in task_to_pipeline:
+                    continue
 
-                # Get task instances for this run
-                tasks = await airflow_client.get_task_instances(dag_id, dag_run_id)
+                pipeline = task_to_pipeline[task_id]
+                pid = str(pipeline.id)
 
-                for task in tasks:
-                    task_id = task.get("task_id")
+                state = task.get("state", "unknown")
+                status = state if state in KNOWN_AIRFLOW_STATES else "unknown"
 
-                    # Check if this is a sensor task (only track from latest run)
-                    if task_id in sensor_name_set and run is runs[0]:
-                        state = task.get("state", "unknown")
-                        s_status = TASK_STATE_MAP.get(state, "unknown")
-                        existing = sensor_best_status.get(task_id)
-                        if existing is None or s_status == "success" or (
-                            s_status == "running" and existing != "success"
+                duration = task.get("duration")
+                start_date = self._parse_datetime(task.get("start_date"))
+                end_date = self._parse_datetime(task.get("end_date"))
+
+                if duration is not None:
+                    is_new = await self.resource_repo.insert_run_if_new({
+                        "pipeline_id": pipeline.id,
+                        "dag_id": dag_id,
+                        "dag_run_id": dag_run_id,
+                        "duration_seconds": duration,
+                        "start_date": start_date,
+                        "end_date": end_date,
+                        "status": status,
+                    })
+
+                    if is_new:
+                        history_recorded += 1
+
+                    needs_actuals = False
+                    if is_new and status == "success":
+                        needs_actuals = True
+                    elif not is_new and status == "success":
+                        needs_actuals = await self.resource_repo.has_null_actuals(
+                            pipeline.id, dag_id, dag_run_id
+                        )
+
+                    if needs_actuals:
+                        log_fetch_requests.append(
+                            (dag_id, dag_run_id, airflow_task_id, pipeline, status)
+                        )
+
+                if is_latest:
+                    if pid in best:
+                        existing_date = best[pid].get("execution_date")
+                        if (
+                            existing_date
+                            and exec_date
+                            and exec_date <= existing_date
                         ):
-                            sensor_best_status[task_id] = s_status
-                        continue
+                            continue
 
-                    if task_id not in task_to_pipeline:
-                        continue
+                    best[pid] = {
+                        "pipeline_id": pipeline.id,
+                        "dag_id": dag_id,
+                        "status": status,
+                        "execution_date": exec_date,
+                        "last_checked_at": datetime.now(timezone.utc),
+                    }
 
-                    pipeline = task_to_pipeline[task_id]
-                    pid = str(pipeline.id)
+        # Phase 4: Parallel fetch all needed logs
+        if log_fetch_requests:
+            log_results = await asyncio.gather(*[
+                _limited(airflow_client.get_task_log(dag_id, run_id, tid))
+                for dag_id, run_id, tid, _, _ in log_fetch_requests
+            ])
 
-                    state = task.get("state", "unknown")
-                    status = TASK_STATE_MAP.get(state, "unknown")
-
-                    # Strip timezone for DB column
-                    clean_exec_date = (
-                        exec_date.replace(tzinfo=None) if exec_date else None
+            for (dag_id, dag_run_id, airflow_task_id, pipeline, _), log_content in zip(
+                log_fetch_requests, log_results
+            ):
+                try:
+                    actuals = self._parse_resource_actual(log_content)
+                    plan_json = self._parse_execution_plan(log_content)
+                    if plan_json:
+                        actuals = actuals or {}
+                        actuals["execution_plan"] = plan_json
+                    if actuals:
+                        await self.resource_repo.update_run_actuals(
+                            pipeline.id, dag_id, dag_run_id, actuals
+                        )
+                except Exception:
+                    logger.debug(
+                        "Could not parse resource actuals for %s/%s/%s",
+                        dag_id, dag_run_id, airflow_task_id,
                     )
 
-                    # Record run history (duration + actual usage)
-                    duration = task.get("duration")
-                    start_date = self._parse_datetime(task.get("start_date"))
-                    end_date = self._parse_datetime(task.get("end_date"))
-
-                    if duration is not None:
-                        is_new = await self.resource_repo.insert_run_if_new({
-                            "pipeline_id": pipeline.id,
-                            "dag_id": dag_id,
-                            "dag_run_id": dag_run_id,
-                            "duration_seconds": duration,
-                            "start_date": (
-                                start_date.replace(tzinfo=None) if start_date else None
-                            ),
-                            "end_date": (
-                                end_date.replace(tzinfo=None) if end_date else None
-                            ),
-                            "status": status,
-                        })
-
-                        if is_new:
-                            history_recorded += 1
-
-                        # Parse actual resource usage from logs
-                        # For new successful runs, or existing runs missing actuals
-                        needs_actuals = False
-                        if is_new and status == "success":
-                            needs_actuals = True
-                        elif not is_new and status == "success":
-                            needs_actuals = await self.resource_repo.has_null_actuals(
-                                pipeline.id, dag_id, dag_run_id
-                            )
-
-                        if needs_actuals:
-                            try:
-                                log = await airflow_client.get_task_log(
-                                    dag_id, dag_run_id, task_id
-                                )
-                                actuals = self._parse_resource_actual(log)
-                                plan_json = self._parse_execution_plan(log)
-                                if plan_json:
-                                    actuals = actuals or {}
-                                    actuals["execution_plan"] = plan_json
-                                if actuals:
-                                    await self.resource_repo.update_run_actuals(
-                                        pipeline.id, dag_id, dag_run_id, actuals
-                                    )
-                            except Exception:
-                                logger.debug(
-                                    "Could not parse resource actuals for %s/%s/%s",
-                                    dag_id, dag_run_id, task_id,
-                                )
-
-                    # Track best status (most recent execution wins) — only from latest run
-                    if run is runs[0]:
-                        if pid in best:
-                            existing_date = best[pid].get("execution_date")
-                            if (
-                                existing_date
-                                and clean_exec_date
-                                and clean_exec_date <= existing_date
-                            ):
-                                continue
-
-                        best[pid] = {
-                            "pipeline_id": pipeline.id,
-                            "dag_id": dag_id,
-                            "status": status,
-                            "execution_date": clean_exec_date,
-                            "last_checked_at": datetime.now(timezone.utc).replace(
-                                tzinfo=None
-                            ),
-                        }
-
-        # Upsert all collected statuses
+        # Phase 5: Upsert all collected statuses
         for entry in best.values():
             await self.airflow_repo.upsert(entry)
             updated += 1
 
-        # Update sensor statuses
         sensor_updated = 0
         for sensor_name, status in sensor_best_status.items():
             sensor = await self.sensor_repo.get_by_name(sensor_name)
@@ -209,14 +229,6 @@ class AirflowService:
             history_recorded,
         )
         return updated
-
-    @staticmethod
-    def _pipeline_to_dag_id(pipeline_name: str) -> str:
-        """Convert pipeline name to expected Airflow task ID.
-
-        E.g., "Shopify Sales Sync" -> "shopify_sales_sync"
-        """
-        return pipeline_name.lower().replace(" ", "_").replace("-", "_")
 
     @staticmethod
     def _parse_datetime(date_str: str | None) -> datetime | None:

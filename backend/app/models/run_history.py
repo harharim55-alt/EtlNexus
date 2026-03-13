@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Float, ForeignKey, Integer, String, Text, func, UniqueConstraint
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String, Text, func, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -20,14 +20,14 @@ class PipelineRunHistory(Base):
     dag_id: Mapped[str] = mapped_column(String(255))
     dag_run_id: Mapped[str] = mapped_column(String(255))
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
-    start_date: Mapped[datetime | None] = mapped_column(nullable=True)
-    end_date: Mapped[datetime | None] = mapped_column(nullable=True)
+    start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    end_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     status: Mapped[str] = mapped_column(String(50))
     driver_memory_used_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     executor_memory_peak_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cpu_utilization_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     executors_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    recorded_at: Mapped[datetime] = mapped_column(default=func.now())
+    recorded_at: Mapped[datetime] = mapped_column(server_default=func.now())
 
     # sparkMeasure / real Spark metrics (migration 012)
     spark_application_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -1,7 +1,7 @@
 """Repository for pipeline resource configs and run history."""
 
 import uuid
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import Float, distinct, extract, select, func, case
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -146,7 +146,7 @@ class ResourceRepository:
 
     async def get_run_stats(self, pipeline_id: uuid.UUID, days: int = 30) -> dict:
         """Compute aggregate stats from run history (bounded to last N days)."""
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         stmt = (
             select(
                 func.count().label("run_count"),
@@ -215,7 +215,7 @@ class ResourceRepository:
 
     async def get_dag_run_stats(self, dag_id: str, days: int = 30) -> dict:
         """Aggregate run history for all tasks in a DAG (bounded to last N days)."""
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         stmt = (
             select(
                 func.count().label("run_count"),
@@ -277,7 +277,7 @@ class ResourceRepository:
 
     async def get_typical_finish_hour(self, dag_id: str, days: int = 30) -> str | None:
         """Compute the average finish hour for a DAG from successful runs."""
-        cutoff = datetime.utcnow() - timedelta(days=days)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
         stmt = (
             select(
                 func.avg(

@@ -8,8 +8,11 @@ from app.repositories.field_frequency_repo import FieldFrequencyRepository
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.usage_repo import UsageRepository
+from app.repositories.user_repo import UserRepository
 from app.repositories.resource_repo import ResourceRepository
 from app.repositories.sensor_repo import SensorRepository
+from app.repositories.team_repo import TeamRepository
+from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.ai_service import AIService
 from app.services.airflow_sync_service import AirflowSyncService
 from app.services.consumer_service import ConsumerService
@@ -18,7 +21,9 @@ from app.services.pipeline_service import PipelineService
 from app.services.resource_service import ResourceService
 from app.services.schema_matrix_service import SchemaMatrixService
 from app.services.sensor_service import SensorService
+from app.services.team_service import TeamService
 from app.services.usage_service import UsageService
+from app.services.visibility_service import VisibilityService
 
 
 # Repositories
@@ -79,6 +84,18 @@ def get_resource_repo(session: AsyncSession = Depends(get_db_session)) -> Resour
     return ResourceRepository(session)
 
 
+def get_sensor_repo(session: AsyncSession = Depends(get_db_session)) -> SensorRepository:
+    return SensorRepository(session)
+
+
+def get_user_repo(session: AsyncSession = Depends(get_db_session)) -> UserRepository:
+    return UserRepository(session)
+
+
+def get_team_repo(session: AsyncSession = Depends(get_db_session)) -> TeamRepository:
+    return TeamRepository(session)
+
+
 def get_resource_service(
     resource_repo: ResourceRepository = Depends(get_resource_repo),
     pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
@@ -88,8 +105,24 @@ def get_resource_service(
 
 def get_airflow_sync_service(
     session: AsyncSession = Depends(get_db_session),
+    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
+    lineage_repo: LineageRepository = Depends(get_lineage_repo),
+    resource_repo: ResourceRepository = Depends(get_resource_repo),
+    airflow_repo: AirflowRepository = Depends(get_airflow_repo),
+    dag_task_repo: DagTaskRepository = Depends(get_dag_task_repo),
+    sensor_repo: SensorRepository = Depends(get_sensor_repo),
+    team_repo: TeamRepository = Depends(get_team_repo),
 ) -> AirflowSyncService:
-    return AirflowSyncService(session)
+    return AirflowSyncService(
+        session,
+        pipeline_repo=pipeline_repo,
+        lineage_repo=lineage_repo,
+        resource_repo=resource_repo,
+        airflow_repo=airflow_repo,
+        dag_task_repo=dag_task_repo,
+        sensor_repo=sensor_repo,
+        team_repo=team_repo,
+    )
 
 
 def get_dag_summary_service(
@@ -98,10 +131,6 @@ def get_dag_summary_service(
     airflow_repo: AirflowRepository = Depends(get_airflow_repo),
 ) -> DagSummaryService:
     return DagSummaryService(dag_task_repo, resource_repo, airflow_repo)
-
-
-def get_sensor_repo(session: AsyncSession = Depends(get_db_session)) -> SensorRepository:
-    return SensorRepository(session)
 
 
 def get_sensor_service(
@@ -116,3 +145,23 @@ def get_ai_service(
     pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
 ) -> AIService:
     return AIService(pipeline_repo)
+
+
+def get_visibility_grant_repo(
+    session: AsyncSession = Depends(get_db_session),
+) -> VisibilityGrantRepository:
+    return VisibilityGrantRepository(session)
+
+
+def get_team_service(
+    team_repo: TeamRepository = Depends(get_team_repo),
+    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
+) -> TeamService:
+    return TeamService(team_repo, pipeline_repo)
+
+
+def get_visibility_service(
+    grant_repo: VisibilityGrantRepository = Depends(get_visibility_grant_repo),
+    team_repo: TeamRepository = Depends(get_team_repo),
+) -> VisibilityService:
+    return VisibilityService(grant_repo, team_repo)

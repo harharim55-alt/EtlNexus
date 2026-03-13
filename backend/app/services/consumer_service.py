@@ -1,16 +1,13 @@
 """Consumer service — finds downstream pipelines from cached DAG task data."""
 
 import logging
+import re
 
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.schemas.consumer import PipelineConsumersResponse, PipelineConsumerSchema
 
 logger = logging.getLogger(__name__)
-
-
-def _to_task_id(name: str) -> str:
-    return name.lower().replace(" ", "_").replace("-", "_")
 
 
 class ConsumerService:
@@ -26,9 +23,9 @@ class ConsumerService:
         if not dag_entries:
             return PipelineConsumersResponse(consumers=[])
 
-        # Build pipeline lookup
+        # Build pipeline lookup by task_id (PascalCase)
         all_pipelines = await self.pipeline_repo.get_all()
-        task_id_to_pipeline = {_to_task_id(p.name): p for p in all_pipelines}
+        task_id_to_pipeline = {p.task_id: p for p in all_pipelines if p.task_id}
 
         # Collect downstream tasks across all DAGs (deduplicated by task_id)
         downstream_info: dict[str, dict] = {}
@@ -55,7 +52,7 @@ class ConsumerService:
             consumers.append(
                 PipelineConsumerSchema(
                     pipeline_id=str(p.id) if p else tid,
-                    pipeline_name=p.name if p else tid.replace("_", " ").title(),
+                    pipeline_name=p.name if p else re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", tid).replace("_", " ").strip().title(),
                     dag_id=info["dag_id"],
                     airflow_status=info["status"],
                     last_run_at=info["exec_date"],

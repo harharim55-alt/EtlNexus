@@ -1,3 +1,5 @@
+import { useEffect, useMemo, useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Network } from "lucide-react";
 import { useSchemaMatrix } from "@/hooks/use-schema-matrix";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -6,7 +8,44 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { FieldFrequencyRow } from "./FieldFrequencyRow";
 
 export function SchemaMatrixView() {
-  const { data, isLoading, error, refetch } = useSchemaMatrix();
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    error,
+    refetch,
+  } = useSchemaMatrix();
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const fields = useMemo(
+    () => data?.pages.flatMap((p) => p.fields) ?? [],
+    [data],
+  );
+  const total = data?.pages[0]?.total ?? 0;
+
+  const virtualizer = useVirtualizer({
+    count: fields.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => 48,
+    overscan: 15,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  });
+
+  // Infinite scroll: fetch next page when scrolling near bottom
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastVirtualItem = virtualItems[virtualItems.length - 1];
+  useEffect(() => {
+    if (!lastVirtualItem) return;
+    if (
+      lastVirtualItem.index >= fields.length - 5 &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      fetchNextPage();
+    }
+  }, [lastVirtualItem?.index, fields.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   if (isLoading) {
     return (
@@ -24,7 +63,7 @@ export function SchemaMatrixView() {
     );
   }
 
-  if (!data || data.fields.length === 0) {
+  if (fields.length === 0) {
     return (
       <div className="flex-1 flex items-center justify-center">
         <EmptyState message="No shared fields found across pipelines" />
@@ -32,8 +71,10 @@ export function SchemaMatrixView() {
     );
   }
 
+  const totalLabel = total > 0 ? total : fields.length;
+
   return (
-    <div className="flex-1 overflow-y-auto custom-scrollbar">
+    <div ref={scrollRef} className="flex-1 overflow-y-auto custom-scrollbar">
       <div className="p-8">
         {/* Header */}
         <div className="mb-6">
@@ -44,7 +85,7 @@ export function SchemaMatrixView() {
             <div>
               <h1 className="text-xl font-semibold text-white">Field Frequency Matrix</h1>
               <p className="text-xs text-slate-500 font-mono mt-0.5">
-                Fields shared across 2+ pipelines — {data.fields.length} fields found
+                Fields shared across 2+ pipelines — {totalLabel} fields found
               </p>
             </div>
           </div>
@@ -57,12 +98,39 @@ export function SchemaMatrixView() {
           <div className="flex-1">Pipelines</div>
         </div>
 
-        {/* Rows */}
-        <div className="space-y-0.5">
-          {data.fields.map((row) => (
-            <FieldFrequencyRow key={row.field_name} row={row} />
-          ))}
+        {/* Virtualized Rows */}
+        <div
+          style={{
+            height: `${virtualizer.getTotalSize()}px`,
+            position: "relative",
+          }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const row = fields[virtualRow.index];
+            return (
+              <div
+                key={row.field_name}
+                ref={virtualizer.measureElement}
+                data-index={virtualRow.index}
+                style={{
+                  position: "absolute",
+                  top: 0,
+                  left: 0,
+                  width: "100%",
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <FieldFrequencyRow row={row} />
+              </div>
+            );
+          })}
         </div>
+
+        {isFetchingNextPage && (
+          <div className="py-4">
+            <LoadingState />
+          </div>
+        )}
       </div>
     </div>
   );

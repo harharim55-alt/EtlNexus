@@ -29,7 +29,7 @@ class DagTask(Base):
     sensor_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("sensors.id", ondelete="SET NULL"), index=True, nullable=True
     )
-    synced_at: Mapped[datetime] = mapped_column(default=func.now(), onupdate=func.now())
+    synced_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     pipeline: Mapped["Pipeline | None"] = relationship(foreign_keys=[pipeline_id])
     sensor: Mapped["Sensor | None"] = relationship(foreign_keys=[sensor_id])

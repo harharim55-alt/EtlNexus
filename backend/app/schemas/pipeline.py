@@ -1,10 +1,11 @@
+import uuid
 from datetime import datetime
 
 from pydantic import BaseModel
 
 
 class PipelineFieldSchema(BaseModel):
-    id: str
+    id: uuid.UUID
     name: str
     data_type: str | None = None
     ordinal_position: int = 0
@@ -13,7 +14,7 @@ class PipelineFieldSchema(BaseModel):
 
 
 class PipelineListItem(BaseModel):
-    id: str
+    id: uuid.UUID
     name: str
     description: str | None = None
     category: str | None = None
@@ -21,13 +22,20 @@ class PipelineListItem(BaseModel):
     rows_per_day: str | None = None
     airflow_status: str = "unknown"
     success_rate: float | None = None
+    team: str | None = None
 
     model_config = {"from_attributes": True}
 
 
+class PipelineListResponse(BaseModel):
+    items: list[PipelineListItem]
+    total: int
+
+
 class PipelineDetail(BaseModel):
-    id: str
+    id: uuid.UUID
     name: str
+    task_id: str | None = None
     description: str | None = None
     category: str | None = None
     schedule: str | None = None
@@ -41,6 +49,9 @@ class PipelineDetail(BaseModel):
     last_updated_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
+    team: str | None = None
+    team_id: uuid.UUID | None = None
+    can_edit: bool = False
 
     model_config = {"from_attributes": True}
 
@@ -48,11 +59,10 @@ class PipelineDetail(BaseModel):
 class PipelineUpdateRequest(BaseModel):
     description: str | None = None
     documentation: str | None = None
-    updated_by: str = "System"
 
 
 class PipelineUpdateResponse(BaseModel):
-    id: str
+    id: uuid.UUID
     description: str | None = None
     documentation: str | None = None
     last_updated_by: str | None = None
@@ -65,7 +75,7 @@ class SyncResponse(BaseModel):
 
 
 class JoinSuggestion(BaseModel):
-    pipeline_id: str
+    pipeline_id: uuid.UUID
     pipeline_name: str
     shared_fields: list[str]
 

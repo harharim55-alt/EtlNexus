@@ -8,21 +8,22 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.utils.task_group import TaskGroup
 
 from etl_runner import run_etl
 from sensor_runner import run_sensor
 
 from daily.task_configs import (
-    switch_port_collector_task_config,
-    bgp_route_sync_task_config,
-    bandwidth_billing_aggregator_task_config,
-    dns_record_sync_task_config,
+    SwitchPortCollector_task_config,
+    BgpRouteSync_task_config,
+    BandwidthBillingAggregator_task_config,
+    DnsRecordSync_task_config,
 )
 from daily.resources import (
-    switch_port_collector_resources,
-    bgp_route_sync_resources,
-    bandwidth_billing_aggregator_resources,
-    dns_record_sync_resources,
+    SwitchPortCollector_resources,
+    BgpRouteSync_resources,
+    BandwidthBillingAggregator_resources,
+    DnsRecordSync_resources,
 )
 
 default_args = {
@@ -42,140 +43,158 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Sensors (data ingestion) ---
-    switch_telemetry_sensor = PythonOperator(
-        task_id="switch_telemetry_sensor",
-        python_callable=run_sensor,
-        params={
-            "sensor_name": "switch_telemetry_sensor",
-            "team": "Infrastructure Ops",
-            "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-        },
-        op_kwargs={
-            "sensor_name": "switch_telemetry_sensor",
-            "team": "Infrastructure Ops",
-            "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-            "volume_per_day": 2_400_000,
-        },
-    )
+    # --- Single Relay group (sensors + ETLs) ---
+    with TaskGroup("Relay", prefix_group_id=True) as relay:
+        SwitchTelemetrySensor = PythonOperator(
+            task_id="SwitchTelemetrySensor",
+            python_callable=run_sensor,
+            params={
+                "sensor_name": "SwitchTelemetrySensor",
+                "team": "Dagger",
+                "description": "Streams switch interface telemetry via gNMI/SNMP polling",
+            },
+            op_kwargs={
+                "sensor_name": "SwitchTelemetrySensor",
+                "team": "Dagger",
+                "description": "Streams switch interface telemetry via gNMI/SNMP polling",
+                "volume_per_day": 2_400_000,
+            },
+        )
 
-    bgp_feed_sensor = PythonOperator(
-        task_id="bgp_feed_sensor",
-        python_callable=run_sensor,
-        params={
-            "sensor_name": "bgp_feed_sensor",
-            "team": "Infrastructure Ops",
-            "description": "Ingests BGP route announcements from peering routers",
-        },
-        op_kwargs={
-            "sensor_name": "bgp_feed_sensor",
-            "team": "Infrastructure Ops",
-            "description": "Ingests BGP route announcements from peering routers",
-            "volume_per_day": 850_000,
-        },
-    )
+        BgpFeedSensor = PythonOperator(
+            task_id="BgpFeedSensor",
+            python_callable=run_sensor,
+            params={
+                "sensor_name": "BgpFeedSensor",
+                "team": "Dagger",
+                "description": "Ingests BGP route announcements from peering routers",
+            },
+            op_kwargs={
+                "sensor_name": "BgpFeedSensor",
+                "team": "Dagger",
+                "description": "Ingests BGP route announcements from peering routers",
+                "volume_per_day": 850_000,
+            },
+        )
 
-    dns_query_log_sensor = PythonOperator(
-        task_id="dns_query_log_sensor",
-        python_callable=run_sensor,
-        params={
-            "sensor_name": "dns_query_log_sensor",
-            "team": "Network Monitoring",
-            "description": "Taps DNS resolver query logs for resolution analytics",
-        },
-        op_kwargs={
-            "sensor_name": "dns_query_log_sensor",
-            "team": "Network Monitoring",
-            "description": "Taps DNS resolver query logs for resolution analytics",
-            "volume_per_day": 12_000_000,
-        },
-    )
+        DnsQueryLogSensor = PythonOperator(
+            task_id="DnsQueryLogSensor",
+            python_callable=run_sensor,
+            params={
+                "sensor_name": "DnsQueryLogSensor",
+                "team": "Prism",
+                "description": "Taps DNS resolver query logs for resolution analytics",
+            },
+            op_kwargs={
+                "sensor_name": "DnsQueryLogSensor",
+                "team": "Prism",
+                "description": "Taps DNS resolver query logs for resolution analytics",
+                "volume_per_day": 12_000_000,
+            },
+        )
 
-    switch_port_collector = PythonOperator(
-        task_id="switch_port_collector",
-        python_callable=run_etl,
-        params={
-            "etl_name": "switch_port_collector",
-            "category": "Network Infrastructure",
-            "schedule": "Daily at 03:00 UTC",
-            "needs": [],
-            "prefers": [],
-        },
-        op_kwargs={
-            "etl_name": "switch_port_collector",
-            "needs": [], "prefers": [],
-            "category": "Network Infrastructure",
-            "schedule": "Daily at 03:00 UTC",
-            "resources": switch_port_collector_resources.resources,
-        },
-    )
+        # --- ETL tasks ---
+        SwitchPortCollector = PythonOperator(
+            task_id="SwitchPortCollector",
+            python_callable=run_etl,
+            params={
+                "etl_name": "SwitchPortCollector",
+                "category": "Network Infrastructure",
+                "schedule": "Daily at 03:00 UTC",
+                "needs": SwitchPortCollector_task_config.needs,
+                "prefers": SwitchPortCollector_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "SwitchPortCollector",
+                "needs": SwitchPortCollector_task_config.needs, "prefers": SwitchPortCollector_task_config.prefers,
+                "category": "Network Infrastructure",
+                "schedule": "Daily at 03:00 UTC",
+                "resources": SwitchPortCollector_resources.resources,
+            },
+        )
 
-    bgp_route_sync = PythonOperator(
-        task_id="bgp_route_sync",
-        python_callable=run_etl,
-        params={
-            "etl_name": "bgp_route_sync",
-            "category": "Transit/Peering",
-            "schedule": "Daily at 00:00 UTC",
-            "needs": ["switch_port_collector"],
-            "prefers": [],
-        },
-        op_kwargs={
-            "etl_name": "bgp_route_sync",
-            "needs": ["switch_port_collector"], "prefers": [],
-            "category": "Transit/Peering",
-            "schedule": "Daily at 00:00 UTC",
-            "resources": bgp_route_sync_resources.resources,
-        },
-    )
+        BgpRouteSync = PythonOperator(
+            task_id="BgpRouteSync",
+            python_callable=run_etl,
+            params={
+                "etl_name": "BgpRouteSync",
+                "category": "Transit/Peering",
+                "schedule": "Daily at 00:00 UTC",
+                "needs": BgpRouteSync_task_config.needs,
+                "prefers": BgpRouteSync_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "BgpRouteSync",
+                "needs": BgpRouteSync_task_config.needs, "prefers": BgpRouteSync_task_config.prefers,
+                "category": "Transit/Peering",
+                "schedule": "Daily at 00:00 UTC",
+                "resources": BgpRouteSync_resources.resources,
+            },
+        )
 
-    bandwidth_billing_aggregator = PythonOperator(
-        task_id="bandwidth_billing_aggregator",
-        python_callable=run_etl,
-        params={
-            "etl_name": "bandwidth_billing_aggregator",
-            "category": "Bandwidth/Billing",
-            "schedule": "Hourly",
-            "needs": ["bgp_route_sync"],
-            "prefers": ["dns_record_sync"],
-        },
-        op_kwargs={
-            "etl_name": "bandwidth_billing_aggregator",
-            "needs": ["bgp_route_sync"], "prefers": ["dns_record_sync"],
-            "category": "Bandwidth/Billing",
-            "schedule": "Hourly",
-            "resources": bandwidth_billing_aggregator_resources.resources,
-        },
-    )
+        BandwidthBillingAggregator = PythonOperator(
+            task_id="BandwidthBillingAggregator",
+            python_callable=run_etl,
+            params={
+                "etl_name": "BandwidthBillingAggregator",
+                "category": "Bandwidth/Billing",
+                "schedule": "Hourly",
+                "needs": BandwidthBillingAggregator_task_config.needs,
+                "prefers": BandwidthBillingAggregator_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "BandwidthBillingAggregator",
+                "needs": BandwidthBillingAggregator_task_config.needs, "prefers": BandwidthBillingAggregator_task_config.prefers,
+                "category": "Bandwidth/Billing",
+                "schedule": "Hourly",
+                "resources": BandwidthBillingAggregator_resources.resources,
+            },
+        )
 
-    dns_record_sync = PythonOperator(
-        task_id="dns_record_sync",
-        python_callable=run_etl,
-        params={
-            "etl_name": "dns_record_sync",
-            "category": "DNS/Resolution",
-            "schedule": "Hourly",
-            "needs": [],
-            "prefers": ["switch_port_collector"],
-        },
-        op_kwargs={
-            "etl_name": "dns_record_sync",
-            "needs": [], "prefers": ["switch_port_collector"],
-            "category": "DNS/Resolution",
-            "schedule": "Hourly",
-            "resources": dns_record_sync_resources.resources,
-        },
-    )
+        DnsRecordSync = PythonOperator(
+            task_id="DnsRecordSync",
+            python_callable=run_etl,
+            params={
+                "etl_name": "DnsRecordSync",
+                "category": "DNS/Resolution",
+                "schedule": "Hourly",
+                "needs": DnsRecordSync_task_config.needs,
+                "prefers": DnsRecordSync_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "DnsRecordSync",
+                "needs": DnsRecordSync_task_config.needs, "prefers": DnsRecordSync_task_config.prefers,
+                "category": "DNS/Resolution",
+                "schedule": "Hourly",
+                "resources": DnsRecordSync_resources.resources,
+            },
+        )
 
     # Sensor wiring
-    switch_telemetry_sensor >> switch_port_collector
-    bgp_feed_sensor >> bgp_route_sync
-    dns_query_log_sensor >> dns_record_sync
+    SwitchTelemetrySensor >> SwitchPortCollector
+    BgpFeedSensor >> BgpRouteSync
+    DnsQueryLogSensor >> DnsRecordSync
 
-    # Dependencies derived from task configs:
-    # switch_port_collector has no needs → runs first
-    # bgp_route_sync needs switch_port_collector
-    # dns_record_sync prefers switch_port_collector
-    # bandwidth_billing_aggregator needs bgp_route_sync, prefers dns_record_sync
-    switch_port_collector >> bgp_route_sync >> bandwidth_billing_aggregator
-    switch_port_collector >> dns_record_sync >> bandwidth_billing_aggregator
+    # --- Dynamic dependency wiring from task configs ---
+    etl_ops = {
+        "SwitchPortCollector": SwitchPortCollector,
+        "BgpRouteSync": BgpRouteSync,
+        "BandwidthBillingAggregator": BandwidthBillingAggregator,
+        "DnsRecordSync": DnsRecordSync,
+    }
+    task_cfgs = {
+        "SwitchPortCollector": SwitchPortCollector_task_config,
+        "BgpRouteSync": BgpRouteSync_task_config,
+        "BandwidthBillingAggregator": BandwidthBillingAggregator_task_config,
+        "DnsRecordSync": DnsRecordSync_task_config,
+    }
+    for task_id, op in etl_ops.items():
+        tc = task_cfgs[task_id]
+        for need in tc.needs:
+            if need in etl_ops:
+                etl_ops[need] >> op
+        for prefer in tc.prefers:
+            if prefer in etl_ops:
+                etl_ops[prefer] >> op
+        if any(p in etl_ops for p in tc.prefers):
+            op.trigger_rule = "all_done"

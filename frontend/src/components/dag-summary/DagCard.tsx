@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Clock, Layers, Timer, Workflow, CheckCircle, Pause, CalendarClock, AlertTriangle, ChevronDown } from "lucide-react";
 import { TaskStatusDots } from "./TaskStatusDots";
+import { getStatusStyle, STATUS_SEVERITY_ORDER } from "@/lib/status-config";
 import type { DagSummary, DagTaskSummary } from "@/types/dag-summary";
 
 function formatDuration(seconds: number): string {
@@ -40,23 +41,18 @@ function successBarColor(rate: number | null): string {
 
 function statusGlow(dag: DagSummary): string {
   if (dag.is_paused) return "bg-slate-600";
-  if (dag.failed_count > 0) return "bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.4)]";
-  if (dag.upstream_failed_count > 0) return "bg-orange-500 shadow-[0_0_8px_rgba(249,115,22,0.4)]";
-  if (dag.running_count > 0) return "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.4)]";
-  if (dag.queued_count > 0) return "bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.4)]";
-  if (dag.success_count > 0) return "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.4)]";
+  for (const s of STATUS_SEVERITY_ORDER) {
+    if ((dag.status_counts[s] ?? 0) > 0) {
+      const cfg = getStatusStyle(s);
+      return `${cfg.dot.replace(" animate-pulse", "")} ${cfg.glow}`;
+    }
+  }
   return "bg-slate-600";
 }
 
 function statusBadgeColor(status: string): string {
-  switch (status) {
-    case "failed":
-      return "text-rose-400 bg-rose-500/10 border-rose-500/20";
-    case "upstream_failed":
-      return "text-orange-400 bg-orange-500/10 border-orange-500/20";
-    default:
-      return "text-slate-400 bg-slate-500/10 border-slate-500/20";
-  }
+  const cfg = getStatusStyle(status);
+  return `${cfg.text} ${cfg.bg} border-current/20`;
 }
 
 function formatFinishTime(isoString: string | null): string {
@@ -95,11 +91,12 @@ export function DagCard({ dag }: DagCardProps) {
   const [showFailed, setShowFailed] = useState(false);
 
   const sortedTasks = [...dag.tasks].sort((a, b) => {
-    const order = { failed: 0, upstream_failed: 1, running: 2, queued: 3, success: 4, unknown: 5 };
-    return (order[a.status as keyof typeof order] ?? 5) - (order[b.status as keyof typeof order] ?? 5);
+    const ai = STATUS_SEVERITY_ORDER.indexOf(a.status);
+    const bi = STATUS_SEVERITY_ORDER.indexOf(b.status);
+    return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
   });
 
-  const failedTotal = dag.failed_count + dag.upstream_failed_count;
+  const failedTotal = (dag.status_counts.failed ?? 0) + (dag.status_counts.upstream_failed ?? 0);
   const failedByGroup = failedTotal > 0 ? groupFailedTasks(dag.tasks) : {};
   const groupKeys = Object.keys(failedByGroup).sort((a, b) => {
     if (a === "_ungrouped") return 1;
@@ -167,7 +164,7 @@ export function DagCard({ dag }: DagCardProps) {
                   <span
                     className={`text-[8px] font-mono uppercase tracking-widest px-1.5 py-px rounded border ${statusBadgeColor(task.status)}`}
                   >
-                    {task.status === "upstream_failed" ? "upstream" : task.status}
+                    {getStatusStyle(task.status).label.toLowerCase()}
                   </span>
                   <span className="text-[10px] font-mono text-slate-600 w-14 text-right shrink-0">
                     {task.latest_duration_seconds != null
@@ -276,23 +273,22 @@ export function DagCard({ dag }: DagCardProps) {
             style={{ width: `${Math.min(dag.success_rate ?? 0, 100)}%` }}
           />
         </div>
-        <div className="flex items-center gap-3 text-[10px] font-mono text-slate-600">
-          <span className="text-emerald-500/70">{dag.success_count} ok</span>
-          {dag.failed_count > 0 && (
-            <span className="text-rose-500/70">{dag.failed_count} failed</span>
-          )}
-          {dag.upstream_failed_count > 0 && (
-            <span className="text-orange-500/70">{dag.upstream_failed_count} upstream</span>
-          )}
-          {dag.running_count > 0 && (
-            <span className="text-amber-500/70">{dag.running_count} running</span>
-          )}
-          {dag.queued_count > 0 && (
-            <span className="text-sky-500/70">{dag.queued_count} queued</span>
-          )}
-          {dag.unknown_count > 0 && (
-            <span>{dag.unknown_count} unknown</span>
-          )}
+        <div className="flex items-center gap-3 text-[10px] font-mono text-slate-600 flex-wrap">
+          {Object.entries(dag.status_counts)
+            .sort(([a], [b]) => {
+              const ai = STATUS_SEVERITY_ORDER.indexOf(a);
+              const bi = STATUS_SEVERITY_ORDER.indexOf(b);
+              return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+            })
+            .map(([status, count]) => {
+              if (count === 0) return null;
+              const cfg = getStatusStyle(status);
+              return (
+                <span key={status} className={cfg.text}>
+                  {count} {cfg.label.toLowerCase()}
+                </span>
+              );
+            })}
         </div>
       </div>
 

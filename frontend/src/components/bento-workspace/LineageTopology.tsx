@@ -7,50 +7,15 @@ import { usePipelineStore } from "@/stores/pipeline-store";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useSensorStore } from "@/stores/sensor-store";
 import { Skeleton } from "@/components/ui/skeleton";
+import { getStatusStyle } from "@/lib/status-config";
 import type { TopologyTask, TopologySensor } from "@/types/topology";
 
 interface LineageTopologyProps {
   pipelineId: string;
 }
 
-const STATUS_CONFIG: Record<
-  string,
-  { dot: string; glow: string; label: string }
-> = {
-  success: {
-    dot: "bg-emerald-400",
-    glow: "shadow-[0_0_8px_rgba(52,211,153,0.7)]",
-    label: "Success",
-  },
-  failed: {
-    dot: "bg-rose-400",
-    glow: "shadow-[0_0_8px_rgba(251,113,133,0.7)]",
-    label: "Failed",
-  },
-  upstream_failed: {
-    dot: "bg-orange-400",
-    glow: "shadow-[0_0_8px_rgba(251,146,60,0.7)]",
-    label: "Upstream Failed",
-  },
-  running: {
-    dot: "bg-amber-400 animate-pulse",
-    glow: "shadow-[0_0_8px_rgba(251,191,36,0.7)]",
-    label: "Running",
-  },
-  queued: {
-    dot: "bg-sky-400",
-    glow: "shadow-[0_0_8px_rgba(56,189,248,0.5)]",
-    label: "Queued",
-  },
-  unknown: {
-    dot: "bg-slate-500",
-    glow: "",
-    label: "Unknown",
-  },
-};
-
 function StatusDot({ status }: { status: string }) {
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
+  const cfg = getStatusStyle(status);
   return (
     <span
       className={`inline-block w-2 h-2 rounded-full shrink-0 ${cfg.dot} ${cfg.glow}`}
@@ -68,9 +33,9 @@ function TaskNode({
   isCurrent?: boolean;
   onClick?: () => void;
 }) {
-  const displayName = task.pipeline_name ?? task.task_id.replace(/_/g, " ");
+  const displayName = task.pipeline_name ?? task.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const isClickable = !isCurrent && !!task.pipeline_id;
-  const cfg = STATUS_CONFIG[task.status] ?? STATUS_CONFIG.unknown;
+  const cfg = getStatusStyle(task.status);
 
   return (
     <button
@@ -99,19 +64,7 @@ function TaskNode({
         </span>
       </div>
       <span
-        className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${
-          task.status === "success"
-            ? "text-emerald-400/70 bg-emerald-500/5"
-            : task.status === "failed"
-              ? "text-rose-400/70 bg-rose-500/5"
-              : task.status === "upstream_failed"
-                ? "text-orange-400/70 bg-orange-500/5"
-                : task.status === "running"
-                  ? "text-amber-400/70 bg-amber-500/5"
-                  : task.status === "queued"
-                    ? "text-sky-400/70 bg-sky-500/5"
-                    : "text-slate-500 bg-white/[0.02]"
-        }`}
+        className={`text-[9px] font-mono px-1.5 py-0.5 rounded ${cfg.text} ${cfg.bg}`}
       >
         {cfg.label.toLowerCase()}
       </span>
@@ -156,7 +109,7 @@ function SensorNode({
   onClick: () => void;
 }) {
   const status = sensor.status || "unknown";
-  const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
+  const cfg = getStatusStyle(status);
 
   return (
     <button
@@ -320,26 +273,14 @@ function NeedsPrefDagGroup({
 
         <div className="flex items-center gap-1 shrink-0">
           {Object.entries(summary).map(([status, count]) => {
-            const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
+            const scfg = getStatusStyle(status);
             return (
               <span
                 key={status}
-                className={`flex items-center gap-1 text-[8px] font-mono px-1.5 py-0.5 rounded ${
-                  status === "success"
-                    ? "text-emerald-400/60 bg-emerald-500/5"
-                    : status === "failed"
-                      ? "text-rose-400/60 bg-rose-500/5"
-                      : status === "upstream_failed"
-                        ? "text-orange-400/60 bg-orange-500/5"
-                        : status === "running"
-                          ? "text-amber-400/60 bg-amber-500/5"
-                          : status === "queued"
-                            ? "text-sky-400/60 bg-sky-500/5"
-                            : "text-slate-500/60 bg-white/[0.02]"
-                }`}
+                className={`flex items-center gap-1 text-[8px] font-mono px-1.5 py-0.5 rounded ${scfg.text} ${scfg.bg}`}
               >
                 <span
-                  className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot}`}
+                  className={`inline-block w-1.5 h-1.5 rounded-full ${scfg.dot}`}
                 />
                 {count}
               </span>
@@ -560,23 +501,11 @@ function DownstreamDagGroup({
         {/* Mini status pills */}
         <div className="flex items-center gap-1 shrink-0">
           {Object.entries(summary).map(([status, count]) => {
-            const cfg = STATUS_CONFIG[status] ?? STATUS_CONFIG.unknown;
+            const cfg = getStatusStyle(status);
             return (
               <span
                 key={status}
-                className={`flex items-center gap-1 text-[8px] font-mono px-1.5 py-0.5 rounded ${
-                  status === "success"
-                    ? "text-emerald-400/60 bg-emerald-500/5"
-                    : status === "failed"
-                      ? "text-rose-400/60 bg-rose-500/5"
-                      : status === "upstream_failed"
-                        ? "text-orange-400/60 bg-orange-500/5"
-                        : status === "running"
-                          ? "text-amber-400/60 bg-amber-500/5"
-                          : status === "queued"
-                            ? "text-sky-400/60 bg-sky-500/5"
-                            : "text-slate-500/60 bg-white/[0.02]"
-                }`}
+                className={`flex items-center gap-1 text-[8px] font-mono px-1.5 py-0.5 rounded ${cfg.text} ${cfg.bg}`}
               >
                 <span
                   className={`inline-block w-1.5 h-1.5 rounded-full ${cfg.dot}`}

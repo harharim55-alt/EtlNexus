@@ -11,4 +11,5 @@ export interface FieldFrequencyRow {
 
 export interface SchemaMatrixResponse {
   fields: FieldFrequencyRow[];
+  total: number;
 }

@@ -8,15 +8,17 @@ from datetime import datetime, timedelta
 
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from airflow.utils.task_group import TaskGroup
 
 from etl_runner import run_etl
 from sensor_runner import run_sensor
 
-from hourly.task_configs import syslog_event_stream_task_config, incident_analytics_rollup_task_config
-from daily.resources import dns_record_sync_resources
+from daily.task_configs import DnsRecordSync_task_config
+from hourly.task_configs import SyslogEventStream_task_config, IncidentAnalyticsRollup_task_config
+from daily.resources import DnsRecordSync_resources
 from hourly.resources import (
-    syslog_event_stream_resources,
-    incident_analytics_rollup_resources,
+    SyslogEventStream_resources,
+    IncidentAnalyticsRollup_resources,
 )
 
 default_args = {
@@ -36,102 +38,121 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Sensors (data ingestion) ---
-    syslog_receiver_sensor = PythonOperator(
-        task_id="syslog_receiver_sensor",
-        python_callable=run_sensor,
-        params={
-            "sensor_name": "syslog_receiver_sensor",
-            "team": "Security Engineering",
-            "description": "Receives syslog messages from network devices and firewalls",
-        },
-        op_kwargs={
-            "sensor_name": "syslog_receiver_sensor",
-            "team": "Security Engineering",
-            "description": "Receives syslog messages from network devices and firewalls",
-            "volume_per_day": 8_500_000,
-        },
-    )
+    # --- Sensors group (data ingestion) ---
+    with TaskGroup("Oasis-Sensors", prefix_group_id=True) as sensors:
+        SyslogReceiverSensor = PythonOperator(
+            task_id="SyslogReceiverSensor",
+            python_callable=run_sensor,
+            params={
+                "sensor_name": "SyslogReceiverSensor",
+                "team": "Vault",
+                "description": "Receives syslog messages from network devices and firewalls",
+            },
+            op_kwargs={
+                "sensor_name": "SyslogReceiverSensor",
+                "team": "Vault",
+                "description": "Receives syslog messages from network devices and firewalls",
+                "volume_per_day": 8_500_000,
+            },
+        )
 
-    dns_query_log_sensor = PythonOperator(
-        task_id="dns_query_log_sensor",
-        python_callable=run_sensor,
-        params={
-            "sensor_name": "dns_query_log_sensor",
-            "team": "Network Monitoring",
-            "description": "Taps DNS resolver query logs for resolution analytics",
-        },
-        op_kwargs={
-            "sensor_name": "dns_query_log_sensor",
-            "team": "Network Monitoring",
-            "description": "Taps DNS resolver query logs for resolution analytics",
-            "volume_per_day": 12_000_000,
-        },
-    )
+        DnsQueryLogSensor = PythonOperator(
+            task_id="DnsQueryLogSensor",
+            python_callable=run_sensor,
+            params={
+                "sensor_name": "DnsQueryLogSensor",
+                "team": "Prism",
+                "description": "Taps DNS resolver query logs for resolution analytics",
+            },
+            op_kwargs={
+                "sensor_name": "DnsQueryLogSensor",
+                "team": "Prism",
+                "description": "Taps DNS resolver query logs for resolution analytics",
+                "volume_per_day": 12_000_000,
+            },
+        )
 
-    syslog_event_stream = PythonOperator(
-        task_id="syslog_event_stream",
-        python_callable=run_etl,
-        params={
-            "etl_name": "syslog_event_stream",
-            "category": "Incident Management",
-            "schedule": "Real-time (Streaming)",
-            "needs": [],
-            "prefers": ["dns_record_sync"],
-        },
-        op_kwargs={
-            "etl_name": "syslog_event_stream",
-            "needs": [], "prefers": ["dns_record_sync"],
-            "category": "Incident Management",
-            "schedule": "Real-time (Streaming)",
-            "resources": syslog_event_stream_resources.resources,
-        },
-    )
+    # --- Monitoring group (ETL tasks) ---
+    with TaskGroup("Oasis-Monitoring", prefix_group_id=True) as monitoring:
+        SyslogEventStream = PythonOperator(
+            task_id="SyslogEventStream",
+            python_callable=run_etl,
+            params={
+                "etl_name": "SyslogEventStream",
+                "category": "Incident Management",
+                "schedule": "Real-time (Streaming)",
+                "needs": SyslogEventStream_task_config.needs,
+                "prefers": SyslogEventStream_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "SyslogEventStream",
+                "needs": SyslogEventStream_task_config.needs, "prefers": SyslogEventStream_task_config.prefers,
+                "category": "Incident Management",
+                "schedule": "Real-time (Streaming)",
+                "resources": SyslogEventStream_resources.resources,
+            },
+        )
 
-    dns_record_sync = PythonOperator(
-        task_id="dns_record_sync",
-        python_callable=run_etl,
-        params={
-            "etl_name": "dns_record_sync",
-            "category": "DNS/Resolution",
-            "schedule": "Hourly",
-            "needs": [],
-            "prefers": ["switch_port_collector"],
-        },
-        op_kwargs={
-            "etl_name": "dns_record_sync",
-            "needs": [], "prefers": ["switch_port_collector"],
-            "category": "DNS/Resolution",
-            "schedule": "Hourly",
-            "resources": dns_record_sync_resources.resources,
-        },
-    )
+        DnsRecordSync = PythonOperator(
+            task_id="DnsRecordSync",
+            python_callable=run_etl,
+            params={
+                "etl_name": "DnsRecordSync",
+                "category": "DNS/Resolution",
+                "schedule": "Hourly",
+                "needs": DnsRecordSync_task_config.needs,
+                "prefers": DnsRecordSync_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "DnsRecordSync",
+                "needs": DnsRecordSync_task_config.needs, "prefers": DnsRecordSync_task_config.prefers,
+                "category": "DNS/Resolution",
+                "schedule": "Hourly",
+                "resources": DnsRecordSync_resources.resources,
+            },
+        )
 
-    incident_analytics_rollup = PythonOperator(
-        task_id="incident_analytics_rollup",
-        python_callable=run_etl,
-        params={
-            "etl_name": "incident_analytics_rollup",
-            "category": "Incident Management",
-            "schedule": "Hourly",
-            "needs": ["syslog_event_stream"],
-            "prefers": ["dns_record_sync"],
-        },
-        op_kwargs={
-            "etl_name": "incident_analytics_rollup",
-            "needs": ["syslog_event_stream"], "prefers": ["dns_record_sync"],
-            "category": "Incident Management",
-            "schedule": "Hourly",
-            "resources": incident_analytics_rollup_resources.resources,
-        },
-    )
+        IncidentAnalyticsRollup = PythonOperator(
+            task_id="IncidentAnalyticsRollup",
+            python_callable=run_etl,
+            params={
+                "etl_name": "IncidentAnalyticsRollup",
+                "category": "Incident Management",
+                "schedule": "Hourly",
+                "needs": IncidentAnalyticsRollup_task_config.needs,
+                "prefers": IncidentAnalyticsRollup_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "IncidentAnalyticsRollup",
+                "needs": IncidentAnalyticsRollup_task_config.needs, "prefers": IncidentAnalyticsRollup_task_config.prefers,
+                "category": "Incident Management",
+                "schedule": "Hourly",
+                "resources": IncidentAnalyticsRollup_resources.resources,
+            },
+        )
 
     # Sensor wiring
-    syslog_receiver_sensor >> syslog_event_stream
-    dns_query_log_sensor >> dns_record_sync
+    SyslogReceiverSensor >> SyslogEventStream
+    DnsQueryLogSensor >> DnsRecordSync
 
-    # Dependencies derived from task configs:
-    # syslog_event_stream prefers dns_record_sync (soft dep)
-    # incident_analytics_rollup needs syslog_event_stream, prefers dns_record_sync
-    syslog_event_stream >> incident_analytics_rollup
-    dns_record_sync >> incident_analytics_rollup
+    # --- Dynamic dependency wiring from task configs ---
+    etl_ops = {
+        "SyslogEventStream": SyslogEventStream,
+        "DnsRecordSync": DnsRecordSync,
+        "IncidentAnalyticsRollup": IncidentAnalyticsRollup,
+    }
+    task_cfgs = {
+        "SyslogEventStream": SyslogEventStream_task_config,
+        "DnsRecordSync": DnsRecordSync_task_config,
+        "IncidentAnalyticsRollup": IncidentAnalyticsRollup_task_config,
+    }
+    for task_id, op in etl_ops.items():
+        tc = task_cfgs[task_id]
+        for need in tc.needs:
+            if need in etl_ops:
+                etl_ops[need] >> op
+        for prefer in tc.prefers:
+            if prefer in etl_ops:
+                etl_ops[prefer] >> op
+        if any(p in etl_ops for p in tc.prefers):
+            op.trigger_rule = "all_done"

@@ -2,13 +2,13 @@
 
 import uuid
 from collections import defaultdict
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_user
 from app.cache import topology_cache
 from app.database import get_db_session
+from app.models.user import User
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.sensor_repo import SensorRepository
@@ -27,7 +27,8 @@ router = APIRouter(prefix="/api/pipelines", tags=["topology"])
 @router.get("/{pipeline_id}/topology", response_model=TopologyGraph)
 async def get_pipeline_topology(
     pipeline_id: uuid.UUID,
-    dag_id: Optional[str] = Query(None, description="Filter topology to a specific DAG"),
+    dag_id: str | None = Query(None, description="Filter topology to a specific DAG"),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
     cache_key = f"{pipeline_id}:{dag_id}"
@@ -42,7 +43,9 @@ async def get_pipeline_topology(
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
 
-    my_task_id = pipeline.task_id or pipeline.name.lower().replace(" ", "_")
+    my_task_id = pipeline.task_id
+    if not my_task_id:
+        raise HTTPException(status_code=404, detail="Pipeline has no task_id")
 
     # Get all DAGs containing this task (from cached dag_tasks table)
     dag_entries = await dag_task_repo.get_dags_for_task(my_task_id)
@@ -69,8 +72,8 @@ async def get_pipeline_topology(
     all_pipelines = await pipeline_repo.get_all()
     task_id_to_pipeline = {}
     for p in all_pipelines:
-        tid = p.task_id or p.name.lower().replace(" ", "_")
-        task_id_to_pipeline[tid] = p
+        if p.task_id:
+            task_id_to_pipeline[p.task_id] = p
 
     # Build task_group_id lookup from all active dag_task entries
     # Key: (dag_id, task_id) -> task_group_id
@@ -145,9 +148,8 @@ async def get_pipeline_topology(
     # Build status map from all pipelines' airflow_status
     status_map: dict[str, str] = {}
     for p in all_pipelines:
-        tid = p.task_id or p.name.lower().replace(" ", "_")
-        if p.airflow_status:
-            status_map[tid] = p.airflow_status.status
+        if p.task_id and p.airflow_status:
+            status_map[p.task_id] = p.airflow_status.status
 
     for entry in active_entries:
         def _make_task(task_id: str, _did: str = entry.dag_id) -> TopologyTask:
@@ -189,7 +191,8 @@ async def get_pipeline_topology(
 @router.get("/{pipeline_id}/topology/upstream", response_model=UpstreamTopologyGraph)
 async def get_upstream_topology(
     pipeline_id: uuid.UUID,
-    dag_id: Optional[str] = Query(None, description="Filter to a specific DAG"),
+    dag_id: str | None = Query(None, description="Filter to a specific DAG"),
+    user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
     """Return the full recursive upstream dependency subgraph via BFS through needs/prefers."""
@@ -200,7 +203,9 @@ async def get_upstream_topology(
     if not pipeline:
         raise HTTPException(status_code=404, detail="Pipeline not found")
 
-    my_task_id = pipeline.task_id or pipeline.name.lower().replace(" ", "_")
+    my_task_id = pipeline.task_id
+    if not my_task_id:
+        raise HTTPException(status_code=404, detail="Pipeline has no task_id")
 
     dag_entries = await dag_task_repo.get_dags_for_task(my_task_id)
     if not dag_entries:
@@ -260,10 +265,11 @@ async def get_upstream_topology(
     task_id_to_pipeline = {}
     status_map: dict[str, str] = {}
     for p in all_pipelines:
-        tid = p.task_id or p.name.lower().replace(" ", "_")
-        task_id_to_pipeline[tid] = p
+        if not p.task_id:
+            continue
+        task_id_to_pipeline[p.task_id] = p
         if p.airflow_status:
-            status_map[tid] = p.airflow_status.status
+            status_map[p.task_id] = p.airflow_status.status
 
     pipeline_status = "unknown"
     if pipeline.airflow_status:
