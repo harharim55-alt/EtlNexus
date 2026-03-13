@@ -5,6 +5,7 @@ import type {
   JoinSuggestionsResponse,
   PipelineUpdateRequest,
   PipelineUpdateResponse,
+  RevisionListResponse,
 } from "@/types/pipeline";
 
 export async function fetchPipelines(
@@ -45,6 +46,29 @@ export async function updatePipeline(
   const { data } = await apiClient.patch<PipelineUpdateResponse>(
     `/pipelines/${pipelineId}`,
     body,
+  );
+  return data;
+}
+
+export async function fetchRevisions(
+  pipelineId: string,
+  field?: "description" | "documentation",
+  skip = 0,
+  limit = 50,
+): Promise<RevisionListResponse> {
+  const { data } = await apiClient.get<RevisionListResponse>(
+    `/pipelines/${pipelineId}/revisions`,
+    { params: { field, skip, limit } },
+  );
+  return data;
+}
+
+export async function restoreRevision(
+  pipelineId: string,
+  revisionId: string,
+): Promise<PipelineUpdateResponse> {
+  const { data } = await apiClient.post<PipelineUpdateResponse>(
+    `/pipelines/${pipelineId}/revisions/${revisionId}/restore`,
   );
   return data;
 }

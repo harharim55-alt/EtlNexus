@@ -74,6 +74,23 @@ class SyncResponse(BaseModel):
     pipeline_name: str
 
 
+class PipelineRevisionResponse(BaseModel):
+    id: uuid.UUID
+    pipeline_id: uuid.UUID
+    field_name: str
+    content: str | None = None
+    changed_by: str
+    change_source: str
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RevisionListResponse(BaseModel):
+    items: list[PipelineRevisionResponse]
+    total: int
+
+
 class JoinSuggestion(BaseModel):
     pipeline_id: uuid.UUID
     pipeline_name: str

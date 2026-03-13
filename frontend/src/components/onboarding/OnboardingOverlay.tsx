@@ -98,8 +98,10 @@ export function OnboardingOverlay() {
           const etlPipeline = allPipelines.find(
             (p) => !p.category?.toLowerCase().includes("api"),
           );
-          if (etlPipeline) {
-            setSelectedPipelineId(etlPipeline.id);
+          // Fallback to first pipeline if all are API
+          const target = etlPipeline ?? allPipelines[0];
+          if (target) {
+            setSelectedPipelineId(target.id);
           }
         }
       }
@@ -110,12 +112,35 @@ export function OnboardingOverlay() {
       const selectSensors = (data: SensorListResponse) => {
         const store = useSensorStore.getState();
         if (store.selectedSensors.length > 0) return;
-        if (data.sensors.length >= 2) {
-          store.toggleSensor(data.sensors[0].sensor_name);
-          store.toggleSensor(data.sensors[1].sensor_name);
+        const sensors = data.sensors;
+        if (sensors.length === 0) return;
+        if (sensors.length === 1) {
+          store.toggleSensor(sensors[0].sensor_name);
+          return;
+        }
+        // Single-pass: find a pair sharing a dag_id for intersection mode
+        const dagToSensor = new Map<string, string>();
+        let picked: [string, string] | null = null;
+        for (const sensor of sensors) {
+          for (const dagId of sensor.dag_ids) {
+            const other = dagToSensor.get(dagId);
+            if (other && other !== sensor.sensor_name) {
+              picked = [other, sensor.sensor_name];
+              break;
+            }
+            dagToSensor.set(dagId, sensor.sensor_name);
+          }
+          if (picked) break;
+        }
+        if (picked) {
+          store.toggleSensor(picked[0]);
+          store.toggleSensor(picked[1]);
           store.setTopologyMode("intersection");
-        } else if (data.sensors.length === 1) {
-          store.toggleSensor(data.sensors[0].sensor_name);
+        } else {
+          // No intersection found — pick first two with union
+          store.toggleSensor(sensors[0].sensor_name);
+          store.toggleSensor(sensors[1].sensor_name);
+          store.setTopologyMode("union");
         }
       };
 

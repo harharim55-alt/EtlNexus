@@ -12,6 +12,7 @@ export function useUpdatePipeline(pipelineId: string) {
       toast.success("Pipeline updated");
       queryClient.invalidateQueries({ queryKey: ["pipeline", pipelineId] });
       queryClient.invalidateQueries({ queryKey: ["pipelines"] });
+      queryClient.invalidateQueries({ queryKey: ["revisions", pipelineId] });
     },
     onError: () => {
       toast.error("Failed to update pipeline");

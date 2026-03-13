@@ -75,6 +75,9 @@ class PipelineRepository:
         if pipeline:
             for key, value in data.items():
                 if key != "name" and hasattr(pipeline, key):
+                    # Don't overwrite user-edited descriptions during Airflow sync
+                    if key == "description" and pipeline.description_edited_by_user:
+                        continue
                     setattr(pipeline, key, value)
         else:
             pipeline = Pipeline(**data)
@@ -127,6 +130,7 @@ class PipelineRepository:
         documentation: str | None = None,
         updated_by: str = "System",
         pipeline: "Pipeline | None" = None,
+        set_description_edited: bool = False,
     ) -> Pipeline | None:
         if pipeline is None:
             pipeline = await self.get_by_id(pipeline_id)
@@ -134,6 +138,8 @@ class PipelineRepository:
             return None
         if description is not None:
             pipeline.description = description
+            if set_description_edited:
+                pipeline.description_edited_by_user = True
         if documentation is not None:
             pipeline.documentation = documentation
         pipeline.last_updated_by = updated_by

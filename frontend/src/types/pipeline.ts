@@ -57,6 +57,21 @@ export interface PipelineUpdateResponse {
   last_updated_at: string | null;
 }
 
+export interface PipelineRevision {
+  id: string;
+  pipeline_id: string;
+  field_name: "description" | "documentation";
+  content: string | null;
+  changed_by: string;
+  change_source: "user" | "restore" | "system";
+  created_at: string;
+}
+
+export interface RevisionListResponse {
+  items: PipelineRevision[];
+  total: number;
+}
+
 export interface JoinSuggestion {
   pipeline_id: string;
   pipeline_name: string;

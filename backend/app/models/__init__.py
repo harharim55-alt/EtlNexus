@@ -10,3 +10,4 @@ from app.models.team import Team  # noqa: F401
 from app.models.user import User  # noqa: F401
 from app.models.user_team import UserTeam  # noqa: F401
 from app.models.visibility_grant import VisibilityGrant  # noqa: F401
+from app.models.pipeline_revision import PipelineRevision  # noqa: F401

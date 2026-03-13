@@ -7,6 +7,7 @@ from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.field_frequency_repo import FieldFrequencyRepository
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
+from app.repositories.revision_repo import RevisionRepository
 from app.repositories.usage_repo import UsageRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.resource_repo import ResourceRepository
@@ -45,6 +46,10 @@ def get_field_frequency_repo(session: AsyncSession = Depends(get_db_session)) ->
 
 def get_usage_repo(session: AsyncSession = Depends(get_db_session)) -> UsageRepository:
     return UsageRepository(session)
+
+
+def get_revision_repo(session: AsyncSession = Depends(get_db_session)) -> RevisionRepository:
+    return RevisionRepository(session)
 
 
 # Services
