@@ -13,7 +13,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
 
 from etl_runner import run_etl
-from sensor_runner import run_sensor
+from sensor_runner import run_bouncer
 
 from daily.task_configs import (
     DhcpLeaseSync_task_config,
@@ -55,53 +55,32 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Sensors group (data ingestion) ---
-    with TaskGroup("Vault-Sensors", prefix_group_id=True) as sensors:
-        SyslogReceiverSensor = PythonOperator(
-            task_id="SyslogReceiverSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "SyslogReceiverSensor",
-                "team": "Vault",
-                "description": "Receives syslog messages from network devices and firewalls",
-            },
+    # --- Bouncers group (data ingestion) ---
+    with TaskGroup("Vault-Bouncers", prefix_group_id=True) as bouncers:
+        SyslogReceiverBouncer = PythonOperator(
+            task_id="SyslogReceiverBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "SyslogReceiverSensor",
-                "team": "Vault",
+                "sensor_name": "SyslogReceiverBouncer",
                 "description": "Receives syslog messages from network devices and firewalls",
-                "volume_per_day": 8_500_000,
             },
         )
 
-        FirewallEventSensor = PythonOperator(
-            task_id="FirewallEventSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "FirewallEventSensor",
-                "team": "Vault",
-                "description": "Captures firewall rule hit events and connection logs",
-            },
+        FirewallEventBouncer = PythonOperator(
+            task_id="FirewallEventBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "FirewallEventSensor",
-                "team": "Vault",
+                "sensor_name": "FirewallEventBouncer",
                 "description": "Captures firewall rule hit events and connection logs",
-                "volume_per_day": 3_100_000,
             },
         )
 
-        HttpAccessLogSensor = PythonOperator(
-            task_id="HttpAccessLogSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "HttpAccessLogSensor",
-                "team": "Oasis",
-                "description": "Ingests HTTP proxy and CDN access logs",
-            },
+        HttpAccessLogBouncer = PythonOperator(
+            task_id="HttpAccessLogBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "HttpAccessLogSensor",
-                "team": "Oasis",
+                "sensor_name": "HttpAccessLogBouncer",
                 "description": "Ingests HTTP proxy and CDN access logs",
-                "volume_per_day": 18_000_000,
             },
         )
 
@@ -112,17 +91,11 @@ with DAG(
             task_id="DhcpLeaseSync",
             python_callable=run_etl,
             params={
-                "etl_name": "DhcpLeaseSync",
-                "category": "Address Management",
-                "schedule": "Daily at 02:00 UTC",
                 "needs": DhcpLeaseSync_task_config.needs,
                 "prefers": DhcpLeaseSync_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "DhcpLeaseSync",
-                "needs": DhcpLeaseSync_task_config.needs, "prefers": DhcpLeaseSync_task_config.prefers,
-                "category": "Address Management",
-                "schedule": "Daily at 02:00 UTC",
                 "resources": DhcpLeaseSync_resources.resources,
                 "simulate_failure": "DHCP server timeout after 30s — lease pool exhausted (429 Too Many Requests)",
             },
@@ -133,17 +106,11 @@ with DAG(
             task_id="HttpAccessLogIngest",
             python_callable=run_etl,
             params={
-                "etl_name": "HttpAccessLogIngest",
-                "category": "Traffic Analytics",
-                "schedule": "Daily at 02:00 UTC",
                 "needs": HttpAccessLogIngest_task_config.needs,
                 "prefers": HttpAccessLogIngest_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "HttpAccessLogIngest",
-                "needs": HttpAccessLogIngest_task_config.needs, "prefers": HttpAccessLogIngest_task_config.prefers,
-                "category": "Traffic Analytics",
-                "schedule": "Daily at 02:00 UTC",
                 "resources": HttpAccessLogIngest_resources.resources,
             },
         )
@@ -151,22 +118,15 @@ with DAG(
     # --- Analysis group (depth 1) ---
     with TaskGroup("Vault-Analysis", prefix_group_id=True) as analysis:
         # SCENARIO 3: Prefers failed, needs succeeded → still works
-        # Uses trigger_rule="all_done" to tolerate DhcpLeaseSync failure
         TrafficAttributionModel = PythonOperator(
             task_id="TrafficAttributionModel",
             python_callable=run_etl,
             params={
-                "etl_name": "TrafficAttributionModel",
-                "category": "Traffic Engineering",
-                "schedule": "Daily at 02:30 UTC",
                 "needs": TrafficAttributionModel_task_config.needs,
                 "prefers": TrafficAttributionModel_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "TrafficAttributionModel",
-                "needs": TrafficAttributionModel_task_config.needs, "prefers": TrafficAttributionModel_task_config.prefers,
-                "category": "Traffic Engineering",
-                "schedule": "Daily at 02:30 UTC",
                 "resources": TrafficAttributionModel_resources.resources,
             },
         )
@@ -176,17 +136,11 @@ with DAG(
             task_id="ThreatScoringPipeline",
             python_callable=run_etl,
             params={
-                "etl_name": "ThreatScoringPipeline",
-                "category": "Predictive Analytics",
-                "schedule": "Daily at 02:30 UTC",
                 "needs": ThreatScoringPipeline_task_config.needs,
                 "prefers": ThreatScoringPipeline_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "ThreatScoringPipeline",
-                "needs": ThreatScoringPipeline_task_config.needs, "prefers": ThreatScoringPipeline_task_config.prefers,
-                "category": "Predictive Analytics",
-                "schedule": "Daily at 02:30 UTC",
                 "resources": ThreatScoringPipeline_resources.resources,
             },
         )
@@ -196,38 +150,25 @@ with DAG(
             task_id="MacAddressEnrichment",
             python_callable=run_etl,
             params={
-                "etl_name": "MacAddressEnrichment",
-                "category": "Address Management",
-                "schedule": "Daily at 02:30 UTC",
                 "needs": MacAddressEnrichment_task_config.needs,
                 "prefers": MacAddressEnrichment_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "MacAddressEnrichment",
-                "needs": MacAddressEnrichment_task_config.needs, "prefers": MacAddressEnrichment_task_config.prefers,
-                "category": "Address Management",
-                "schedule": "Daily at 02:30 UTC",
                 "resources": MacAddressEnrichment_resources.resources,
             },
         )
 
         # SCENARIO 9: Intermittent — succeeds some runs, fails others (~40% failure rate)
-        # Simulates a flaky CDN provider billing API
         CdnCostReconciler = PythonOperator(
             task_id="CdnCostReconciler",
             python_callable=run_etl,
             params={
-                "etl_name": "CdnCostReconciler",
-                "category": "Bandwidth/Billing",
-                "schedule": "Daily at 02:30 UTC",
                 "needs": CdnCostReconciler_task_config.needs,
                 "prefers": CdnCostReconciler_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "CdnCostReconciler",
-                "needs": CdnCostReconciler_task_config.needs, "prefers": CdnCostReconciler_task_config.prefers,
-                "category": "Bandwidth/Billing",
-                "schedule": "Daily at 02:30 UTC",
                 "resources": CdnCostReconciler_resources.resources,
                 "simulate_flaky": "CDN provider billing API — intermittent 503 Service Unavailable",
             },
@@ -240,17 +181,11 @@ with DAG(
             task_id="PeeringRoiCalculator",
             python_callable=run_etl,
             params={
-                "etl_name": "PeeringRoiCalculator",
-                "category": "Traffic Engineering",
-                "schedule": "Daily at 03:00 UTC",
                 "needs": PeeringRoiCalculator_task_config.needs,
                 "prefers": PeeringRoiCalculator_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "PeeringRoiCalculator",
-                "needs": PeeringRoiCalculator_task_config.needs, "prefers": PeeringRoiCalculator_task_config.prefers,
-                "category": "Traffic Engineering",
-                "schedule": "Daily at 03:00 UTC",
                 "resources": PeeringRoiCalculator_resources.resources,
             },
         )
@@ -260,46 +195,33 @@ with DAG(
             task_id="CapacityPlanningForecast",
             python_callable=run_etl,
             params={
-                "etl_name": "CapacityPlanningForecast",
-                "category": "Predictive Analytics",
-                "schedule": "Daily at 03:00 UTC",
                 "needs": CapacityPlanningForecast_task_config.needs,
                 "prefers": CapacityPlanningForecast_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "CapacityPlanningForecast",
-                "needs": CapacityPlanningForecast_task_config.needs, "prefers": CapacityPlanningForecast_task_config.prefers,
-                "category": "Predictive Analytics",
-                "schedule": "Daily at 03:00 UTC",
                 "resources": CapacityPlanningForecast_resources.resources,
             },
         )
 
         # SCENARIO 8: Needs ok, multiple prefers failed → still works
-        # Uses trigger_rule="all_done" to tolerate capacity_planning and mac_address failures
         WeeklyNetworkDigest = PythonOperator(
             task_id="WeeklyNetworkDigest",
             python_callable=run_etl,
             params={
-                "etl_name": "WeeklyNetworkDigest",
-                "category": "NOC Management",
-                "schedule": "Daily at 03:30 UTC",
                 "needs": WeeklyNetworkDigest_task_config.needs,
                 "prefers": WeeklyNetworkDigest_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "WeeklyNetworkDigest",
-                "needs": WeeklyNetworkDigest_task_config.needs, "prefers": WeeklyNetworkDigest_task_config.prefers,
-                "category": "NOC Management",
-                "schedule": "Daily at 03:30 UTC",
                 "resources": WeeklyNetworkDigest_resources.resources,
             },
         )
 
-    # --- Sensor wiring (sensors → root ETL tasks) ---
-    FirewallEventSensor >> DhcpLeaseSync
-    SyslogReceiverSensor >> DhcpLeaseSync
-    HttpAccessLogSensor >> HttpAccessLogIngest
+    # --- Bouncer wiring (bouncers → root ETL tasks) ---
+    FirewallEventBouncer >> DhcpLeaseSync
+    SyslogReceiverBouncer >> DhcpLeaseSync
+    HttpAccessLogBouncer >> HttpAccessLogIngest
 
     # --- Dynamic dependency wiring from task configs ---
     etl_ops = {

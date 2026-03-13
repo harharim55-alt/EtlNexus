@@ -1,12 +1,15 @@
 """Tests for UserAuthService — JIT provisioning, team sync, and caching."""
 
 import uuid
+from collections import OrderedDict
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.services.user_auth_service import (
     UserAuthService,
+    _CACHE_MAX_SIZE,
+    _CACHE_TTL_SECONDS,
     _PROVISION_CACHE,
     _claims_cache_key,
     _evict_stale_entries,
@@ -63,19 +66,21 @@ class TestClaimsCacheKey:
 class TestEvictStaleEntries:
     def test_removes_expired(self):
         import time
-        _PROVISION_CACHE["old"] = (uuid.uuid4(), time.monotonic() - 100)
+        # Insert with a timestamp that is older than TTL
+        _PROVISION_CACHE["old"] = (uuid.uuid4(), time.monotonic() - _CACHE_TTL_SECONDS - 10)
         _PROVISION_CACHE["fresh"] = (uuid.uuid4(), time.monotonic())
         _evict_stale_entries()
         assert "old" not in _PROVISION_CACHE
         assert "fresh" in _PROVISION_CACHE
 
-    def test_clears_when_over_max_size(self):
+    def test_lru_evicts_oldest_when_over_capacity(self):
         import time
         now = time.monotonic()
-        for i in range(600):
+        for i in range(_CACHE_MAX_SIZE + 50):
             _PROVISION_CACHE[f"key_{i}"] = (uuid.uuid4(), now)
         _evict_stale_entries()
-        assert len(_PROVISION_CACHE) == 0  # cleared due to size > 500
+        # LRU eviction removes oldest 10%, so size drops below max
+        assert len(_PROVISION_CACHE) <= _CACHE_MAX_SIZE
 
 
 # ---------------------------------------------------------------------------
@@ -176,8 +181,8 @@ class TestUpsertFromClaims:
 
         claims = {"sub": "cached-user", "email": "cached@test.com"}
         cache_key = _claims_cache_key(claims)
-        # Insert expired entry
-        _PROVISION_CACHE[cache_key] = (user.id, time.monotonic() - 60)
+        # Insert expired entry (older than TTL)
+        _PROVISION_CACHE[cache_key] = (user.id, time.monotonic() - _CACHE_TTL_SECONDS - 10)
 
         await service.upsert_from_claims(claims)
         user_repo.upsert_from_sso.assert_awaited_once()

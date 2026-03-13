@@ -41,8 +41,8 @@ pipeline_list_cache = TTLCache(ttl=30)       # list_pipelines (no query)
 schema_matrix_cache = TTLCache(ttl=60)       # schema matrix response
 topology_cache = TTLCache(ttl=30)            # topology per pipeline+dag
 dag_summary_cache = TTLCache(ttl=60)         # dag summary/statistics
-sensor_cache = TTLCache(ttl=60)              # sensor list
-sensor_topology_cache = TTLCache(ttl=30)     # sensor topology
+bouncer_cache = TTLCache(ttl=60)             # bouncer list
+bouncer_topology_cache = TTLCache(ttl=30)    # bouncer topology
 grant_level_cache = TTLCache(ttl=30)         # per-user grant level for pipeline
 join_suggestions_cache = TTLCache(ttl=60)    # join suggestions per pipeline
 
@@ -53,8 +53,8 @@ def clear_all() -> None:
     schema_matrix_cache.clear()
     topology_cache.clear()
     dag_summary_cache.clear()
-    sensor_cache.clear()
-    sensor_topology_cache.clear()
+    bouncer_cache.clear()
+    bouncer_topology_cache.clear()
     grant_level_cache.clear()
     join_suggestions_cache.clear()
     logger.debug("All application caches cleared")

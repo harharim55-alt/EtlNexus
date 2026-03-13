@@ -34,18 +34,19 @@ def clear_cache():
 
 
 class TestListPipelines:
-    async def test_returns_list_items(self, service, pipeline_repo):
+    async def test_returns_list_response(self, service, pipeline_repo):
         p1 = make_pipeline(name="Pipeline A")
         p2 = make_pipeline(name="Pipeline B")
-        pipeline_repo.list_visible.return_value = [p1, p2]
+        pipeline_repo.list_visible.return_value = ([p1, p2], 2)
         pipeline_repo.get_success_rates.return_value = {}
 
         result = await service.list_pipelines(is_admin=True)
-        assert len(result) == 2
-        assert result[0].name == "Pipeline A"
+        assert len(result.items) == 2
+        assert result.total == 2
+        assert result.items[0].name == "Pipeline A"
 
     async def test_admin_cache_key(self, service, pipeline_repo):
-        pipeline_repo.list_visible.return_value = []
+        pipeline_repo.list_visible.return_value = ([], 0)
         pipeline_repo.get_success_rates.return_value = {}
 
         # First call — hits DB
@@ -57,7 +58,7 @@ class TestListPipelines:
         assert pipeline_repo.list_visible.await_count == 1
 
     async def test_search_query_bypasses_cache(self, service, pipeline_repo):
-        pipeline_repo.list_visible.return_value = []
+        pipeline_repo.list_visible.return_value = ([], 0)
         pipeline_repo.get_success_rates.return_value = {}
 
         await service.list_pipelines(query="search", is_admin=True)
@@ -68,7 +69,7 @@ class TestListPipelines:
     async def test_team_based_cache_key(self, service, pipeline_repo):
         team_ids = {uuid.uuid4(), uuid.uuid4()}
         user_id = uuid.uuid4()
-        pipeline_repo.list_visible.return_value = []
+        pipeline_repo.list_visible.return_value = ([], 0)
         pipeline_repo.get_success_rates.return_value = {}
 
         await service.list_pipelines(
@@ -81,11 +82,11 @@ class TestListPipelines:
 
     async def test_success_rates_applied(self, service, pipeline_repo):
         p = make_pipeline(name="P1")
-        pipeline_repo.list_visible.return_value = [p]
+        pipeline_repo.list_visible.return_value = ([p], 1)
         pipeline_repo.get_success_rates.return_value = {p.id: 95.5}
 
         result = await service.list_pipelines(is_admin=True)
-        assert result[0].success_rate == 95.5
+        assert result.items[0].success_rate == 95.5
 
 
 class TestUpdatePipelineMetadata:
@@ -97,6 +98,8 @@ class TestUpdatePipelineMetadata:
         pipeline.documentation = None
         pipeline.last_updated_by = "tester"
         pipeline.last_updated_at = None
+
+        pipeline_repo.get_by_id.return_value = pipeline
         pipeline_repo.update_metadata.return_value = pipeline
 
         req = PipelineUpdateRequest(description="Updated")
@@ -107,7 +110,7 @@ class TestUpdatePipelineMetadata:
     async def test_returns_none_when_not_found(self, service, pipeline_repo):
         from app.schemas.pipeline import PipelineUpdateRequest
 
-        pipeline_repo.update_metadata.return_value = None
+        pipeline_repo.get_by_id.return_value = None
         req = PipelineUpdateRequest(description="x")
         result = await service.update_pipeline_metadata(uuid.uuid4(), req)
         assert result is None
@@ -115,19 +118,20 @@ class TestUpdatePipelineMetadata:
     async def test_clears_cache_on_update(self, service, pipeline_repo):
         from app.schemas.pipeline import PipelineUpdateRequest
 
-        pipeline_list_cache.set("all", ["cached"])
-        assert pipeline_list_cache.get("all") is not None
+        pipeline_list_cache.set("all:0:200", ["cached"])
+        assert pipeline_list_cache.get("all:0:200") is not None
 
         pipeline = make_pipeline()
         pipeline.description = "x"
         pipeline.documentation = None
         pipeline.last_updated_by = "a"
         pipeline.last_updated_at = None
+        pipeline_repo.get_by_id.return_value = pipeline
         pipeline_repo.update_metadata.return_value = pipeline
 
         req = PipelineUpdateRequest(description="x")
         await service.update_pipeline_metadata(pipeline.id, req)
-        assert pipeline_list_cache.get("all") is None
+        assert pipeline_list_cache.get("all:0:200") is None
 
 
 class TestGetPipelineDetail:
@@ -240,32 +244,29 @@ class TestGetPipelineDetailForUser:
 
 
 class TestGetJoinSuggestions:
-    async def test_returns_suggestions_with_shared_fields(self, service, pipeline_repo):
-        p1 = make_pipeline(name="P1")
-        p2 = make_pipeline(name="P2")
+    async def test_returns_suggestions(self, service, pipeline_repo):
+        from app.cache import join_suggestions_cache
+        join_suggestions_cache.clear()
 
-        # Create real field-like objects
-        field1 = MagicMock()
-        field1.name = "ip_address"
-        field2 = MagicMock()
-        field2.name = "hostname"
-        field3 = MagicMock()
-        field3.name = "ip_address"  # shared
-        field4 = MagicMock()
-        field4.name = "port"
+        pipeline = make_pipeline(name="P1")
+        pipeline_repo.get_by_id.return_value = pipeline
+        pipeline_repo.get_shared_field_pipelines.return_value = [
+            {"pipeline_id": uuid.uuid4(), "pipeline_name": "P2", "shared_fields": ["ip_address"]},
+        ]
 
-        p1.fields = [field1, field2]
-        p2.fields = [field3, field4]
-
-        pipeline_repo.get_by_id.return_value = p1
-        pipeline_repo.get_all_with_fields.return_value = [p1, p2]
-
-        result = await service.get_join_suggestions(p1.id)
+        result = await service.get_join_suggestions(pipeline.id)
         assert result is not None
         assert len(result.schema_matches) == 1
         assert "ip_address" in result.schema_matches[0].shared_fields
 
+        join_suggestions_cache.clear()
+
     async def test_returns_none_when_pipeline_not_found(self, service, pipeline_repo):
+        from app.cache import join_suggestions_cache
+        join_suggestions_cache.clear()
+
         pipeline_repo.get_by_id.return_value = None
         result = await service.get_join_suggestions(uuid.uuid4())
         assert result is None
+
+        join_suggestions_cache.clear()

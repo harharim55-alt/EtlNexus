@@ -62,7 +62,7 @@
 .hljs-strong { font-weight: bold; }
 .hljs-link { color: #82aaff; text-decoration: underline; }
 
-/* Animated dashed flow arrows for sensor topology */
+/* Animated dashed flow arrows for bouncer topology */
 @keyframes dash {
   to {
     stroke-dashoffset: -14;

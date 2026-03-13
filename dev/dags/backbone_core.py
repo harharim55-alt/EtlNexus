@@ -12,7 +12,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
 
 from etl_runner import run_etl
-from sensor_runner import run_sensor
+from sensor_runner import run_bouncer
 
 from daily.task_configs import (
     SwitchPortCollector_task_config,
@@ -58,69 +58,41 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Sensors group (data ingestion) ---
-    with TaskGroup("Dagger-Sensors", prefix_group_id=True) as sensors:
-        SwitchTelemetrySensor = PythonOperator(
-            task_id="SwitchTelemetrySensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "SwitchTelemetrySensor",
-                "team": "Dagger",
+    # --- Bouncers group (data ingestion) ---
+    with TaskGroup("Dagger-Bouncers", prefix_group_id=True) as bouncers:
+        SwitchTelemetryBouncer = PythonOperator(
+            task_id="SwitchTelemetryBouncer",
+            python_callable=run_bouncer,
+            op_kwargs={
+                "sensor_name": "SwitchTelemetryBouncer",
                 "description": "Streams switch interface telemetry via gNMI/SNMP polling",
             },
-            op_kwargs={
-                "sensor_name": "SwitchTelemetrySensor",
-                "team": "Dagger",
-                "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-                "volume_per_day": 2_400_000,
-            },
         )
 
-        BgpFeedSensor = PythonOperator(
-            task_id="BgpFeedSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "BgpFeedSensor",
-                "team": "Dagger",
+        BgpFeedBouncer = PythonOperator(
+            task_id="BgpFeedBouncer",
+            python_callable=run_bouncer,
+            op_kwargs={
+                "sensor_name": "BgpFeedBouncer",
                 "description": "Ingests BGP route announcements from peering routers",
             },
+        )
+
+        NetflowCollectorBouncer = PythonOperator(
+            task_id="NetflowCollectorBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "BgpFeedSensor",
-                "team": "Dagger",
-                "description": "Ingests BGP route announcements from peering routers",
-                "volume_per_day": 850_000,
+                "sensor_name": "NetflowCollectorBouncer",
+                "description": "Captures NetFlow/sFlow records from edge routers",
             },
         )
 
-        NetflowCollectorSensor = PythonOperator(
-            task_id="NetflowCollectorSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "NetflowCollectorSensor",
-                "team": "Prism",
-                "description": "Captures NetFlow/sFlow records from edge routers",
-            },
+        DnsQueryLogBouncer = PythonOperator(
+            task_id="DnsQueryLogBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "NetflowCollectorSensor",
-                "team": "Prism",
-                "description": "Captures NetFlow/sFlow records from edge routers",
-                "volume_per_day": 5_200_000,
-            },
-        )
-
-        DnsQueryLogSensor = PythonOperator(
-            task_id="DnsQueryLogSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "DnsQueryLogSensor",
-                "team": "Prism",
+                "sensor_name": "DnsQueryLogBouncer",
                 "description": "Taps DNS resolver query logs for resolution analytics",
-            },
-            op_kwargs={
-                "sensor_name": "DnsQueryLogSensor",
-                "team": "Prism",
-                "description": "Taps DNS resolver query logs for resolution analytics",
-                "volume_per_day": 12_000_000,
             },
         )
 
@@ -130,17 +102,11 @@ with DAG(
             task_id="SwitchPortCollector",
             python_callable=run_etl,
             params={
-                "etl_name": "SwitchPortCollector",
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 03:00 UTC",
                 "needs": SwitchPortCollector_task_config.needs,
                 "prefers": SwitchPortCollector_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "SwitchPortCollector",
-                "needs": SwitchPortCollector_task_config.needs, "prefers": SwitchPortCollector_task_config.prefers,
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 03:00 UTC",
                 "resources": SwitchPortCollector_resources.resources,
             },
         )
@@ -149,17 +115,11 @@ with DAG(
             task_id="BgpRouteSync",
             python_callable=run_etl,
             params={
-                "etl_name": "BgpRouteSync",
-                "category": "Transit/Peering",
-                "schedule": "Daily at 00:00 UTC",
                 "needs": BgpRouteSync_task_config.needs,
                 "prefers": BgpRouteSync_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "BgpRouteSync",
-                "needs": BgpRouteSync_task_config.needs, "prefers": BgpRouteSync_task_config.prefers,
-                "category": "Transit/Peering",
-                "schedule": "Daily at 00:00 UTC",
                 "resources": BgpRouteSync_resources.resources,
             },
         )
@@ -168,17 +128,11 @@ with DAG(
             task_id="NetflowCapture",
             python_callable=run_etl,
             params={
-                "etl_name": "NetflowCapture",
-                "category": "Traffic Analytics",
-                "schedule": "Every 4 Hours",
                 "needs": NetflowCapture_task_config.needs,
                 "prefers": NetflowCapture_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "NetflowCapture",
-                "needs": NetflowCapture_task_config.needs, "prefers": NetflowCapture_task_config.prefers,
-                "category": "Traffic Analytics",
-                "schedule": "Every 4 Hours",
                 "resources": NetflowCapture_resources.resources,
             },
         )
@@ -189,17 +143,11 @@ with DAG(
             task_id="DnsRecordSync",
             python_callable=run_etl,
             params={
-                "etl_name": "DnsRecordSync",
-                "category": "DNS/Resolution",
-                "schedule": "Hourly",
                 "needs": DnsRecordSync_task_config.needs,
                 "prefers": DnsRecordSync_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "DnsRecordSync",
-                "needs": DnsRecordSync_task_config.needs, "prefers": DnsRecordSync_task_config.prefers,
-                "category": "DNS/Resolution",
-                "schedule": "Hourly",
                 "resources": DnsRecordSync_resources.resources,
             },
         )
@@ -210,17 +158,11 @@ with DAG(
             task_id="DeviceFingerprintEnrichment",
             python_callable=run_etl,
             params={
-                "etl_name": "DeviceFingerprintEnrichment",
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 02:00 UTC",
                 "needs": DeviceFingerprintEnrichment_task_config.needs,
                 "prefers": DeviceFingerprintEnrichment_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "DeviceFingerprintEnrichment",
-                "needs": DeviceFingerprintEnrichment_task_config.needs, "prefers": DeviceFingerprintEnrichment_task_config.prefers,
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 02:00 UTC",
                 "resources": DeviceFingerprintEnrichment_resources.resources,
             },
         )
@@ -229,17 +171,11 @@ with DAG(
             task_id="BandwidthBillingAggregator",
             python_callable=run_etl,
             params={
-                "etl_name": "BandwidthBillingAggregator",
-                "category": "Bandwidth/Billing",
-                "schedule": "Hourly",
                 "needs": BandwidthBillingAggregator_task_config.needs,
                 "prefers": BandwidthBillingAggregator_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "BandwidthBillingAggregator",
-                "needs": BandwidthBillingAggregator_task_config.needs, "prefers": BandwidthBillingAggregator_task_config.prefers,
-                "category": "Bandwidth/Billing",
-                "schedule": "Hourly",
                 "resources": BandwidthBillingAggregator_resources.resources,
             },
         )
@@ -248,17 +184,11 @@ with DAG(
             task_id="LinkFailurePrediction",
             python_callable=run_etl,
             params={
-                "etl_name": "LinkFailurePrediction",
-                "category": "Predictive Analytics",
-                "schedule": "Daily at 05:00 UTC",
                 "needs": LinkFailurePrediction_task_config.needs,
                 "prefers": LinkFailurePrediction_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "LinkFailurePrediction",
-                "needs": LinkFailurePrediction_task_config.needs, "prefers": LinkFailurePrediction_task_config.prefers,
-                "category": "Predictive Analytics",
-                "schedule": "Daily at 05:00 UTC",
                 "resources": LinkFailurePrediction_resources.resources,
             },
         )
@@ -267,17 +197,11 @@ with DAG(
             task_id="BandwidthCostReconciliation",
             python_callable=run_etl,
             params={
-                "etl_name": "BandwidthCostReconciliation",
-                "category": "Bandwidth/Billing",
-                "schedule": "Daily at 04:00 UTC",
                 "needs": BandwidthCostReconciliation_task_config.needs,
                 "prefers": BandwidthCostReconciliation_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "BandwidthCostReconciliation",
-                "needs": BandwidthCostReconciliation_task_config.needs, "prefers": BandwidthCostReconciliation_task_config.prefers,
-                "category": "Bandwidth/Billing",
-                "schedule": "Daily at 04:00 UTC",
                 "resources": BandwidthCostReconciliation_resources.resources,
             },
         )
@@ -288,17 +212,11 @@ with DAG(
             task_id="NocDashboardSnapshot",
             python_callable=run_etl,
             params={
-                "etl_name": "NocDashboardSnapshot",
-                "category": "NOC Management",
-                "schedule": "Daily at 06:00 UTC",
                 "needs": NocDashboardSnapshot_task_config.needs,
                 "prefers": NocDashboardSnapshot_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "NocDashboardSnapshot",
-                "needs": NocDashboardSnapshot_task_config.needs, "prefers": NocDashboardSnapshot_task_config.prefers,
-                "category": "NOC Management",
-                "schedule": "Daily at 06:00 UTC",
                 "resources": NocDashboardSnapshot_resources.resources,
             },
         )
@@ -307,17 +225,11 @@ with DAG(
             task_id="NetworkInsightsApiDummy",
             python_callable=run_etl,
             params={
-                "etl_name": "NetworkInsightsApiDummy",
-                "category": "Network APIs",
-                "schedule": "On-demand (API)",
                 "needs": NetworkInsightsApiDummy_task_config.needs,
                 "prefers": NetworkInsightsApiDummy_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "NetworkInsightsApiDummy",
-                "needs": NetworkInsightsApiDummy_task_config.needs, "prefers": NetworkInsightsApiDummy_task_config.prefers,
-                "category": "Network APIs",
-                "schedule": "On-demand (API)",
                 "resources": NetworkInsightsApiDummy_resources.resources,
             },
         )
@@ -326,26 +238,20 @@ with DAG(
             task_id="BandwidthReportsApiDummy",
             python_callable=run_etl,
             params={
-                "etl_name": "BandwidthReportsApiDummy",
-                "category": "Network APIs",
-                "schedule": "On-demand (API)",
                 "needs": BandwidthReportsApiDummy_task_config.needs,
                 "prefers": BandwidthReportsApiDummy_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "BandwidthReportsApiDummy",
-                "needs": BandwidthReportsApiDummy_task_config.needs, "prefers": BandwidthReportsApiDummy_task_config.prefers,
-                "category": "Network APIs",
-                "schedule": "On-demand (API)",
                 "resources": BandwidthReportsApiDummy_resources.resources,
             },
         )
 
-    # --- Sensor wiring (sensors → root ETL tasks) ---
-    SwitchTelemetrySensor >> SwitchPortCollector
-    BgpFeedSensor >> BgpRouteSync
-    NetflowCollectorSensor >> NetflowCapture
-    DnsQueryLogSensor >> DnsRecordSync
+    # --- Bouncer wiring (bouncers → root ETL tasks) ---
+    SwitchTelemetryBouncer >> SwitchPortCollector
+    BgpFeedBouncer >> BgpRouteSync
+    NetflowCollectorBouncer >> NetflowCapture
+    DnsQueryLogBouncer >> DnsRecordSync
 
     # --- Dynamic dependency wiring from task configs ---
     etl_ops = {

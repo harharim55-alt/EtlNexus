@@ -1,9 +1,9 @@
-"""Pydantic schemas for sensor endpoints."""
+"""Pydantic schemas for bouncer endpoints."""
 
 from pydantic import BaseModel
 
 
-class SensorResponse(BaseModel):
+class BouncerResponse(BaseModel):
     id: str
     sensor_name: str
     display_name: str
@@ -16,21 +16,21 @@ class SensorResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class SensorListResponse(BaseModel):
-    sensors: list[SensorResponse]
+class BouncerListResponse(BaseModel):
+    bouncers: list[BouncerResponse]
     teams: list[str]
 
 
-class SensorTopologyNode(BaseModel):
+class BouncerTopologyNode(BaseModel):
     task_id: str
     pipeline_name: str | None = None
     pipeline_id: str | None = None
     status: str
     dag_id: str
-    depends_on_sensors: list[str] = []
+    depends_on_bouncers: list[str] = []
 
 
-class SensorTopologyResponse(BaseModel):
-    selected_sensors: list[str]
-    downstream_etls: list[SensorTopologyNode]
+class BouncerTopologyResponse(BaseModel):
+    selected_bouncers: list[str]
+    downstream_etls: list[BouncerTopologyNode]
     total_etl_count: int

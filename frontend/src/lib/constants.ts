@@ -2,7 +2,7 @@ export const TABS = {
   CATALOG: "catalog",
   MATRIX: "matrix",
   DAGS: "dags",
-  SENSORS: "sensors",
+  BOUNCERS: "bouncers",
   AI: "ai",
   ADMIN: "admin",
 } as const;

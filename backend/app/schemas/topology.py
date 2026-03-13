@@ -10,7 +10,7 @@ class TopologyTask(BaseModel):
     task_group_id: str | None = None
 
 
-class TopologySensor(BaseModel):
+class TopologyBouncer(BaseModel):
     sensor_name: str
     display_name: str
     sensor_id: str | None = None
@@ -24,7 +24,7 @@ class TopologyGraph(BaseModel):
     pipeline_task_id: str
     pipeline_status: str
     dag_ids: list[str]
-    upstream_sensors: list[TopologySensor] = []
+    upstream_bouncers: list[TopologyBouncer] = []
     upstream_needs: list[TopologyTask]
     upstream_prefers: list[TopologyTask]
     downstream: list[TopologyTask]
@@ -39,8 +39,8 @@ class UpstreamNode(BaseModel):
     task_group_id: str | None = None
     depth: int
     is_current: bool = False
-    is_sensor: bool = False
-    sensor_name: str | None = None
+    is_bouncer: bool = False
+    bouncer_name: str | None = None
 
 
 class UpstreamEdge(BaseModel):
@@ -56,5 +56,5 @@ class UpstreamTopologyGraph(BaseModel):
     dag_ids: list[str] = []
     nodes: list[UpstreamNode]
     edges: list[UpstreamEdge]
-    sensors: list[TopologySensor] = []
+    bouncers: list[TopologyBouncer] = []
     max_depth: int

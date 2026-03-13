@@ -1,26 +1,27 @@
 """Airflow sync service — discovers pipelines and lineage from Airflow task metadata.
 
-Replaces the git-based code parsing pipeline. All pipeline metadata (name, category,
-schedule, lineage) is now sourced from Airflow task op_kwargs.
+Auto-discovers all tasks from Airflow using task_id as the canonical name.
+Pipeline metadata (category, schedule, lineage) is derived from TaskGroups,
+DAG schedules, and params. Resources come from op_kwargs.
 """
 
 import asyncio
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-import re
-
+from app.config import settings
 from app.integrations.airflow_client import airflow_client, strip_group_prefix
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
-from app.repositories.sensor_repo import SensorRepository
+from app.repositories.sensor_repo import BouncerRepository
 from app.repositories.team_repo import TeamRepository
 from app.services.airflow_service import KNOWN_AIRFLOW_STATES, _STATUS_PRIORITY
 
@@ -28,6 +29,13 @@ logger = logging.getLogger(__name__)
 
 # Limits concurrent Airflow API calls — leaves headroom below httpx max_connections=10
 _AIRFLOW_SEMAPHORE = asyncio.Semaphore(6)
+
+# Operator types to skip during auto-discovery (infrastructure tasks)
+_EXCLUDE_OPERATOR_TYPES: set[str] = {
+    t.strip()
+    for t in settings.airflow_exclude_operator_types.split(",")
+    if t.strip()
+}
 
 
 class AirflowSyncService:
@@ -39,7 +47,7 @@ class AirflowSyncService:
         resource_repo: ResourceRepository | None = None,
         airflow_repo: AirflowRepository | None = None,
         dag_task_repo: DagTaskRepository | None = None,
-        sensor_repo: SensorRepository | None = None,
+        sensor_repo: BouncerRepository | None = None,
         team_repo: TeamRepository | None = None,
     ):
         self.session = session
@@ -48,18 +56,19 @@ class AirflowSyncService:
         self.resource_repo = resource_repo or ResourceRepository(session)
         self.airflow_repo = airflow_repo or AirflowRepository(session)
         self.dag_task_repo = dag_task_repo or DagTaskRepository(session)
-        self.sensor_repo = sensor_repo or SensorRepository(session)
+        self.sensor_repo = sensor_repo or BouncerRepository(session)
         self.team_repo = team_repo or TeamRepository(session)
 
     async def sync_pipelines_from_airflow(self) -> int:
         """Discover all tasks across all DAGs and register as pipelines + lineage.
 
-        Each Airflow task's op_kwargs carries:
-          - etl_name, needs, prefers, category, schedule
-
-        Destination tables are discovered from task logs:
-          - ETL_WRITES_TO: {table_name} lines logged by run_etl
-          - Primary table = task_id (naming convention)
+        Auto-discovers tasks using task_id — no etl_name/sensor_name gate.
+        - Category: from TaskGroup (second part after dash)
+        - Schedule: from DAG native (timetable_description or schedule_interval)
+        - Lineage: from params (needs/prefers)
+        - Resources: from op_kwargs
+        - Bouncer detection: "Bouncer" in task_id
+        - API detection: "Api" or "API" in task_id
 
         Returns the number of pipelines synced.
         """
@@ -71,8 +80,8 @@ class AirflowSyncService:
         # Collect unique task metadata across all DAGs.
         # A task can appear in multiple DAGs — we take the first occurrence's metadata.
         seen_tasks: dict[str, dict] = {}
-        # Sensor metadata (keyed by sensor_name)
-        seen_sensors: dict[str, dict] = {}
+        # Bouncer metadata (keyed by bouncer name)
+        seen_bouncers: dict[str, dict] = {}
         # Resource configs per task per DAG (collected before dedup — need all occurrences)
         resource_by_dag: dict[str, dict[str, dict]] = {}
         # DAG task graph data: (dag_id, task_id) -> {downstream_task_ids, needs, prefers}
@@ -84,6 +93,8 @@ class AirflowSyncService:
                 return await coro
 
         all_dag_ids = [d["dag_id"] for d in all_dags]
+        # Build DAG defs lookup for schedule extraction
+        dag_defs_by_id = {d["dag_id"]: d for d in all_dags}
 
         # Phase A: Parallel fetch task definitions + task group maps + dag runs
         tasks_results, tg_results, runs_results = await asyncio.gather(
@@ -91,6 +102,16 @@ class AirflowSyncService:
             asyncio.gather(*[_limited(airflow_client.get_task_group_map(did)) for did in all_dag_ids]),
             asyncio.gather(*[_limited(airflow_client.get_dag_runs(did, limit=1)) for did in all_dag_ids]),
         )
+
+        # Build operator type lookup from task definitions: {dag_id: {task_id: class_name}}
+        operator_by_dag: dict[str, dict[str, str]] = {}
+        for i, dag_id in enumerate(all_dag_ids):
+            op_map: dict[str, str] = {}
+            for t in tasks_results[i]:
+                class_ref = t.get("class_ref", {}) or {}
+                class_name = class_ref.get("class_name", "")
+                op_map[t["task_id"]] = class_name
+            operator_by_dag[dag_id] = op_map
 
         # Phase B: Identify DAGs with runs, parallel fetch task instances
         dags_with_runs: list[tuple[str, str, list, dict]] = []  # (dag_id, run_id, tasks_def, tg_map)
@@ -107,8 +128,7 @@ class AirflowSyncService:
         else:
             instances_results = []
 
-        # Phase C: Process instances to identify needed log fetches
-        # Track per-DAG processed data for Phase D
+        # Phase C: Process instances — auto-discover all tasks by task_id
         dag_processed: list[dict] = []  # parallel to dags_with_runs
         log_requests: list[tuple[str, str, str, str, str]] = []  # (dag_id, run_id, airflow_tid, kind, key)
 
@@ -121,74 +141,63 @@ class AirflowSyncService:
                 for t in tasks_def
             }
             instances = instances_results[idx]
-            op_kwargs_by_task: dict[str, dict] = {}
+            canonical_by_airflow_tid: dict[str, str] = {}
 
             for inst in instances:
                 airflow_task_id = inst.get("task_id", "")
+                canonical_tid = strip_group_prefix(airflow_task_id)
+
+                # Skip infrastructure operators
+                op_class = operator_by_dag.get(dag_id, {}).get(airflow_task_id, "")
+                if op_class in _EXCLUDE_OPERATOR_TYPES:
+                    continue
+
                 rendered = inst.get("rendered_fields", {}) or {}
                 op_kwargs = rendered.get("op_kwargs", {}) or {}
+                params = params_by_task.get(airflow_task_id, {})
 
-                if not op_kwargs.get("etl_name") and not op_kwargs.get("sensor_name"):
-                    params = params_by_task.get(airflow_task_id, {})
-                    if params.get("etl_name") or params.get("sensor_name"):
-                        logger.debug(
-                            "Using params fallback for task %s in DAG %s (state=%s)",
-                            airflow_task_id, dag_id, inst.get("state", "?"),
-                        )
-                        op_kwargs = params
+                canonical_by_airflow_tid[airflow_task_id] = canonical_tid
 
-                op_kwargs_by_task[airflow_task_id] = op_kwargs
-
-                sensor_name = op_kwargs.get("sensor_name")
-                if sensor_name:
-                    if sensor_name not in seen_sensors:
-                        log_requests.append((dag_id, dag_run_id, airflow_task_id, "sensor", sensor_name))
-                        seen_sensors[sensor_name] = {
-                            "sensor_name": sensor_name,
-                            "team": op_kwargs.get("team", ""),
-                            "description": op_kwargs.get("description"),
-                            "volume_per_day": op_kwargs.get("volume_per_day"),
+                if self._is_bouncer(canonical_tid):
+                    # ── Bouncer task ──
+                    if canonical_tid not in seen_bouncers:
+                        description = op_kwargs.get("description")
+                        log_requests.append((dag_id, dag_run_id, airflow_task_id, "bouncer", canonical_tid))
+                        seen_bouncers[canonical_tid] = {
+                            "sensor_name": canonical_tid,
+                            "description": description,
                             "dag_ids": [dag_id],
-                            "_op_kwargs": op_kwargs,
+                            "task_group": task_group_map.get(canonical_tid) or None,
                         }
                     else:
-                        if dag_id not in seen_sensors[sensor_name]["dag_ids"]:
-                            seen_sensors[sensor_name]["dag_ids"].append(dag_id)
-                    continue
+                        if dag_id not in seen_bouncers[canonical_tid]["dag_ids"]:
+                            seen_bouncers[canonical_tid]["dag_ids"].append(dag_id)
+                else:
+                    # ── Pipeline task ──
+                    raw_resources = op_kwargs.get("resources")
+                    if raw_resources and isinstance(raw_resources, dict):
+                        resource_by_dag.setdefault(canonical_tid, {})[dag_id] = raw_resources
 
-                etl_name = op_kwargs.get("etl_name")
-                if not etl_name:
-                    if airflow_task_id not in seen_tasks:
-                        logger.debug(
-                            "Skipping task %s in DAG %s — no etl_name in op_kwargs or params (keys: %s)",
-                            airflow_task_id, dag_id,
-                            list(op_kwargs.keys()) if op_kwargs else "empty",
-                        )
-                    continue
-
-                raw_resources = op_kwargs.get("resources")
-                if raw_resources and isinstance(raw_resources, dict):
-                    resource_by_dag.setdefault(etl_name, {})[dag_id] = raw_resources
-
-                if etl_name in seen_tasks:
-                    continue
-
-                log_requests.append((dag_id, dag_run_id, airflow_task_id, "etl", etl_name))
-                seen_tasks[etl_name] = {
-                    "task_id": etl_name,
-                    "category": op_kwargs.get("category", ""),
-                    "schedule": op_kwargs.get("schedule"),
-                    "destination_tables": [],
-                    "description": "",
-                    "needs": op_kwargs.get("needs", []),
-                    "task_group": task_group_map.get(etl_name) or None,
-                }
+                    if canonical_tid not in seen_tasks:
+                        log_requests.append((dag_id, dag_run_id, airflow_task_id, "etl", canonical_tid))
+                        task_group = task_group_map.get(canonical_tid) or None
+                        seen_tasks[canonical_tid] = {
+                            "task_id": canonical_tid,
+                            "category": self._extract_category_from_task_group(task_group),
+                            "schedule": self._extract_dag_schedule(dag_defs_by_id.get(dag_id, {})),
+                            "destination_tables": [],
+                            "description": "",
+                            "needs": params.get("needs", []),
+                            "prefers": params.get("prefers", []),
+                            "task_group": task_group,
+                        }
 
             dag_processed.append({
                 "dag_id": dag_id,
                 "task_group_map": task_group_map,
                 "downstream_map": downstream_map,
-                "op_kwargs_by_task": op_kwargs_by_task,
+                "params_by_task": params_by_task,
+                "canonical_by_airflow_tid": canonical_by_airflow_tid,
             })
 
         # Phase D: Parallel fetch all needed logs
@@ -202,44 +211,43 @@ class AirflowSyncService:
 
         # Phase E: Process log results
         for (dag_id, _, _, kind, key), log_content in zip(log_requests, log_results):
-            if kind == "sensor":
-                meta = seen_sensors[key]
-                volume = self._parse_sensor_volume(log_content)
-                description = meta.get("_op_kwargs", {}).get("description") or self._parse_sensor_description(log_content, key)
-                meta["description"] = description
-                meta["volume_per_day"] = volume or meta.get("volume_per_day")
-                meta.pop("_op_kwargs", None)
+            if kind == "bouncer":
+                meta = seen_bouncers[key]
+                # Use op_kwargs description if available, otherwise parse from logs
+                if not meta.get("description"):
+                    meta["description"] = self._parse_bouncer_description(log_content, key)
             elif kind == "etl":
                 meta = seen_tasks[key]
                 meta["destination_tables"] = self._parse_writes(log_content, key)
                 meta["description"] = self._parse_description(log_content, key)
 
-        # Build dag_task_graph from pre-processed data
+        # Build dag_task_graph from all discovered tasks
         for proc in dag_processed:
             dag_id = proc["dag_id"]
             task_group_map = proc["task_group_map"]
             downstream_map = proc["downstream_map"]
-            for airflow_tid, op_kw in proc["op_kwargs_by_task"].items():
-                s_name = op_kw.get("sensor_name")
-                e_name = op_kw.get("etl_name")
-                if not s_name and not e_name:
-                    continue
-                canonical_id = s_name or e_name
+            params_by_task = proc["params_by_task"]
+            for airflow_tid, canonical_tid in proc["canonical_by_airflow_tid"].items():
+                is_bouncer = self._is_bouncer(canonical_tid)
                 raw_downstream = downstream_map.get(airflow_tid, [])
+                params = params_by_task.get(airflow_tid, {})
                 dag_task_graph.append({
                     "dag_id": dag_id,
-                    "task_id": canonical_id,
+                    "task_id": canonical_tid,
                     "downstream_task_ids": [strip_group_prefix(d) for d in raw_downstream],
-                    "needs": op_kw.get("needs", []),
-                    "prefers": op_kw.get("prefers", []),
-                    "task_group_id": task_group_map.get(canonical_id) or None,
-                    "sensor_name": s_name,
+                    "needs": params.get("needs", []),
+                    "prefers": params.get("prefers", []),
+                    "task_group_id": task_group_map.get(canonical_tid) or None,
+                    "sensor_name": canonical_tid if is_bouncer else None,
                 })
 
-        logger.info("Collected %d ETL tasks from %d DAGs", len(seen_tasks), len(all_dags))
+        logger.info(
+            "Collected %d pipeline tasks and %d bouncers from %d DAGs",
+            len(seen_tasks), len(seen_bouncers), len(all_dags),
+        )
 
-        if not seen_tasks:
-            logger.info("No tasks with etl metadata found in Airflow")
+        if not seen_tasks and not seen_bouncers:
+            logger.info("No tasks discovered in Airflow")
             return 0
 
         # Load known teams for task_group prefix matching
@@ -283,7 +291,7 @@ class AirflowSyncService:
                     "edge_type": "reads_from",
                 })
 
-            if "api" not in meta["category"].lower():
+            if not self._is_api(task_id):
                 for dest in meta["destination_tables"]:
                     edges_to_create.append({
                         "source_pipeline_id": pipeline.id,
@@ -351,30 +359,31 @@ class AirflowSyncService:
                         "Failed to sync resource config for %s in %s", task_id, dag_id
                     )
 
-        # Pass 4: Upsert sensors
-        sensor_name_to_id: dict[str, uuid.UUID] = {}
-        for sensor_name, meta in seen_sensors.items():
-            display_name = self._task_id_to_display_name(sensor_name)
-            sensor = await self.sensor_repo.upsert({
-                "sensor_name": sensor_name,
+        # Pass 4: Upsert bouncers (volume_per_day preserved in DB — not overwritten)
+        bouncer_name_to_id: dict[str, uuid.UUID] = {}
+        for bouncer_name, meta in seen_bouncers.items():
+            display_name = self._task_id_to_display_name(bouncer_name)
+            task_group = meta.get("task_group")
+            team_name = self._extract_team_from_task_group(task_group, known_teams)
+            bouncer = await self.sensor_repo.upsert({
+                "sensor_name": bouncer_name,
                 "display_name": display_name,
-                "description": meta["description"],
-                "team": meta["team"],
-                "volume_per_day": meta["volume_per_day"],
+                "description": meta.get("description") or display_name,
+                "team": team_name or "",
                 "dag_ids": meta["dag_ids"],
             })
-            sensor_name_to_id[sensor_name] = sensor.id
+            bouncer_name_to_id[bouncer_name] = bouncer.id
 
-        logger.info("Synced %d sensors from Airflow", len(seen_sensors))
+        logger.info("Synced %d bouncers from Airflow", len(seen_bouncers))
 
         # Pass 5: Sync DAG task graph (membership + downstream edges)
         current_pairs: set[tuple[str, str]] = set()
         for entry in dag_task_graph:
             entry["pipeline_id"] = task_id_to_pipeline_id.get(entry["task_id"])
-            # Link sensor entries to sensor records
+            # Link bouncer entries to bouncer records
             s_name = entry.get("sensor_name")
             if s_name:
-                entry["sensor_id"] = sensor_name_to_id.get(s_name)
+                entry["sensor_id"] = bouncer_name_to_id.get(s_name)
             await self.dag_task_repo.upsert(entry)
             current_pairs.add((entry["dag_id"], entry["task_id"]))
 
@@ -384,9 +393,9 @@ class AirflowSyncService:
 
         await self.session.commit()
         logger.info(
-            "Synced %d pipelines, %d sensors, %d resource configs, %d dag_task entries from Airflow",
+            "Synced %d pipelines, %d bouncers, %d resource configs, %d dag_task entries from Airflow",
             synced,
-            len(seen_sensors),
+            len(seen_bouncers),
             resource_count,
             len(dag_task_graph),
         )
@@ -456,13 +465,27 @@ class AirflowSyncService:
         if not dag_latest_run:
             raise ValueError(f"Task {task_id} not found in any Airflow DAG (no runs)")
 
+        # Also fetch task definitions + task group maps for target DAGs (for params + category)
         run_dag_ids = list(dag_latest_run.keys())
-        instances_results = await asyncio.gather(*[
-            _limited(airflow_client.get_task_instances(
-                dag_id, dag_latest_run[dag_id]["dag_run_id"]
-            ))
-            for dag_id in run_dag_ids
-        ])
+        instances_results, tg_results_single, tasks_def_results = await asyncio.gather(
+            asyncio.gather(*[
+                _limited(airflow_client.get_task_instances(
+                    dag_id, dag_latest_run[dag_id]["dag_run_id"]
+                ))
+                for dag_id in run_dag_ids
+            ]),
+            asyncio.gather(*[
+                _limited(airflow_client.get_task_group_map(dag_id))
+                for dag_id in run_dag_ids
+            ]),
+            asyncio.gather(*[
+                _limited(airflow_client.get_dag_tasks(dag_id))
+                for dag_id in run_dag_ids
+            ]),
+        )
+
+        # Build DAG defs lookup for schedule
+        dag_defs_by_id = {d["dag_id"]: d for d in all_dags}
 
         # Extract metadata, resources, and status from pre-fetched results
         meta: dict | None = None
@@ -472,8 +495,14 @@ class AirflowSyncService:
         best_dag_id: str | None = None
         best_exec_date: datetime | None = None
 
-        for dag_id, instances in zip(run_dag_ids, instances_results):
+        for i, dag_id in enumerate(run_dag_ids):
+            instances = instances_results[i]
             run = dag_latest_run[dag_id]
+            task_group_map = tg_results_single[i]
+            params_by_task = {
+                t["task_id"]: self._unwrap_params(t.get("params", {}))
+                for t in tasks_def_results[i]
+            }
             for inst in instances:
                 airflow_task_id = inst.get("task_id", "")
                 if strip_group_prefix(airflow_task_id) != task_id:
@@ -502,20 +531,22 @@ class AirflowSyncService:
                     )
                     destination_tables = self._parse_writes(log_content, task_id)
                     description = self._parse_description(log_content, task_id)
+                    task_group = task_group_map.get(task_id) or None
+                    params = params_by_task.get(airflow_task_id, {})
 
                     meta = {
-                        "category": op_kwargs.get("category", ""),
-                        "schedule": op_kwargs.get("schedule"),
+                        "category": self._extract_category_from_task_group(task_group),
+                        "schedule": self._extract_dag_schedule(dag_defs_by_id.get(dag_id, {})),
                         "destination_tables": destination_tables,
                         "description": description,
-                        "needs": op_kwargs.get("needs", []),
+                        "needs": params.get("needs", []),
                     }
                 break
 
         if meta is None:
             raise ValueError(f"Task {task_id} not found in any Airflow DAG")
 
-        # ── Phase 3: DB writes (unchanged logic) ──
+        # ── Phase 3: DB writes ──
 
         await self.pipeline_repo.upsert({
             "name": display_name,
@@ -540,7 +571,7 @@ class AirflowSyncService:
                 edge["source_pipeline_id"] = upstream.id
             edges_to_create.append(edge)
 
-        if "api" not in meta["category"].lower():
+        if not self._is_api(task_id):
             for dest in meta["destination_tables"]:
                 edges_to_create.append({
                     "source_pipeline_id": pipeline_id,
@@ -821,27 +852,47 @@ class AirflowSyncService:
         return None
 
     @staticmethod
-    def _parse_sensor_volume(log_content: str) -> int | None:
-        """Parse SENSOR_VOLUME line from a sensor task's log output."""
-        if not log_content:
-            return None
-        for line in log_content.splitlines():
-            if "SENSOR_VOLUME:" in line:
-                parts = line.split("SENSOR_VOLUME:", 1)
-                if len(parts) == 2:
-                    try:
-                        return int(parts[1].strip())
-                    except ValueError:
-                        pass
-        return None
+    def _is_bouncer(task_id: str) -> bool:
+        """Check if a task_id represents a bouncer (data ingestion root task)."""
+        return "Bouncer" in task_id
 
     @staticmethod
-    def _parse_sensor_description(log_content: str, task_id: str) -> str:
-        """Parse SENSOR_DESCRIPTION line from a sensor task's log output."""
+    def _is_api(task_id: str) -> bool:
+        """Check if a task_id represents an API task (skip writes_to lineage)."""
+        return "Api" in task_id or "API" in task_id
+
+    @staticmethod
+    def _extract_category_from_task_group(task_group: str | None) -> str:
+        """Extract category from TaskGroup name.
+
+        'Dagger-Collection' -> 'Collection'
+        'Relay'             -> 'Relay'
+        None                -> 'Uncategorized'
+        """
+        if not task_group:
+            return "Uncategorized"
+        if "-" in task_group:
+            return task_group.split("-", 1)[1]
+        return task_group
+
+    @staticmethod
+    def _extract_dag_schedule(dag_def: dict) -> str | None:
+        """Extract schedule from DAG definition.
+
+        Prefers timetable_description, falls back to schedule_interval.
+        """
+        schedule = dag_def.get("timetable_description")
+        if schedule and schedule != "Never":
+            return schedule
+        return dag_def.get("schedule_interval") or None
+
+    @staticmethod
+    def _parse_bouncer_description(log_content: str, task_id: str) -> str:
+        """Parse BOUNCER_DESCRIPTION line from a bouncer task's log output."""
         if log_content:
             for line in log_content.splitlines():
-                if "SENSOR_DESCRIPTION:" in line:
-                    parts = line.split("SENSOR_DESCRIPTION:", 1)
+                if "BOUNCER_DESCRIPTION:" in line:
+                    parts = line.split("BOUNCER_DESCRIPTION:", 1)
                     if len(parts) == 2:
                         desc = parts[1].strip()
                         if desc:

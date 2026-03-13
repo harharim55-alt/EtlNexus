@@ -1,30 +1,30 @@
-"""Sensor endpoints — list sensors and query downstream topology."""
+"""Bouncer endpoints — list bouncers and query downstream topology."""
 
 from fastapi import APIRouter, Depends, Query
 
 from app.auth import get_current_user
-from app.dependencies import get_sensor_service
+from app.dependencies import get_bouncer_service
 from app.models.user import User
-from app.schemas.sensor import SensorListResponse, SensorTopologyResponse
-from app.services.sensor_service import SensorService
+from app.schemas.sensor import BouncerListResponse, BouncerTopologyResponse
+from app.services.sensor_service import BouncerService
 
-router = APIRouter(prefix="/api/sensors", tags=["sensors"])
+router = APIRouter(prefix="/api/bouncers", tags=["bouncers"])
 
 
-@router.get("", response_model=SensorListResponse)
-async def list_sensors(
+@router.get("", response_model=BouncerListResponse)
+async def list_bouncers(
     team: str | None = Query(None, description="Filter by team name"),
     user: User = Depends(get_current_user),
-    service: SensorService = Depends(get_sensor_service),
+    service: BouncerService = Depends(get_bouncer_service),
 ):
-    return await service.get_all_sensors(team=team)
+    return await service.get_all_bouncers(team=team)
 
 
-@router.get("/topology", response_model=SensorTopologyResponse)
-async def get_sensor_topology(
-    sensors: list[str] = Query(..., description="Sensor names to query"),
+@router.get("/topology", response_model=BouncerTopologyResponse)
+async def get_bouncer_topology(
+    bouncers: list[str] = Query(..., description="Bouncer names to query"),
     mode: str = Query("union", description="union or intersection"),
     user: User = Depends(get_current_user),
-    service: SensorService = Depends(get_sensor_service),
+    service: BouncerService = Depends(get_bouncer_service),
 ):
-    return await service.get_sensor_topology(sensor_names=sensors, mode=mode)
+    return await service.get_bouncer_topology(bouncer_names=bouncers, mode=mode)

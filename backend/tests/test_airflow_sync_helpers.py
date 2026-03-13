@@ -205,28 +205,61 @@ class TestParseExecutionPlan:
         assert AirflowSyncService._parse_execution_plan(log) is None
 
 
-class TestParseSensorVolume:
-    def test_valid_volume(self):
-        log = "SENSOR_VOLUME: 12345"
-        result = AirflowSyncService._parse_sensor_volume(log)
-        assert result == 12345
+class TestIsBouncer:
+    def test_bouncer_name(self):
+        assert AirflowSyncService._is_bouncer("SwitchTelemetryBouncer") is True
 
-    def test_no_marker(self):
-        assert AirflowSyncService._parse_sensor_volume("no volume") is None
+    def test_etl_name(self):
+        assert AirflowSyncService._is_bouncer("SwitchPortCollector") is False
 
-    def test_empty_returns_none(self):
-        assert AirflowSyncService._parse_sensor_volume("") is None
-
-    def test_invalid_number(self):
-        assert AirflowSyncService._parse_sensor_volume("SENSOR_VOLUME: abc") is None
+    def test_api_name(self):
+        assert AirflowSyncService._is_bouncer("NetworkInsightsApiDummy") is False
 
 
-class TestParseSensorDescription:
+class TestIsApi:
+    def test_api_pascal(self):
+        assert AirflowSyncService._is_api("NetworkInsightsApiDummy") is True
+
+    def test_api_upper(self):
+        assert AirflowSyncService._is_api("SomeAPIDummy") is True
+
+    def test_non_api(self):
+        assert AirflowSyncService._is_api("SwitchPortCollector") is False
+
+
+class TestExtractCategoryFromTaskGroup:
+    def test_hyphenated(self):
+        assert AirflowSyncService._extract_category_from_task_group("Dagger-Collection") == "Collection"
+
+    def test_no_hyphen(self):
+        assert AirflowSyncService._extract_category_from_task_group("Relay") == "Relay"
+
+    def test_none(self):
+        assert AirflowSyncService._extract_category_from_task_group(None) == "Uncategorized"
+
+    def test_empty(self):
+        assert AirflowSyncService._extract_category_from_task_group("") == "Uncategorized"
+
+
+class TestExtractDagSchedule:
+    def test_timetable_description(self):
+        dag_def = {"timetable_description": "At 01:00", "schedule_interval": "0 1 * * *"}
+        assert AirflowSyncService._extract_dag_schedule(dag_def) == "At 01:00"
+
+    def test_fallback_to_schedule_interval(self):
+        dag_def = {"timetable_description": "Never", "schedule_interval": "0 1 * * *"}
+        assert AirflowSyncService._extract_dag_schedule(dag_def) == "0 1 * * *"
+
+    def test_empty_dag_def(self):
+        assert AirflowSyncService._extract_dag_schedule({}) is None
+
+
+class TestParseBouncerDescription:
     def test_extracts_description(self):
-        log = "SENSOR_DESCRIPTION: Monitors network traffic"
-        result = AirflowSyncService._parse_sensor_description(log, "TrafficSensor")
+        log = "BOUNCER_DESCRIPTION: Monitors network traffic"
+        result = AirflowSyncService._parse_bouncer_description(log, "TrafficSensor")
         assert result == "Monitors network traffic"
 
     def test_falls_back_to_display_name(self):
-        result = AirflowSyncService._parse_sensor_description("no desc", "TrafficSensor")
+        result = AirflowSyncService._parse_bouncer_description("no desc", "TrafficSensor")
         assert result == "Traffic Sensor"

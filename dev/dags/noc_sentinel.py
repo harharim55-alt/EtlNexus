@@ -11,7 +11,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
 
 from etl_runner import run_etl
-from sensor_runner import run_sensor
+from sensor_runner import run_bouncer
 
 from daily.task_configs import DnsRecordSync_task_config
 from hourly.task_configs import SyslogEventStream_task_config, IncidentAnalyticsRollup_task_config
@@ -38,37 +38,23 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Sensors group (data ingestion) ---
-    with TaskGroup("Oasis-Sensors", prefix_group_id=True) as sensors:
-        SyslogReceiverSensor = PythonOperator(
-            task_id="SyslogReceiverSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "SyslogReceiverSensor",
-                "team": "Vault",
-                "description": "Receives syslog messages from network devices and firewalls",
-            },
+    # --- Bouncers group (data ingestion) ---
+    with TaskGroup("Oasis-Bouncers", prefix_group_id=True) as bouncers:
+        SyslogReceiverBouncer = PythonOperator(
+            task_id="SyslogReceiverBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "SyslogReceiverSensor",
-                "team": "Vault",
+                "sensor_name": "SyslogReceiverBouncer",
                 "description": "Receives syslog messages from network devices and firewalls",
-                "volume_per_day": 8_500_000,
             },
         )
 
-        DnsQueryLogSensor = PythonOperator(
-            task_id="DnsQueryLogSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "DnsQueryLogSensor",
-                "team": "Prism",
-                "description": "Taps DNS resolver query logs for resolution analytics",
-            },
+        DnsQueryLogBouncer = PythonOperator(
+            task_id="DnsQueryLogBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "DnsQueryLogSensor",
-                "team": "Prism",
+                "sensor_name": "DnsQueryLogBouncer",
                 "description": "Taps DNS resolver query logs for resolution analytics",
-                "volume_per_day": 12_000_000,
             },
         )
 
@@ -78,17 +64,11 @@ with DAG(
             task_id="SyslogEventStream",
             python_callable=run_etl,
             params={
-                "etl_name": "SyslogEventStream",
-                "category": "Incident Management",
-                "schedule": "Real-time (Streaming)",
                 "needs": SyslogEventStream_task_config.needs,
                 "prefers": SyslogEventStream_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "SyslogEventStream",
-                "needs": SyslogEventStream_task_config.needs, "prefers": SyslogEventStream_task_config.prefers,
-                "category": "Incident Management",
-                "schedule": "Real-time (Streaming)",
                 "resources": SyslogEventStream_resources.resources,
             },
         )
@@ -97,17 +77,11 @@ with DAG(
             task_id="DnsRecordSync",
             python_callable=run_etl,
             params={
-                "etl_name": "DnsRecordSync",
-                "category": "DNS/Resolution",
-                "schedule": "Hourly",
                 "needs": DnsRecordSync_task_config.needs,
                 "prefers": DnsRecordSync_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "DnsRecordSync",
-                "needs": DnsRecordSync_task_config.needs, "prefers": DnsRecordSync_task_config.prefers,
-                "category": "DNS/Resolution",
-                "schedule": "Hourly",
                 "resources": DnsRecordSync_resources.resources,
             },
         )
@@ -116,24 +90,18 @@ with DAG(
             task_id="IncidentAnalyticsRollup",
             python_callable=run_etl,
             params={
-                "etl_name": "IncidentAnalyticsRollup",
-                "category": "Incident Management",
-                "schedule": "Hourly",
                 "needs": IncidentAnalyticsRollup_task_config.needs,
                 "prefers": IncidentAnalyticsRollup_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "IncidentAnalyticsRollup",
-                "needs": IncidentAnalyticsRollup_task_config.needs, "prefers": IncidentAnalyticsRollup_task_config.prefers,
-                "category": "Incident Management",
-                "schedule": "Hourly",
                 "resources": IncidentAnalyticsRollup_resources.resources,
             },
         )
 
-    # Sensor wiring
-    SyslogReceiverSensor >> SyslogEventStream
-    DnsQueryLogSensor >> DnsRecordSync
+    # Bouncer wiring
+    SyslogReceiverBouncer >> SyslogEventStream
+    DnsQueryLogBouncer >> DnsRecordSync
 
     # --- Dynamic dependency wiring from task configs ---
     etl_ops = {

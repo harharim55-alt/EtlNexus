@@ -5,13 +5,13 @@ import { useOnboardingStore } from "@/stores/onboarding-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { usePipelineStore } from "@/stores/pipeline-store";
-import { useSensorStore } from "@/stores/sensor-store";
+import { useBouncerStore } from "@/stores/bouncer-store";
 import { isAdmin } from "@/lib/permissions";
 import { getOnboardingSteps } from "./onboarding-steps";
 import type { PanelPosition } from "./onboarding-steps";
 import type { PipelineListItem } from "@/types/pipeline";
-import type { SensorListResponse } from "@/types/sensor";
-import { fetchSensors } from "@/api/sensors";
+import type { BouncerListResponse } from "@/types/bouncer";
+import { fetchBouncers } from "@/api/bouncers";
 import { SidebarSpotlight } from "./SidebarSpotlight";
 import { SectionSpotlight } from "./SectionSpotlight";
 import { SpotlightConnector } from "./SpotlightConnector";
@@ -60,8 +60,8 @@ export function OnboardingOverlay() {
   const setActiveTab = useNavigationStore((s) => s.setActiveTab);
   const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
   const setSelectedPipelineId = usePipelineStore((s) => s.setSelectedPipelineId);
-  const selectedSensors = useSensorStore((s) => s.selectedSensors);
-  const toggleSensor = useSensorStore((s) => s.toggleSensor);
+  const selectedBouncers = useBouncerStore((s) => s.selectedBouncers);
+  const toggleBouncer = useBouncerStore((s) => s.toggleBouncer);
   const queryClient = useQueryClient();
   const admin = isAdmin(user);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -107,57 +107,57 @@ export function OnboardingOverlay() {
       }
     }
 
-    // Prefetch + auto-select two sensors with intersection mode for the sensors step
-    if (step.id === "sensors" && selectedSensors.length === 0) {
-      const selectSensors = (data: SensorListResponse) => {
-        const store = useSensorStore.getState();
-        if (store.selectedSensors.length > 0) return;
-        const sensors = data.sensors;
-        if (sensors.length === 0) return;
-        if (sensors.length === 1) {
-          store.toggleSensor(sensors[0].sensor_name);
+    // Prefetch + auto-select two bouncers with intersection mode for the bouncers step
+    if (step.id === "bouncers" && selectedBouncers.length === 0) {
+      const selectBouncers = (data: BouncerListResponse) => {
+        const store = useBouncerStore.getState();
+        if (store.selectedBouncers.length > 0) return;
+        const bouncers = data.bouncers;
+        if (bouncers.length === 0) return;
+        if (bouncers.length === 1) {
+          store.toggleBouncer(bouncers[0].sensor_name);
           return;
         }
         // Single-pass: find a pair sharing a dag_id for intersection mode
-        const dagToSensor = new Map<string, string>();
+        const dagToBouncer = new Map<string, string>();
         let picked: [string, string] | null = null;
-        for (const sensor of sensors) {
-          for (const dagId of sensor.dag_ids) {
-            const other = dagToSensor.get(dagId);
-            if (other && other !== sensor.sensor_name) {
-              picked = [other, sensor.sensor_name];
+        for (const bouncer of bouncers) {
+          for (const dagId of bouncer.dag_ids) {
+            const other = dagToBouncer.get(dagId);
+            if (other && other !== bouncer.sensor_name) {
+              picked = [other, bouncer.sensor_name];
               break;
             }
-            dagToSensor.set(dagId, sensor.sensor_name);
+            dagToBouncer.set(dagId, bouncer.sensor_name);
           }
           if (picked) break;
         }
         if (picked) {
-          store.toggleSensor(picked[0]);
-          store.toggleSensor(picked[1]);
+          store.toggleBouncer(picked[0]);
+          store.toggleBouncer(picked[1]);
           store.setTopologyMode("intersection");
         } else {
           // No intersection found — pick first two with union
-          store.toggleSensor(sensors[0].sensor_name);
-          store.toggleSensor(sensors[1].sensor_name);
+          store.toggleBouncer(bouncers[0].sensor_name);
+          store.toggleBouncer(bouncers[1].sensor_name);
           store.setTopologyMode("union");
         }
       };
 
-      const cached = queryClient.getQueryData<SensorListResponse>(["sensors", "all"]);
-      if (cached?.sensors?.length) {
-        selectSensors(cached);
+      const cached = queryClient.getQueryData<BouncerListResponse>(["bouncers", "all"]);
+      if (cached?.bouncers?.length) {
+        selectBouncers(cached);
       } else {
         queryClient.prefetchQuery({
-          queryKey: ["sensors", "all"],
-          queryFn: () => fetchSensors(),
+          queryKey: ["bouncers", "all"],
+          queryFn: () => fetchBouncers(),
         }).then(() => {
-          const data = queryClient.getQueryData<SensorListResponse>(["sensors", "all"]);
-          if (data) selectSensors(data);
+          const data = queryClient.getQueryData<BouncerListResponse>(["bouncers", "all"]);
+          if (data) selectBouncers(data);
         });
       }
     }
-  }, [isActive, isExiting, currentStep, step?.navigateTo, step?.id, setActiveTab, selectedPipelineId, setSelectedPipelineId, selectedSensors.length, toggleSensor, queryClient]);
+  }, [isActive, isExiting, currentStep, step?.navigateTo, step?.id, setActiveTab, selectedPipelineId, setSelectedPipelineId, selectedBouncers.length, toggleBouncer, queryClient]);
 
   // Auto-scroll the bento workspace on the workspace step
   useEffect(() => {

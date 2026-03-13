@@ -23,9 +23,9 @@ const DagSummaryView = lazy(() =>
     default: m.DagSummaryView,
   }))
 );
-const SensorsView = lazy(() =>
-  import("@/components/sensors/SensorsView").then((m) => ({
-    default: m.SensorsView,
+const BouncersView = lazy(() =>
+  import("@/components/bouncers/BouncersView").then((m) => ({
+    default: m.BouncersView,
   }))
 );
 const AIArchitectView = lazy(() =>
@@ -73,9 +73,9 @@ function AppContent() {
               <DagSummaryView />
             </Suspense>
           )}
-          {activeTab === "sensors" && (
+          {activeTab === "bouncers" && (
             <Suspense fallback={<TabSkeleton />}>
-              <SensorsView />
+              <BouncersView />
             </Suspense>
           )}
           {activeTab === "ai" && (

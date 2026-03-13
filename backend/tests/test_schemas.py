@@ -21,6 +21,7 @@ from app.schemas.pipeline import (
     PipelineDetail,
     PipelineFieldSchema,
     PipelineListItem,
+    PipelineListResponse,
     PipelineUpdateRequest,
     PipelineUpdateResponse,
 )
@@ -79,6 +80,7 @@ class TestUserResponse:
             email="user@test.local",
             display_name="Test User",
             role="admin",
+            is_active=True,
             teams=[team],
         )
         assert len(resp.teams) == 1
@@ -90,6 +92,7 @@ class TestUserResponse:
             email="user@test.local",
             display_name="Test User",
             role="member",
+            is_active=True,
             teams=[],
         )
         assert resp.teams == []
@@ -121,6 +124,18 @@ class TestPipelineListItem:
         )
         assert item.team == "Dagger"
         assert item.success_rate == 95.5
+
+
+class TestPipelineListResponse:
+    def test_structure(self):
+        items = [PipelineListItem(id=uuid.uuid4(), name="P1")]
+        resp = PipelineListResponse(items=items, total=10)
+        assert resp.total == 10
+        assert len(resp.items) == 1
+
+    def test_empty(self):
+        resp = PipelineListResponse(items=[], total=0)
+        assert resp.total == 0
 
 
 class TestPipelineDetail:

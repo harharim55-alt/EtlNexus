@@ -11,7 +11,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
 
 from etl_runner import run_etl
-from sensor_runner import run_sensor
+from sensor_runner import run_bouncer
 
 from daily.task_configs import (
     SwitchPortCollector_task_config,
@@ -43,53 +43,32 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Single Relay group (sensors + ETLs) ---
+    # --- Single Relay group (bouncers + ETLs) ---
     with TaskGroup("Relay", prefix_group_id=True) as relay:
-        SwitchTelemetrySensor = PythonOperator(
-            task_id="SwitchTelemetrySensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "SwitchTelemetrySensor",
-                "team": "Dagger",
-                "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-            },
+        SwitchTelemetryBouncer = PythonOperator(
+            task_id="SwitchTelemetryBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "SwitchTelemetrySensor",
-                "team": "Dagger",
+                "sensor_name": "SwitchTelemetryBouncer",
                 "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-                "volume_per_day": 2_400_000,
             },
         )
 
-        BgpFeedSensor = PythonOperator(
-            task_id="BgpFeedSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "BgpFeedSensor",
-                "team": "Dagger",
-                "description": "Ingests BGP route announcements from peering routers",
-            },
+        BgpFeedBouncer = PythonOperator(
+            task_id="BgpFeedBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "BgpFeedSensor",
-                "team": "Dagger",
+                "sensor_name": "BgpFeedBouncer",
                 "description": "Ingests BGP route announcements from peering routers",
-                "volume_per_day": 850_000,
             },
         )
 
-        DnsQueryLogSensor = PythonOperator(
-            task_id="DnsQueryLogSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "DnsQueryLogSensor",
-                "team": "Prism",
-                "description": "Taps DNS resolver query logs for resolution analytics",
-            },
+        DnsQueryLogBouncer = PythonOperator(
+            task_id="DnsQueryLogBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "DnsQueryLogSensor",
-                "team": "Prism",
+                "sensor_name": "DnsQueryLogBouncer",
                 "description": "Taps DNS resolver query logs for resolution analytics",
-                "volume_per_day": 12_000_000,
             },
         )
 
@@ -98,17 +77,11 @@ with DAG(
             task_id="SwitchPortCollector",
             python_callable=run_etl,
             params={
-                "etl_name": "SwitchPortCollector",
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 03:00 UTC",
                 "needs": SwitchPortCollector_task_config.needs,
                 "prefers": SwitchPortCollector_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "SwitchPortCollector",
-                "needs": SwitchPortCollector_task_config.needs, "prefers": SwitchPortCollector_task_config.prefers,
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 03:00 UTC",
                 "resources": SwitchPortCollector_resources.resources,
             },
         )
@@ -117,17 +90,11 @@ with DAG(
             task_id="BgpRouteSync",
             python_callable=run_etl,
             params={
-                "etl_name": "BgpRouteSync",
-                "category": "Transit/Peering",
-                "schedule": "Daily at 00:00 UTC",
                 "needs": BgpRouteSync_task_config.needs,
                 "prefers": BgpRouteSync_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "BgpRouteSync",
-                "needs": BgpRouteSync_task_config.needs, "prefers": BgpRouteSync_task_config.prefers,
-                "category": "Transit/Peering",
-                "schedule": "Daily at 00:00 UTC",
                 "resources": BgpRouteSync_resources.resources,
             },
         )
@@ -136,17 +103,11 @@ with DAG(
             task_id="BandwidthBillingAggregator",
             python_callable=run_etl,
             params={
-                "etl_name": "BandwidthBillingAggregator",
-                "category": "Bandwidth/Billing",
-                "schedule": "Hourly",
                 "needs": BandwidthBillingAggregator_task_config.needs,
                 "prefers": BandwidthBillingAggregator_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "BandwidthBillingAggregator",
-                "needs": BandwidthBillingAggregator_task_config.needs, "prefers": BandwidthBillingAggregator_task_config.prefers,
-                "category": "Bandwidth/Billing",
-                "schedule": "Hourly",
                 "resources": BandwidthBillingAggregator_resources.resources,
             },
         )
@@ -155,25 +116,19 @@ with DAG(
             task_id="DnsRecordSync",
             python_callable=run_etl,
             params={
-                "etl_name": "DnsRecordSync",
-                "category": "DNS/Resolution",
-                "schedule": "Hourly",
                 "needs": DnsRecordSync_task_config.needs,
                 "prefers": DnsRecordSync_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "DnsRecordSync",
-                "needs": DnsRecordSync_task_config.needs, "prefers": DnsRecordSync_task_config.prefers,
-                "category": "DNS/Resolution",
-                "schedule": "Hourly",
                 "resources": DnsRecordSync_resources.resources,
             },
         )
 
-    # Sensor wiring
-    SwitchTelemetrySensor >> SwitchPortCollector
-    BgpFeedSensor >> BgpRouteSync
-    DnsQueryLogSensor >> DnsRecordSync
+    # Bouncer wiring
+    SwitchTelemetryBouncer >> SwitchPortCollector
+    BgpFeedBouncer >> BgpRouteSync
+    DnsQueryLogBouncer >> DnsRecordSync
 
     # --- Dynamic dependency wiring from task configs ---
     etl_ops = {

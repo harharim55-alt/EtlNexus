@@ -7,7 +7,7 @@ export interface TopologyTask {
   task_group_id: string | null;
 }
 
-export interface TopologySensor {
+export interface TopologyBouncer {
   sensor_name: string;
   display_name: string;
   sensor_id: string | null;
@@ -21,7 +21,7 @@ export interface TopologyGraph {
   pipeline_task_id: string;
   pipeline_status: string;
   dag_ids: string[];
-  upstream_sensors: TopologySensor[];
+  upstream_bouncers: TopologyBouncer[];
   upstream_needs: TopologyTask[];
   upstream_prefers: TopologyTask[];
   downstream: TopologyTask[];
@@ -36,8 +36,8 @@ export interface UpstreamNode {
   task_group_id: string | null;
   depth: number;
   is_current: boolean;
-  is_sensor: boolean;
-  sensor_name: string | null;
+  is_bouncer: boolean;
+  bouncer_name: string | null;
 }
 
 export interface UpstreamEdge {
@@ -53,6 +53,6 @@ export interface UpstreamTopologyGraph {
   dag_ids: string[];
   nodes: UpstreamNode[];
   edges: UpstreamEdge[];
-  sensors: TopologySensor[];
+  bouncers: TopologyBouncer[];
   max_depth: number;
 }

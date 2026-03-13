@@ -11,7 +11,7 @@ from app.repositories.revision_repo import RevisionRepository
 from app.repositories.usage_repo import UsageRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.resource_repo import ResourceRepository
-from app.repositories.sensor_repo import SensorRepository
+from app.repositories.sensor_repo import BouncerRepository
 from app.repositories.team_repo import TeamRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.ai_service import AIService
@@ -21,7 +21,7 @@ from app.services.dag_summary_service import DagSummaryService
 from app.services.pipeline_service import PipelineService
 from app.services.resource_service import ResourceService
 from app.services.schema_matrix_service import SchemaMatrixService
-from app.services.sensor_service import SensorService
+from app.services.sensor_service import BouncerService
 from app.services.team_service import TeamService
 from app.services.usage_service import UsageService
 from app.services.visibility_service import VisibilityService
@@ -89,8 +89,8 @@ def get_resource_repo(session: AsyncSession = Depends(get_db_session)) -> Resour
     return ResourceRepository(session)
 
 
-def get_sensor_repo(session: AsyncSession = Depends(get_db_session)) -> SensorRepository:
-    return SensorRepository(session)
+def get_bouncer_repo(session: AsyncSession = Depends(get_db_session)) -> BouncerRepository:
+    return BouncerRepository(session)
 
 
 def get_user_repo(session: AsyncSession = Depends(get_db_session)) -> UserRepository:
@@ -115,7 +115,7 @@ def get_airflow_sync_service(
     resource_repo: ResourceRepository = Depends(get_resource_repo),
     airflow_repo: AirflowRepository = Depends(get_airflow_repo),
     dag_task_repo: DagTaskRepository = Depends(get_dag_task_repo),
-    sensor_repo: SensorRepository = Depends(get_sensor_repo),
+    sensor_repo: BouncerRepository = Depends(get_bouncer_repo),
     team_repo: TeamRepository = Depends(get_team_repo),
 ) -> AirflowSyncService:
     return AirflowSyncService(
@@ -138,12 +138,12 @@ def get_dag_summary_service(
     return DagSummaryService(dag_task_repo, resource_repo, airflow_repo)
 
 
-def get_sensor_service(
-    sensor_repo: SensorRepository = Depends(get_sensor_repo),
+def get_bouncer_service(
+    sensor_repo: BouncerRepository = Depends(get_bouncer_repo),
     dag_task_repo: DagTaskRepository = Depends(get_dag_task_repo),
     pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
-) -> SensorService:
-    return SensorService(sensor_repo, dag_task_repo, pipeline_repo)
+) -> BouncerService:
+    return BouncerService(sensor_repo, dag_task_repo, pipeline_repo)
 
 
 def get_ai_service(

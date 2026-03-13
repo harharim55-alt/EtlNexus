@@ -32,8 +32,8 @@ class DagTask(Base):
     synced_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     pipeline: Mapped["Pipeline | None"] = relationship(foreign_keys=[pipeline_id])
-    sensor: Mapped["Sensor | None"] = relationship(foreign_keys=[sensor_id])
+    sensor: Mapped["Bouncer | None"] = relationship(foreign_keys=[sensor_id])
 
 
 from app.models.pipeline import Pipeline  # noqa: E402, F401
-from app.models.sensor import Sensor  # noqa: E402, F401
+from app.models.sensor import Bouncer  # noqa: E402, F401

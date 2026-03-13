@@ -5,10 +5,10 @@ import { useLineage } from "@/hooks/use-lineage";
 import { useTopology } from "@/hooks/use-topology";
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { useNavigationStore } from "@/stores/navigation-store";
-import { useSensorStore } from "@/stores/sensor-store";
+import { useBouncerStore } from "@/stores/bouncer-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStatusStyle } from "@/lib/status-config";
-import type { TopologyTask, TopologySensor } from "@/types/topology";
+import type { TopologyTask, TopologyBouncer } from "@/types/topology";
 
 interface LineageTopologyProps {
   pipelineId: string;
@@ -101,14 +101,14 @@ function FlowArrow() {
   );
 }
 
-function SensorNode({
-  sensor,
+function BouncerNode({
+  bouncer,
   onClick,
 }: {
-  sensor: TopologySensor;
+  bouncer: TopologyBouncer;
   onClick: () => void;
 }) {
-  const status = sensor.status || "unknown";
+  const status = bouncer.status || "unknown";
   const cfg = getStatusStyle(status);
 
   return (
@@ -120,10 +120,10 @@ function SensorNode({
       <Radio className="w-3.5 h-3.5 text-teal-400/70 shrink-0" />
       <div className="min-w-0 flex-1">
         <span className="text-[11px] font-medium block truncate text-teal-200/80 group-hover/node:text-teal-200">
-          {sensor.display_name}
+          {bouncer.display_name}
         </span>
         <span className="text-[9px] font-mono text-slate-600 block truncate">
-          {sensor.sensor_name}
+          {bouncer.sensor_name}
         </span>
       </div>
       <span
@@ -156,15 +156,15 @@ function SectionLabel({
   );
 }
 
-function SensorDagGroup({
+function BouncerDagGroup({
   dagId,
-  sensors,
-  onSensorClick,
+  bouncers,
+  onBouncerClick,
   defaultOpen,
 }: {
   dagId: string;
-  sensors: TopologySensor[];
-  onSensorClick: (name: string) => void;
+  bouncers: TopologyBouncer[];
+  onBouncerClick: (name: string) => void;
   defaultOpen: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(defaultOpen);
@@ -181,7 +181,7 @@ function SensorDagGroup({
 
   useEffect(() => {
     measure();
-  }, [sensors.length, measure]);
+  }, [bouncers.length, measure]);
 
   return (
     <div className="rounded-lg border border-teal-500/[0.08] bg-teal-500/[0.01] overflow-hidden">
@@ -197,7 +197,7 @@ function SensorDagGroup({
           {dagId.replace(/_/g, " ")}
         </span>
         <span className="text-[9px] font-mono tabular-nums shrink-0 text-teal-400/50">
-          {sensors.length}
+          {bouncers.length}
         </span>
       </button>
 
@@ -209,11 +209,11 @@ function SensorDagGroup({
         className="transition-all duration-200 ease-out overflow-hidden"
       >
         <div ref={contentRef} className="px-2 pb-2 flex flex-col gap-1.5">
-          {sensors.map((s) => (
-            <SensorNode
+          {bouncers.map((s) => (
+            <BouncerNode
               key={s.sensor_name}
-              sensor={s}
-              onClick={() => onSensorClick(s.sensor_name)}
+              bouncer={s}
+              onClick={() => onBouncerClick(s.sensor_name)}
             />
           ))}
         </div>
@@ -396,11 +396,11 @@ function NeedsPrefDagGroup({
   );
 }
 
-function groupSensorsByDag(
-  sensors: TopologySensor[],
-): Record<string, TopologySensor[]> {
-  const groups: Record<string, TopologySensor[]> = {};
-  for (const s of sensors) {
+function groupBouncersByDag(
+  bouncers: TopologyBouncer[],
+): Record<string, TopologyBouncer[]> {
+  const groups: Record<string, TopologyBouncer[]> = {};
+  for (const s of bouncers) {
     for (const dagId of s.dag_ids) {
       if (!groups[dagId]) groups[dagId] = [];
       groups[dagId].push(s);
@@ -581,16 +581,16 @@ export function LineageTopology({ pipelineId }: LineageTopologyProps) {
     (s) => s.setSelectedPipelineId,
   );
   const setActiveTab = useNavigationStore((s) => s.setActiveTab);
-  const clearSensors = useSensorStore((s) => s.clearSensors);
-  const toggleSensor = useSensorStore((s) => s.toggleSensor);
+  const clearBouncers = useBouncerStore((s) => s.clearBouncers);
+  const toggleBouncer = useBouncerStore((s) => s.toggleBouncer);
 
-  const handleSensorClick = useCallback(
-    (sensorName: string) => {
-      clearSensors();
-      toggleSensor(sensorName);
-      setActiveTab("sensors");
+  const handleBouncerClick = useCallback(
+    (bouncerName: string) => {
+      clearBouncers();
+      toggleBouncer(bouncerName);
+      setActiveTab("bouncers");
     },
-    [clearSensors, toggleSensor, setActiveTab],
+    [clearBouncers, toggleBouncer, setActiveTab],
   );
 
   const isLoading = topoLoading || lineageLoading;
@@ -607,7 +607,7 @@ export function LineageTopology({ pipelineId }: LineageTopologyProps) {
   const destinationTables = lineage?.destination_tables ?? [];
   const hasTopology =
     topology &&
-    ((topology.upstream_sensors?.length ?? 0) > 0 ||
+    ((topology.upstream_bouncers?.length ?? 0) > 0 ||
       topology.upstream_needs.length > 0 ||
       topology.upstream_prefers.length > 0 ||
       topology.downstream.length > 0);
@@ -621,7 +621,7 @@ export function LineageTopology({ pipelineId }: LineageTopologyProps) {
     task_group_id: null,
   };
 
-  const hasSensors = (topology?.upstream_sensors?.length ?? 0) > 0;
+  const hasBouncers = (topology?.upstream_bouncers?.length ?? 0) > 0;
   const hasNeedsPrefers =
     (topology?.upstream_needs.length ?? 0) > 0 ||
     (topology?.upstream_prefers.length ?? 0) > 0;
@@ -680,41 +680,41 @@ export function LineageTopology({ pipelineId }: LineageTopologyProps) {
 
       {hasTopology ? (
         <div className="flex items-start justify-center gap-0">
-          {/* Sensors column (leftmost) — grouped by DAG */}
-          {hasSensors && (() => {
-            const sensorsByDag = groupSensorsByDag(topology!.upstream_sensors);
-            const sensorDagIds = Object.keys(sensorsByDag).sort();
-            const isSingleGroup = sensorDagIds.length === 1;
+          {/* Bouncers column (leftmost) — grouped by DAG */}
+          {hasBouncers && (() => {
+            const bouncersByDag = groupBouncersByDag(topology!.upstream_bouncers);
+            const bouncerDagIds = Object.keys(bouncersByDag).sort();
+            const isSingleGroup = bouncerDagIds.length === 1;
 
             return (
               <>
                 <div className="flex-1 min-w-0 max-w-[200px] self-center">
                   <span className="text-[9px] font-mono uppercase tracking-[0.15em] text-teal-400/50 mb-2 block text-center">
-                    Sensors
+                    Bouncers
                     <span className="text-teal-500/30 ml-1.5">
-                      ({topology!.upstream_sensors.length})
+                      ({topology!.upstream_bouncers.length})
                     </span>
                   </span>
 
                   {isSingleGroup ? (
                     <div className="flex flex-col gap-1.5">
-                      {topology!.upstream_sensors.map((s) => (
-                        <SensorNode
+                      {topology!.upstream_bouncers.map((s) => (
+                        <BouncerNode
                           key={s.sensor_name}
-                          sensor={s}
-                          onClick={() => handleSensorClick(s.sensor_name)}
+                          bouncer={s}
+                          onClick={() => handleBouncerClick(s.sensor_name)}
                         />
                       ))}
                     </div>
                   ) : (
                     <div className="flex flex-col gap-1">
-                      {sensorDagIds.map((dagId) => (
-                        <SensorDagGroup
+                      {bouncerDagIds.map((dagId) => (
+                        <BouncerDagGroup
                           key={dagId}
                           dagId={dagId}
-                          sensors={sensorsByDag[dagId]}
-                          onSensorClick={handleSensorClick}
-                          defaultOpen={sensorDagIds.length <= 3}
+                          bouncers={bouncersByDag[dagId]}
+                          onBouncerClick={handleBouncerClick}
+                          defaultOpen={bouncerDagIds.length <= 3}
                         />
                       ))}
                     </div>

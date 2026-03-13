@@ -11,7 +11,7 @@ from airflow.operators.python import PythonOperator
 from airflow.utils.task_group import TaskGroup
 
 from etl_runner import run_etl
-from sensor_runner import run_sensor
+from sensor_runner import run_bouncer
 
 from daily.task_configs import SwitchPortCollector_task_config
 from hourly.task_configs import NetflowCapture_task_config
@@ -35,37 +35,23 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Sensors group (data ingestion) ---
-    with TaskGroup("Dagger-Sensors", prefix_group_id=True) as sensors:
-        SwitchTelemetrySensor = PythonOperator(
-            task_id="SwitchTelemetrySensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "SwitchTelemetrySensor",
-                "team": "Dagger",
-                "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-            },
+    # --- Bouncers group (data ingestion) ---
+    with TaskGroup("Dagger-Bouncers", prefix_group_id=True) as bouncers:
+        SwitchTelemetryBouncer = PythonOperator(
+            task_id="SwitchTelemetryBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "SwitchTelemetrySensor",
-                "team": "Dagger",
+                "sensor_name": "SwitchTelemetryBouncer",
                 "description": "Streams switch interface telemetry via gNMI/SNMP polling",
-                "volume_per_day": 2_400_000,
             },
         )
 
-        SnmpTrapSensor = PythonOperator(
-            task_id="SnmpTrapSensor",
-            python_callable=run_sensor,
-            params={
-                "sensor_name": "SnmpTrapSensor",
-                "team": "Oasis",
-                "description": "Receives SNMP trap notifications for device health events",
-            },
+        SnmpTrapBouncer = PythonOperator(
+            task_id="SnmpTrapBouncer",
+            python_callable=run_bouncer,
             op_kwargs={
-                "sensor_name": "SnmpTrapSensor",
-                "team": "Oasis",
+                "sensor_name": "SnmpTrapBouncer",
                 "description": "Receives SNMP trap notifications for device health events",
-                "volume_per_day": 420_000,
             },
         )
 
@@ -75,17 +61,11 @@ with DAG(
             task_id="SwitchPortCollector",
             python_callable=run_etl,
             params={
-                "etl_name": "SwitchPortCollector",
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 03:00 UTC",
                 "needs": SwitchPortCollector_task_config.needs,
                 "prefers": SwitchPortCollector_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "SwitchPortCollector",
-                "needs": SwitchPortCollector_task_config.needs, "prefers": SwitchPortCollector_task_config.prefers,
-                "category": "Network Infrastructure",
-                "schedule": "Daily at 03:00 UTC",
                 "resources": SwitchPortCollector_resources.resources,
             },
         )
@@ -94,24 +74,18 @@ with DAG(
             task_id="NetflowCapture",
             python_callable=run_etl,
             params={
-                "etl_name": "NetflowCapture",
-                "category": "Traffic Analytics",
-                "schedule": "Every 4 Hours",
                 "needs": NetflowCapture_task_config.needs,
                 "prefers": NetflowCapture_task_config.prefers,
             },
             op_kwargs={
                 "etl_name": "NetflowCapture",
-                "needs": NetflowCapture_task_config.needs, "prefers": NetflowCapture_task_config.prefers,
-                "category": "Traffic Analytics",
-                "schedule": "Every 4 Hours",
                 "resources": NetflowCapture_resources.resources,
             },
         )
 
-    # Sensor wiring
-    SwitchTelemetrySensor >> SwitchPortCollector
-    SnmpTrapSensor >> SwitchPortCollector
+    # Bouncer wiring
+    SwitchTelemetryBouncer >> SwitchPortCollector
+    SnmpTrapBouncer >> SwitchPortCollector
 
     # --- Dynamic dependency wiring from task configs ---
     etl_ops = {
