@@ -661,7 +661,7 @@ class AirflowSyncService:
                 start_date = self._parse_datetime(inst.get("start_date"))
                 end_date = self._parse_datetime(inst.get("end_date"))
 
-                is_new = await self.resource_repo.insert_run_if_new({
+                await self.resource_repo.upsert_run({
                     "pipeline_id": pipeline_id,
                     "dag_id": dag_id,
                     "dag_run_id": dag_run_id,
@@ -670,19 +670,16 @@ class AirflowSyncService:
                     "end_date": end_date,
                     "status": status,
                 })
-                if is_new:
-                    history_count += 1
+                history_count += 1
 
-                needs_actuals = False
-                if is_new and status == "success":
-                    needs_actuals = True
-                elif not is_new and status == "success":
+                # Upsert clears actuals on re-run, so always
+                # re-fetch for successful runs
+                if status == "success":
                     needs_actuals = await self.resource_repo.has_null_actuals(
                         pipeline_id, dag_id, dag_run_id
                     )
-
-                if needs_actuals:
-                    needs_log_fetch.append((dag_id, dag_run_id))
+                    if needs_actuals:
+                        needs_log_fetch.append((dag_id, dag_run_id))
                 break
 
         # Fetch all needed logs in parallel, then update actuals sequentially

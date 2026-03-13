@@ -28,6 +28,7 @@ class BouncerRepository:
             .where(Bouncer.team == team)
             .order_by(Bouncer.display_name)
         )
+        stmt = self._apply_date_filter(stmt, date_from, date_to)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

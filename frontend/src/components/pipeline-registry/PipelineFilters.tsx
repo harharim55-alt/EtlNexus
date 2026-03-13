@@ -1,6 +1,7 @@
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { X } from "lucide-react";
 import { STATUS_CONFIG, STATUS_SEVERITY_ORDER } from "@/lib/status-config";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
 
 const INACTIVE_PILL =
   "text-slate-500 bg-white/[0.02] border-white/5 hover:border-white/15 hover:text-slate-400";
@@ -111,6 +112,11 @@ export function PipelineFilters({ availableTeams, availableDags, availableStatus
           })}
         </FilterSection>
       )}
+
+      {/* Last Run date range */}
+      <FilterSection label="Last Run">
+        <DateRangePicker />
+      </FilterSection>
     </div>
   );
 }

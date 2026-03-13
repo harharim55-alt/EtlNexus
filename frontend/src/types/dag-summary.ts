@@ -26,6 +26,7 @@ export interface DagSummary {
   typical_finish_hour: string | null;
   total_runs_30d: number;
   dag_success_rate_30d: number | null;
+  period_label?: string;
   tasks: DagTaskSummary[];
 }
 
@@ -35,6 +36,7 @@ export interface DagSummaryAggregate {
   active_dags: number;
   overall_success_rate: number | null;
   total_runs_30d: number;
+  period_label?: string;
 }
 
 export interface DagSummaryResponse {

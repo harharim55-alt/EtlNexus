@@ -48,7 +48,7 @@ export function AggregateBar({ aggregate }: AggregateBarProps) {
     },
     {
       icon: Timer,
-      label: "Runs (30d)",
+      label: `Runs (${aggregate.period_label ?? "30d"})`,
       value: String(aggregate.total_runs_30d),
       sub: null,
       color: "text-white",

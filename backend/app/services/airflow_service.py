@@ -139,7 +139,7 @@ class AirflowService:
                 end_date = self._parse_datetime(task.get("end_date"))
 
                 if duration is not None:
-                    is_new = await self.resource_repo.insert_run_if_new({
+                    await self.resource_repo.upsert_run({
                         "pipeline_id": pipeline.id,
                         "dag_id": dag_id,
                         "dag_run_id": dag_run_id,
@@ -148,22 +148,18 @@ class AirflowService:
                         "end_date": end_date,
                         "status": status,
                     })
+                    history_recorded += 1
 
-                    if is_new:
-                        history_recorded += 1
-
-                    needs_actuals = False
-                    if is_new and status == "success":
-                        needs_actuals = True
-                    elif not is_new and status == "success":
+                    # Upsert clears actuals on re-run, so always
+                    # re-fetch for successful runs
+                    if status == "success":
                         needs_actuals = await self.resource_repo.has_null_actuals(
                             pipeline.id, dag_id, dag_run_id
                         )
-
-                    if needs_actuals:
-                        log_fetch_requests.append(
-                            (dag_id, dag_run_id, airflow_task_id, pipeline, status)
-                        )
+                        if needs_actuals:
+                            log_fetch_requests.append(
+                                (dag_id, dag_run_id, airflow_task_id, pipeline, status)
+                            )
 
                 if is_latest:
                     if pid in best:

@@ -2,6 +2,7 @@
 
 import logging
 import re
+from datetime import datetime
 
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
@@ -22,7 +23,12 @@ class UsageService:
         self.pipeline_repo = pipeline_repo
         self.dag_task_repo = dag_task_repo
 
-    async def get_pipeline_usage(self, etl_name: str) -> PipelineUsageResponse:
+    async def get_pipeline_usage(
+        self,
+        etl_name: str,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> PipelineUsageResponse:
         """Find downstream consumers from cached DAG data and enrich with PostgreSQL usage data.
 
         Returns the current pipeline as the first entry, followed by downstream consumers.
@@ -63,7 +69,9 @@ class UsageService:
                     }
 
         # 4. Load enrichment from PostgreSQL (keyed by etl_name = task_id)
-        enrichment = await self.usage_repo.get_enrichment_map(etl_name)
+        enrichment = await self.usage_repo.get_enrichment_map(
+            etl_name, date_from=date_from, date_to=date_to,
+        )
 
         # 5. Build downstream consumer entries
         current_category = current_pipeline.category if current_pipeline else ""

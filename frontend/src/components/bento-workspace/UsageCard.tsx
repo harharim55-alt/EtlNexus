@@ -2,6 +2,7 @@ import { Activity, Workflow, Globe } from "lucide-react";
 import { usePipelineUsage } from "@/hooks/use-pipeline-usage";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStatusStyle } from "@/lib/status-config";
+import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import type { PipelineUsage } from "@/types/usage";
 
 interface UsageCardProps {
@@ -95,11 +96,14 @@ export function UsageCard({ etlName }: UsageCardProps) {
         <h3 className="text-[11px] font-mono uppercase tracking-widest text-slate-500 flex items-center gap-2">
           <Activity className="w-3.5 h-3.5" /> Consumers & Usage
         </h3>
-        {!isLoading && consumers.length > 0 && (
-          <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400">
-            {consumers.length} downstream
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {!isLoading && consumers.length > 0 && (
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400">
+              {consumers.length} downstream
+            </span>
+          )}
+          <DateRangePicker />
+        </div>
       </div>
 
       {/* Content */}

@@ -51,11 +51,43 @@ class ResourceRepository:
 
     # --- Run History (actual usage + duration) ---
 
-    async def insert_run_if_new(self, data: dict) -> bool:
-        """Insert a run record if it doesn't already exist. Returns True if inserted."""
+    async def upsert_run(self, data: dict) -> bool:
+        """Insert or update a run record (re-runs overwrite old data).
+
+        On conflict (same pipeline_id + dag_id + dag_run_id), overwrites
+        start_date/end_date/duration/status and clears actuals so they
+        get re-fetched from logs for the new attempt.
+        """
         stmt = pg_insert(PipelineRunHistory).values(**data)
-        stmt = stmt.on_conflict_do_nothing(
-            constraint="uq_run_history_pipeline_dag_run"
+        stmt = stmt.on_conflict_do_update(
+            constraint="uq_run_history_pipeline_dag_run",
+            set_={
+                "duration_seconds": stmt.excluded.duration_seconds,
+                "start_date": stmt.excluded.start_date,
+                "end_date": stmt.excluded.end_date,
+                "status": stmt.excluded.status,
+                # Clear actuals — they belong to the previous attempt
+                "driver_memory_used_mb": None,
+                "executor_memory_peak_mb": None,
+                "cpu_utilization_pct": None,
+                "executors_active": None,
+                "spark_application_id": None,
+                "executor_run_time_ms": None,
+                "executor_cpu_time_ms": None,
+                "jvm_gc_time_ms": None,
+                "shuffle_read_bytes": None,
+                "shuffle_write_bytes": None,
+                "input_bytes": None,
+                "output_bytes": None,
+                "memory_bytes_spilled": None,
+                "disk_bytes_spilled": None,
+                "peak_execution_memory": None,
+                "result_size_bytes": None,
+                "num_tasks": None,
+                "num_stages": None,
+                "metrics_source": None,
+                "execution_plan": None,
+            },
         )
         result = await self.session.execute(stmt)
         await self.session.flush()
@@ -100,7 +132,9 @@ class ResourceRepository:
             run.execution_plan = actuals.get("execution_plan")
             await self.session.flush()
 
-    async def get_latest_execution_plan(self, pipeline_id: uuid.UUID) -> PipelineRunHistory | None:
+    async def get_latest_execution_plan(
+        self, pipeline_id: uuid.UUID
+    ) -> PipelineRunHistory | None:
         """Get the most recent successful run that has an execution plan."""
         stmt = (
             select(PipelineRunHistory)
@@ -114,6 +148,64 @@ class ResourceRepository:
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_execution_plan_by_run(
+        self, pipeline_id: uuid.UUID, dag_run_id: str
+    ) -> PipelineRunHistory | None:
+        """Get execution plan for a specific DAG run."""
+        stmt = (
+            select(PipelineRunHistory)
+            .where(
+                PipelineRunHistory.pipeline_id == pipeline_id,
+                PipelineRunHistory.dag_run_id == dag_run_id,
+                PipelineRunHistory.execution_plan.isnot(None),
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_execution_plan_runs(
+        self, pipeline_id: uuid.UUID, skip: int = 0, limit: int = 20
+    ) -> tuple[list[dict], int]:
+        """List runs that have an execution plan, paginated. Returns (items, total)."""
+        conditions = [
+            PipelineRunHistory.pipeline_id == pipeline_id,
+            PipelineRunHistory.execution_plan.isnot(None),
+            PipelineRunHistory.status == "success",
+        ]
+
+        count_stmt = (
+            select(func.count())
+            .select_from(PipelineRunHistory)
+            .where(*conditions)
+        )
+        count_result = await self.session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        stmt = (
+            select(
+                PipelineRunHistory.dag_run_id,
+                PipelineRunHistory.dag_id,
+                PipelineRunHistory.start_date,
+                PipelineRunHistory.status,
+            )
+            .where(*conditions)
+            .order_by(PipelineRunHistory.start_date.desc().nullslast())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        items = [
+            {
+                "dag_run_id": row.dag_run_id,
+                "dag_id": row.dag_id,
+                "start_date": row.start_date.isoformat() if row.start_date else None,
+                "status": row.status,
+            }
+            for row in result.all()
+        ]
+        return items, total
 
     async def has_null_actuals(
         self,
@@ -133,20 +225,47 @@ class ResourceRepository:
         return result.scalar_one_or_none() is not None
 
     async def get_recent_runs(
-        self, pipeline_id: uuid.UUID, limit: int = 20
+        self,
+        pipeline_id: uuid.UUID,
+        limit: int = 20,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
     ) -> list[PipelineRunHistory]:
+        conditions = [PipelineRunHistory.pipeline_id == pipeline_id]
+        if date_from:
+            conditions.append(PipelineRunHistory.start_date >= date_from)
+        if date_to:
+            conditions.append(PipelineRunHistory.start_date <= date_to)
+
         stmt = (
             select(PipelineRunHistory)
-            .where(PipelineRunHistory.pipeline_id == pipeline_id)
+            .where(*conditions)
             .order_by(PipelineRunHistory.start_date.desc().nullslast())
-            .limit(limit)
         )
+        # When a custom date range is given, return all runs in that range;
+        # otherwise fall back to the fixed limit.
+        if not date_from and not date_to:
+            stmt = stmt.limit(limit)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_run_stats(self, pipeline_id: uuid.UUID, days: int = 30) -> dict:
-        """Compute aggregate stats from run history (bounded to last N days)."""
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    async def get_run_stats(
+        self,
+        pipeline_id: uuid.UUID,
+        days: int = 30,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> dict:
+        """Compute aggregate stats from run history (bounded by date range or last N days)."""
+        cutoff = date_from or (datetime.now(timezone.utc) - timedelta(days=days))
+        conditions = [
+            PipelineRunHistory.pipeline_id == pipeline_id,
+            PipelineRunHistory.duration_seconds.isnot(None),
+            PipelineRunHistory.start_date >= cutoff,
+        ]
+        if date_to:
+            conditions.append(PipelineRunHistory.start_date <= date_to)
+
         stmt = (
             select(
                 func.count().label("run_count"),
@@ -176,11 +295,7 @@ class ResourceRepository:
                 func.avg(PipelineRunHistory.disk_bytes_spilled).label("avg_disk_spilled"),
                 func.avg(PipelineRunHistory.peak_execution_memory).label("avg_peak_exec_mem"),
             )
-            .where(
-                PipelineRunHistory.pipeline_id == pipeline_id,
-                PipelineRunHistory.duration_seconds.isnot(None),
-                PipelineRunHistory.start_date >= cutoff,
-            )
+            .where(*conditions)
         )
         result = await self.session.execute(stmt)
         row = result.one()
@@ -213,9 +328,23 @@ class ResourceRepository:
 
     # --- DAG-level aggregations ---
 
-    async def get_dag_run_stats(self, dag_id: str, days: int = 30) -> dict:
-        """Aggregate run history for all tasks in a DAG (bounded to last N days)."""
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+    async def get_dag_run_stats(
+        self,
+        dag_id: str,
+        days: int = 30,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> dict:
+        """Aggregate run history for all tasks in a DAG (bounded by date range or last N days)."""
+        cutoff = date_from or (datetime.now(timezone.utc) - timedelta(days=days))
+        conditions = [
+            PipelineRunHistory.dag_id == dag_id,
+            PipelineRunHistory.duration_seconds.isnot(None),
+            PipelineRunHistory.start_date >= cutoff,
+        ]
+        if date_to:
+            conditions.append(PipelineRunHistory.start_date <= date_to)
+
         stmt = (
             select(
                 func.count().label("run_count"),
@@ -227,11 +356,7 @@ class ResourceRepository:
                     case((PipelineRunHistory.status == "success", 1), else_=0)
                 ).label("success_count"),
             )
-            .where(
-                PipelineRunHistory.dag_id == dag_id,
-                PipelineRunHistory.duration_seconds.isnot(None),
-                PipelineRunHistory.start_date >= cutoff,
-            )
+            .where(*conditions)
         )
         result = await self.session.execute(stmt)
         row = result.one()
@@ -275,9 +400,24 @@ class ResourceRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_typical_finish_hour(self, dag_id: str, days: int = 30) -> str | None:
+    async def get_typical_finish_hour(
+        self,
+        dag_id: str,
+        days: int = 30,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> str | None:
         """Compute the average finish hour for a DAG from successful runs."""
-        cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+        cutoff = date_from or (datetime.now(timezone.utc) - timedelta(days=days))
+        conditions = [
+            PipelineRunHistory.dag_id == dag_id,
+            PipelineRunHistory.status == "success",
+            PipelineRunHistory.end_date.isnot(None),
+            PipelineRunHistory.start_date >= cutoff,
+        ]
+        if date_to:
+            conditions.append(PipelineRunHistory.start_date <= date_to)
+
         stmt = (
             select(
                 func.avg(
@@ -285,12 +425,7 @@ class ResourceRepository:
                     + extract("minute", PipelineRunHistory.end_date) / 60.0
                 ).label("avg_hour")
             )
-            .where(
-                PipelineRunHistory.dag_id == dag_id,
-                PipelineRunHistory.status == "success",
-                PipelineRunHistory.end_date.isnot(None),
-                PipelineRunHistory.start_date >= cutoff,
-            )
+            .where(*conditions)
         )
         result = await self.session.execute(stmt)
         avg_hour = result.scalar_one_or_none()

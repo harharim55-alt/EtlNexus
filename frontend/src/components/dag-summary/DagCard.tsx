@@ -313,7 +313,7 @@ export function DagCard({ dag }: DagCardProps) {
       {/* 30d History */}
       {dag.total_runs_30d > 0 && (
         <div className="flex items-center gap-3 text-[10px] font-mono text-slate-600">
-          <span>{dag.total_runs_30d} runs (30d)</span>
+          <span>{dag.total_runs_30d} runs ({dag.period_label ?? "30d"})</span>
           {dag.dag_success_rate_30d != null && (
             <>
               <span className="text-white/10">|</span>

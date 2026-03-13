@@ -1,4 +1,5 @@
 import uuid
+from datetime import datetime
 
 from app.cache import join_suggestions_cache, pipeline_list_cache
 from app.models.pipeline import Pipeline
@@ -34,10 +35,12 @@ class PipelineService:
         is_admin: bool = False,
         skip: int = 0,
         limit: int = 200,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
     ) -> PipelineListResponse:
-        # Build cache key — only cache unfiltered (no search query) requests
+        # Build cache key — only cache unfiltered (no search query, no date range) requests
         cache_key: str | None = None
-        if not query:
+        if not query and not date_from and not date_to:
             if is_admin:
                 cache_key = f"all:{skip}:{limit}"
             elif user_team_ids:
@@ -58,12 +61,16 @@ class PipelineService:
             query=query,
             skip=skip,
             limit=limit,
+            last_run_after=date_from,
+            last_run_before=date_to,
         )
 
         items = [self._to_list_item(p) for p in pipelines]
         if pipelines:
             ids = [p.id for p in pipelines]
-            rates = await self.pipeline_repo.get_success_rates(ids)
+            rates = await self.pipeline_repo.get_success_rates(
+                ids, date_from=date_from, date_to=date_to,
+            )
             for item in items:
                 item.success_rate = rates.get(item.id)
 
