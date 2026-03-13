@@ -32,7 +32,7 @@ async def list_teams(
     teams = await service.list_teams()
     return [
         TeamResponse(
-            id=str(t.id),
+            id=t.id,
             name=t.name,
             description=t.description,
             source=t.source,
@@ -67,7 +67,7 @@ async def get_team(
 
     members = [
         TeamMemberInfo(
-            id=str(ut.user.id) if ut.user else str(ut.user_id),
+            id=ut.user.id if ut.user else ut.user_id,
             email=ut.user.email if ut.user else "",
             display_name=ut.user.display_name if ut.user else "",
             role=ut.user.role if ut.user else "member",
@@ -78,7 +78,7 @@ async def get_team(
     ]
 
     return TeamDetailResponse(
-        id=str(team.id),
+        id=team.id,
         name=team.name,
         description=team.description,
         source=team.source,
@@ -112,7 +112,7 @@ async def get_team_pipelines(
     pipelines = await service.get_team_pipelines(team_id)
     return [
         PipelineListItem(
-            id=str(p.id),
+            id=p.id,
             name=p.name,
             description=p.description,
             category=p.category,

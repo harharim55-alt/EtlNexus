@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import delete, distinct, func, select
+from sqlalchemy import delete, distinct, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -99,16 +99,19 @@ class DagTaskRepository:
 
     async def delete_stale(self, current_dag_task_pairs: set[tuple[str, str]]) -> int:
         """Delete rows not in the current set of (dag_id, task_id) pairs."""
-        all_stmt = select(DagTask)
-        result = await self.session.execute(all_stmt)
-        all_rows = list(result.scalars().all())
-
-        deleted = 0
-        for row in all_rows:
-            if (row.dag_id, row.task_id) not in current_dag_task_pairs:
-                await self.session.delete(row)
-                deleted += 1
-
-        if deleted:
+        if not current_dag_task_pairs:
+            # No current pairs — delete everything
+            result = await self.session.execute(delete(DagTask))
             await self.session.flush()
-        return deleted
+            return result.rowcount  # type: ignore[return-value]
+
+        # Bulk DELETE using composite key NOT IN
+        stmt = delete(DagTask).where(
+            ~tuple_(DagTask.dag_id, DagTask.task_id).in_(
+                list(current_dag_task_pairs)
+            )
+        )
+        result = await self.session.execute(stmt)
+        if result.rowcount:
+            await self.session.flush()
+        return result.rowcount  # type: ignore[return-value]

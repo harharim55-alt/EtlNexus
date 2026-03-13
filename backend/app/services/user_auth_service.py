@@ -1,10 +1,12 @@
 """UserAuthService — JIT user provisioning and SSO team reconciliation."""
 
+import asyncio
 import hashlib
 import json
 import logging
 import time
 import uuid
+from collections import OrderedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -16,11 +18,13 @@ from app.repositories.user_repo import UserRepository
 
 logger = logging.getLogger(__name__)
 
-# Short-TTL cache to avoid repeated DB round-trips for the same SSO user
+# Short-TTL LRU cache to avoid repeated DB round-trips for the same SSO user
 # within a short window.  Keyed by (sub, claims_hash) → (user_id, timestamp).
-_PROVISION_CACHE: dict[str, tuple[uuid.UUID, float]] = {}
-_CACHE_TTL_SECONDS = 30
+# Uses OrderedDict for LRU eviction instead of hard-clearing on overflow.
+_PROVISION_CACHE: OrderedDict[str, tuple[uuid.UUID, float]] = OrderedDict()
+_CACHE_TTL_SECONDS = 120
 _CACHE_MAX_SIZE = 500
+_CACHE_LOCK = asyncio.Lock()
 
 
 def _claims_cache_key(claims: dict) -> str:
@@ -40,14 +44,16 @@ def _claims_cache_key(claims: dict) -> str:
 
 
 def _evict_stale_entries() -> None:
-    """Remove expired entries (and cap size) from the provision cache."""
+    """Remove expired entries and LRU-evict oldest 10% if over capacity."""
     now = time.monotonic()
     stale = [k for k, (_, ts) in _PROVISION_CACHE.items() if now - ts > _CACHE_TTL_SECONDS]
     for k in stale:
         del _PROVISION_CACHE[k]
-    # Hard cap to prevent unbounded growth
+    # LRU eviction: remove oldest 10% instead of clearing everything
     if len(_PROVISION_CACHE) > _CACHE_MAX_SIZE:
-        _PROVISION_CACHE.clear()
+        evict_count = max(1, _CACHE_MAX_SIZE // 10)
+        for _ in range(min(evict_count, len(_PROVISION_CACHE))):
+            _PROVISION_CACHE.popitem(last=False)
 
 
 class UserAuthService:
@@ -59,33 +65,52 @@ class UserAuthService:
     async def upsert_from_claims(self, claims: dict) -> User:
         """Create or update a User from decoded JWT claims and sync team memberships.
 
-        Uses a short-TTL in-memory cache to skip the full provisioning flow
+        Uses a short-TTL LRU cache to skip the full provisioning flow
         when the same user hits multiple endpoints within a short window.
         """
         cache_key = _claims_cache_key(claims)
         now = time.monotonic()
 
         # Check cache — if hit, just load the user by ID (1 query instead of 5+)
-        cached = _PROVISION_CACHE.get(cache_key)
+        async with _CACHE_LOCK:
+            cached = _PROVISION_CACHE.get(cache_key)
+            if cached:
+                user_id, ts = cached
+                if now - ts < _CACHE_TTL_SECONDS:
+                    _PROVISION_CACHE.move_to_end(cache_key)  # LRU refresh
+                else:
+                    cached = None
+                    del _PROVISION_CACHE[cache_key]
+
         if cached:
-            user_id, ts = cached
-            if now - ts < _CACHE_TTL_SECONDS:
-                user = await self._user_repo.get_by_id(user_id)
-                if user:
-                    return user
-            # Expired or user gone — fall through to full provisioning
-            del _PROVISION_CACHE[cache_key]
+            user = await self._user_repo.get_by_id(cached[0])
+            if user:
+                return user
 
         user = await self._full_provision(claims)
 
         # Populate cache
-        _evict_stale_entries()
-        _PROVISION_CACHE[cache_key] = (user.id, now)
+        async with _CACHE_LOCK:
+            _evict_stale_entries()
+            _PROVISION_CACHE[cache_key] = (user.id, now)
 
         return user
 
     async def _full_provision(self, claims: dict) -> User:
-        """Full JIT provisioning: upsert user + reconcile team memberships."""
+        """Full JIT provisioning: upsert user + reconcile team memberships.
+
+        Transaction strategy:
+        - Uses ``flush()`` (not ``commit()``) so the caller controls commit
+          via the ``get_db_session`` dependency scope.
+        - ``upsert_from_sso`` uses PostgreSQL ``ON CONFLICT DO UPDATE`` for
+          atomic user creation even under concurrent first-login requests.
+        - Team memberships are reconciled additively (new groups added) and
+          subtractively (removed groups pruned) within the same transaction.
+        - If any step fails, the entire provisioning is rolled back by the
+          session's transaction scope (no partial user/team state persists).
+        - After reconciliation, ``session.expire()`` forces a fresh load of
+          the updated ``team_memberships`` relationship.
+        """
         sub: str = claims.get("sub", "")
         email: str = claims.get("email", "")
         display_name: str = (
@@ -102,11 +127,8 @@ class UserAuthService:
             ut.team_id for ut in user.team_memberships
         }
 
-        # Resolve / create a Team row for each group in the token
-        sso_teams = []
-        for group_name in groups:
-            team = await self._team_repo.get_or_create(group_name, source="sso")
-            sso_teams.append(team)
+        # Resolve / create Team rows for all groups in one batch
+        sso_teams = await self._team_repo.get_or_create_many(groups, source="sso")
 
         sso_team_ids: set[uuid.UUID] = {t.id for t in sso_teams}
 

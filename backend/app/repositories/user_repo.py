@@ -83,7 +83,7 @@ class UserRepository:
         assert loaded is not None
         return loaded
 
-    async def get_all(self) -> list[User]:
+    async def get_all(self, skip: int = 0, limit: int = 200) -> list[User]:
         """List all users with team memberships."""
         stmt = (
             select(User)
@@ -91,9 +91,17 @@ class UserRepository:
                 selectinload(User.team_memberships).selectinload(UserTeam.team)
             )
             .order_by(User.display_name)
+            .offset(skip)
+            .limit(limit)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_all(self) -> int:
+        """Count total users."""
+        stmt = select(func.count()).select_from(User)
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
 
     async def update_role(self, user_id: uuid.UUID, role: str) -> User | None:
         """Update user's role (admin only)."""

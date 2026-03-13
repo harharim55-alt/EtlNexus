@@ -47,12 +47,14 @@ class TeamRepository:
         await self.session.flush()
         return team
 
-    async def get_all(self) -> list[Team]:
+    async def get_all(self, skip: int = 0, limit: int = 200) -> list[Team]:
         """List all teams with member counts."""
         stmt = (
             select(Team)
             .options(selectinload(Team.members))
             .order_by(Team.name)
+            .offset(skip)
+            .limit(limit)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
@@ -62,3 +64,32 @@ class TeamRepository:
         stmt = select(Team.name)
         result = await self.session.execute(stmt)
         return {row[0] for row in result.all()}
+
+    async def get_or_create_many(
+        self, names: list[str], source: str = "sso"
+    ) -> list[Team]:
+        """Batch-resolve teams: single SELECT, then create any missing.
+
+        Reduces N serial DB round-trips to 1 SELECT + 1 flush for new teams.
+        """
+        if not names:
+            return []
+
+        stmt = select(Team).where(Team.name.in_(names))
+        result = await self.session.execute(stmt)
+        existing = {t.name: t for t in result.scalars().all()}
+
+        all_teams = []
+        created_any = False
+        for name in names:
+            if name in existing:
+                all_teams.append(existing[name])
+            else:
+                team = Team(id=uuid.uuid4(), name=name, source=source)
+                self.session.add(team)
+                all_teams.append(team)
+                created_any = True
+
+        if created_any:
+            await self.session.flush()
+        return all_teams

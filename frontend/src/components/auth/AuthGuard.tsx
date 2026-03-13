@@ -9,6 +9,13 @@ interface AuthGuardProps {
   children: React.ReactNode;
 }
 
+/**
+ * Route guard that gates children behind authentication.
+ *
+ * When SSO is disabled, renders children immediately (default user was already
+ * set by `AuthBootstrap`). When SSO is enabled, delegates to `SSOGuard` which
+ * manages the OIDC login flow, token syncing, and user info fetching.
+ */
 export function AuthGuard({ children }: AuthGuardProps) {
   const ssoEnabled = useAuthStore((s) => s.ssoEnabled);
 
@@ -20,6 +27,14 @@ export function AuthGuard({ children }: AuthGuardProps) {
   return <SSOGuard>{children}</SSOGuard>;
 }
 
+/**
+ * SSO-specific guard — must only render inside `OidcAuthProvider`.
+ *
+ * Handles: OIDC redirect callback cleanup (removes code/state query params),
+ * token syncing to the Zustand auth store, and user info fetching via
+ * `useCurrentUser`. Shows a loading skeleton while authenticating, or the
+ * `LoginPage` if the user hasn't completed OIDC login yet.
+ */
 function SSOGuard({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   const setToken = useAuthStore((s) => s.setToken);

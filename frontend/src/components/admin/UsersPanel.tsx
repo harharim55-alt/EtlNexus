@@ -6,36 +6,34 @@ import { fetchPipelines } from "@/api/pipelines";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { UserInitials } from "@/components/shared/UserInitials";
+import { ROLE_STYLES, GRANT_LEVEL_STYLES } from "@/lib/admin-styles";
 
 const ROLES = ["admin", "member", "viewer"] as const;
 
-const ROLE_STYLES: Record<string, string> = {
-  admin: "text-rose-400 bg-rose-500/10 border-rose-500/20",
-  member: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
-  viewer: "text-slate-400 bg-slate-500/10 border-slate-500/20",
-};
-
-function UserInitials({ name }: { name: string }) {
-  const initials = name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-  return (
-    <div className="size-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-[11px] font-semibold text-indigo-400 select-none shrink-0">
-      {initials}
-    </div>
-  );
-}
-
 export function UsersPanel() {
-  const { data: users, isLoading, error, refetch } = useAdminUsers();
-  const { data: grants } = useAdminGrants();
+  const {
+    data: usersData,
+    fetchNextPage: fetchNextUsers,
+    hasNextPage: hasMoreUsers,
+    isFetchingNextPage: isFetchingMoreUsers,
+    isLoading,
+    error,
+    refetch,
+  } = useAdminUsers();
+  const users = useMemo(
+    () => usersData?.pages.flatMap((p) => p.items) ?? [],
+    [usersData],
+  );
+  const { data: grantsData } = useAdminGrants();
+  const grants = useMemo(
+    () => grantsData?.pages.flatMap((p) => p.items) ?? [],
+    [grantsData],
+  );
   const { data: teams } = useAdminTeams();
-  const { data: pipelines } = useQuery({
-    queryKey: ["pipelines"],
-    queryFn: () => fetchPipelines(),
+  const { data: pipelinesData } = useQuery({
+    queryKey: ["pipelines-lookup"],
+    queryFn: () => fetchPipelines(undefined, 0, 500),
     staleTime: 2 * 60_000,
   });
   const updateRole = useUpdateUserRole();
@@ -48,12 +46,11 @@ export function UsersPanel() {
     [teams],
   );
   const pipelineMap = useMemo(
-    () => new Map((pipelines ?? []).map((p) => [p.id, p.name])),
-    [pipelines],
+    () => new Map((pipelinesData?.items ?? []).map((p) => [p.id, p.name])),
+    [pipelinesData],
   );
 
   const filteredUsers = useMemo(() => {
-    if (!users) return [];
     if (!searchQuery.trim()) return users;
     const q = searchQuery.toLowerCase();
     return users.filter(
@@ -65,14 +62,14 @@ export function UsersPanel() {
 
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState message="Failed to load users" onRetry={refetch} />;
-  if (!users || users.length === 0) return <EmptyState message="No users found" />;
+  if (users.length === 0) return <EmptyState message="No users found" />;
 
   const toggleExpand = (userId: string) => {
     setExpandedUserId((prev) => (prev === userId ? null : userId));
   };
 
   const getUserGrants = (userId: string) =>
-    (grants ?? []).filter((g) => g.grantee_user_id === userId);
+    grants.filter((g) => g.grantee_user_id === userId);
 
   return (
     <div className="space-y-3">
@@ -109,7 +106,7 @@ export function UsersPanel() {
                   className="p-4 flex items-center gap-4 cursor-pointer"
                   onClick={() => toggleExpand(u.id)}
                 >
-                  <UserInitials name={u.display_name} />
+                  <UserInitials name={u.display_name} size="lg" />
 
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -220,9 +217,7 @@ export function UsersPanel() {
                                 </span>
                                 <span
                                   className={`text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border shrink-0 ${
-                                    g.grant_level === "editor"
-                                      ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
-                                      : "text-slate-400 bg-white/[0.03] border-white/[0.06]"
+                                    GRANT_LEVEL_STYLES[g.grant_level] ?? GRANT_LEVEL_STYLES.viewer
                                   }`}
                                 >
                                   {g.grant_level}
@@ -241,6 +236,19 @@ export function UsersPanel() {
               </div>
             );
           })}
+
+          {hasMoreUsers && (
+            <button
+              type="button"
+              onClick={() => fetchNextUsers()}
+              disabled={isFetchingMoreUsers}
+              className="w-full py-3 rounded-xl border border-dashed border-white/[0.06] text-slate-600 hover:text-indigo-400 hover:border-indigo-500/20 transition-all cursor-pointer text-xs font-mono disabled:opacity-40"
+            >
+              {isFetchingMoreUsers
+                ? "Loading..."
+                : `Load more (${users.length} of ${usersData?.pages[0]?.total ?? 0})`}
+            </button>
+          )}
         </div>
       )}
     </div>

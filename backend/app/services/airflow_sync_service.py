@@ -31,15 +31,25 @@ _AIRFLOW_SEMAPHORE = asyncio.Semaphore(6)
 
 
 class AirflowSyncService:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        pipeline_repo: PipelineRepository | None = None,
+        lineage_repo: LineageRepository | None = None,
+        resource_repo: ResourceRepository | None = None,
+        airflow_repo: AirflowRepository | None = None,
+        dag_task_repo: DagTaskRepository | None = None,
+        sensor_repo: SensorRepository | None = None,
+        team_repo: TeamRepository | None = None,
+    ):
         self.session = session
-        self.pipeline_repo = PipelineRepository(session)
-        self.lineage_repo = LineageRepository(session)
-        self.resource_repo = ResourceRepository(session)
-        self.airflow_repo = AirflowRepository(session)
-        self.dag_task_repo = DagTaskRepository(session)
-        self.sensor_repo = SensorRepository(session)
-        self.team_repo = TeamRepository(session)
+        self.pipeline_repo = pipeline_repo or PipelineRepository(session)
+        self.lineage_repo = lineage_repo or LineageRepository(session)
+        self.resource_repo = resource_repo or ResourceRepository(session)
+        self.airflow_repo = airflow_repo or AirflowRepository(session)
+        self.dag_task_repo = dag_task_repo or DagTaskRepository(session)
+        self.sensor_repo = sensor_repo or SensorRepository(session)
+        self.team_repo = team_repo or TeamRepository(session)
 
     async def sync_pipelines_from_airflow(self) -> int:
         """Discover all tasks across all DAGs and register as pipelines + lineage.
@@ -68,43 +78,56 @@ class AirflowSyncService:
         # DAG task graph data: (dag_id, task_id) -> {downstream_task_ids, needs, prefers}
         dag_task_graph: list[dict] = []
 
-        for dag_info in all_dags:
-            dag_id = dag_info["dag_id"]
+        # ── Phased parallel fetch of Airflow API data ──
+        async def _limited(coro):
+            async with _AIRFLOW_SEMAPHORE:
+                return await coro
 
-            # Fetch task definitions for downstream_task_ids and params fallback
-            tasks_def = await airflow_client.get_dag_tasks(dag_id)
+        all_dag_ids = [d["dag_id"] for d in all_dags]
+
+        # Phase A: Parallel fetch task definitions + task group maps + dag runs
+        tasks_results, tg_results, runs_results = await asyncio.gather(
+            asyncio.gather(*[_limited(airflow_client.get_dag_tasks(did)) for did in all_dag_ids]),
+            asyncio.gather(*[_limited(airflow_client.get_task_group_map(did)) for did in all_dag_ids]),
+            asyncio.gather(*[_limited(airflow_client.get_dag_runs(did, limit=1)) for did in all_dag_ids]),
+        )
+
+        # Phase B: Identify DAGs with runs, parallel fetch task instances
+        dags_with_runs: list[tuple[str, str, list, dict]] = []  # (dag_id, run_id, tasks_def, tg_map)
+        for i, dag_id in enumerate(all_dag_ids):
+            runs = runs_results[i]
+            if runs and runs[0].get("dag_run_id"):
+                dags_with_runs.append((dag_id, runs[0]["dag_run_id"], tasks_results[i], tg_results[i]))
+
+        if dags_with_runs:
+            instances_results = await asyncio.gather(*[
+                _limited(airflow_client.get_task_instances(dag_id, run_id))
+                for dag_id, run_id, _, _ in dags_with_runs
+            ])
+        else:
+            instances_results = []
+
+        # Phase C: Process instances to identify needed log fetches
+        # Track per-DAG processed data for Phase D
+        dag_processed: list[dict] = []  # parallel to dags_with_runs
+        log_requests: list[tuple[str, str, str, str, str]] = []  # (dag_id, run_id, airflow_tid, kind, key)
+
+        for idx, (dag_id, dag_run_id, tasks_def, task_group_map) in enumerate(dags_with_runs):
             downstream_map = {
                 t["task_id"]: t.get("downstream_task_ids", []) for t in tasks_def
             }
-            # params from task definitions — always available, even for upstream_failed tasks
-            # Airflow wraps param values in Param objects: {"key": {"__class": "...", "value": X}}
             params_by_task = {
                 t["task_id"]: self._unwrap_params(t.get("params", {}))
                 for t in tasks_def
             }
-            # TaskGroup mapping from DAG source — fallback for task_group when
-            # rendered op_kwargs is empty (upstream_failed tasks)
-            task_group_map = await airflow_client.get_task_group_map(dag_id)
-
-            runs = await airflow_client.get_dag_runs(dag_id, limit=1)
-            if not runs:
-                continue
-
-            run = runs[0]
-            dag_run_id = run.get("dag_run_id")
-            if not dag_run_id:
-                continue
-
-            instances = await airflow_client.get_task_instances(dag_id, dag_run_id)
+            instances = instances_results[idx]
             op_kwargs_by_task: dict[str, dict] = {}
 
             for inst in instances:
                 airflow_task_id = inst.get("task_id", "")
-
                 rendered = inst.get("rendered_fields", {}) or {}
                 op_kwargs = rendered.get("op_kwargs", {}) or {}
 
-                # Fall back to task definition params for upstream_failed tasks
                 if not op_kwargs.get("etl_name") and not op_kwargs.get("sensor_name"):
                     params = params_by_task.get(airflow_task_id, {})
                     if params.get("etl_name") or params.get("sensor_name"):
@@ -116,21 +139,17 @@ class AirflowSyncService:
 
                 op_kwargs_by_task[airflow_task_id] = op_kwargs
 
-                # Detect sensor tasks (sensor_name in op_kwargs)
                 sensor_name = op_kwargs.get("sensor_name")
                 if sensor_name:
                     if sensor_name not in seen_sensors:
-                        log_content = await airflow_client.get_task_log(
-                            dag_id, dag_run_id, airflow_task_id
-                        )
-                        volume = self._parse_sensor_volume(log_content)
-                        description = op_kwargs.get("description") or self._parse_sensor_description(log_content, sensor_name)
+                        log_requests.append((dag_id, dag_run_id, airflow_task_id, "sensor", sensor_name))
                         seen_sensors[sensor_name] = {
                             "sensor_name": sensor_name,
                             "team": op_kwargs.get("team", ""),
-                            "description": description,
-                            "volume_per_day": volume or op_kwargs.get("volume_per_day"),
+                            "description": op_kwargs.get("description"),
+                            "volume_per_day": op_kwargs.get("volume_per_day"),
                             "dag_ids": [dag_id],
+                            "_op_kwargs": op_kwargs,
                         }
                     else:
                         if dag_id not in seen_sensors[sensor_name]["dag_ids"]:
@@ -142,13 +161,11 @@ class AirflowSyncService:
                     if airflow_task_id not in seen_tasks:
                         logger.debug(
                             "Skipping task %s in DAG %s — no etl_name in op_kwargs or params (keys: %s)",
-                            airflow_task_id,
-                            dag_id,
+                            airflow_task_id, dag_id,
                             list(op_kwargs.keys()) if op_kwargs else "empty",
                         )
                     continue
 
-                # Collect resource config for every DAG occurrence (before dedup skip)
                 raw_resources = op_kwargs.get("resources")
                 if raw_resources and isinstance(raw_resources, dict):
                     resource_by_dag.setdefault(etl_name, {})[dag_id] = raw_resources
@@ -156,25 +173,53 @@ class AirflowSyncService:
                 if etl_name in seen_tasks:
                     continue
 
-                # Parse destination tables from task logs
-                log_content = await airflow_client.get_task_log(
-                    dag_id, dag_run_id, airflow_task_id
-                )
-                destination_tables = self._parse_writes(log_content, etl_name)
-                description = self._parse_description(log_content, etl_name)
-
+                log_requests.append((dag_id, dag_run_id, airflow_task_id, "etl", etl_name))
                 seen_tasks[etl_name] = {
                     "task_id": etl_name,
                     "category": op_kwargs.get("category", ""),
                     "schedule": op_kwargs.get("schedule"),
-                    "destination_tables": destination_tables,
-                    "description": description,
+                    "destination_tables": [],
+                    "description": "",
                     "needs": op_kwargs.get("needs", []),
                     "task_group": task_group_map.get(etl_name) or None,
                 }
 
-            # Build dag_task_graph entries for all tasks in this DAG (ETLs + sensors)
-            for airflow_tid, op_kw in op_kwargs_by_task.items():
+            dag_processed.append({
+                "dag_id": dag_id,
+                "task_group_map": task_group_map,
+                "downstream_map": downstream_map,
+                "op_kwargs_by_task": op_kwargs_by_task,
+            })
+
+        # Phase D: Parallel fetch all needed logs
+        if log_requests:
+            log_results = await asyncio.gather(*[
+                _limited(airflow_client.get_task_log(dag_id, run_id, tid))
+                for dag_id, run_id, tid, _, _ in log_requests
+            ])
+        else:
+            log_results = []
+
+        # Phase E: Process log results
+        for (dag_id, _, _, kind, key), log_content in zip(log_requests, log_results):
+            if kind == "sensor":
+                meta = seen_sensors[key]
+                volume = self._parse_sensor_volume(log_content)
+                description = meta.get("_op_kwargs", {}).get("description") or self._parse_sensor_description(log_content, key)
+                meta["description"] = description
+                meta["volume_per_day"] = volume or meta.get("volume_per_day")
+                meta.pop("_op_kwargs", None)
+            elif kind == "etl":
+                meta = seen_tasks[key]
+                meta["destination_tables"] = self._parse_writes(log_content, key)
+                meta["description"] = self._parse_description(log_content, key)
+
+        # Build dag_task_graph from pre-processed data
+        for proc in dag_processed:
+            dag_id = proc["dag_id"]
+            task_group_map = proc["task_group_map"]
+            downstream_map = proc["downstream_map"]
+            for airflow_tid, op_kw in proc["op_kwargs_by_task"].items():
                 s_name = op_kw.get("sensor_name")
                 e_name = op_kw.get("etl_name")
                 if not s_name and not e_name:

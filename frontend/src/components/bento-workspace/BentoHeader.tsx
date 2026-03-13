@@ -20,6 +20,7 @@ import { useSyncPipeline } from "@/hooks/use-sync-pipeline";
 import { useTopology } from "@/hooks/use-topology";
 import type { PipelineDetail } from "@/types/pipeline";
 import { DocumentationModal } from "./DocumentationModal";
+import { AIRFLOW_URL } from "@/lib/config";
 
 interface BentoHeaderProps {
   pipeline: PipelineDetail;
@@ -159,7 +160,7 @@ export function BentoHeader({
                       size="sm"
                       onClick={() =>
                         window.open(
-                          `http://localhost:8080/dags/${topology.dag_ids[0]}/grid?task_id=${pipeline.task_id}`,
+                          `${AIRFLOW_URL}/dags/${topology.dag_ids[0]}/grid?task_id=${pipeline.task_id}`,
                           "_blank",
                           "noopener,noreferrer",
                         )

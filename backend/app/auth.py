@@ -80,7 +80,8 @@ async def get_current_user_optional(
         ``None`` when SSO is enabled and credentials are absent/invalid.
     """
     if not settings.sso_enabled:
-        return await _get_or_create_default_user(session)
+        auth_service = UserAuthService(session)
+        return await auth_service.get_or_create_default_user()
 
     if not credentials:
         return None
@@ -198,6 +199,9 @@ def require_team_membership_or_editor_grant(pipeline_id_param: str = "pipeline_i
 
         pipeline = await PipelineRepository(session).get_by_id(pipeline_uuid)
 
+        # Store loaded pipeline to avoid re-fetching in downstream handler
+        request.state.pipeline = pipeline
+
         if not pipeline or not pipeline.team_id:
             return user
 
@@ -214,6 +218,7 @@ def require_team_membership_or_editor_grant(pipeline_id_param: str = "pipeline_i
             pipeline_id=pipeline_uuid,
             user_id=user.id,
             user_team_ids=user_team_ids,
+            pipeline_team_id=pipeline.team_id,
         )
         if has_editor:
             return user

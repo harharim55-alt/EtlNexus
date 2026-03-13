@@ -16,9 +16,13 @@ class VisibilityService:
         self.grant_repo = grant_repo
         self.team_repo = team_repo
 
-    async def list_grants(self) -> list[VisibilityGrant]:
-        """Return all visibility grants."""
-        return await self.grant_repo.get_all()
+    async def list_grants(
+        self, skip: int = 0, limit: int = 200
+    ) -> tuple[list[VisibilityGrant], int]:
+        """Return all visibility grants with total count."""
+        grants = await self.grant_repo.get_all(skip=skip, limit=limit)
+        total = await self.grant_repo.count_all()
+        return grants, total
 
     async def create_grant(
         self,

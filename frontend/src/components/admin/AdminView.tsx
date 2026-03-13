@@ -15,9 +15,9 @@ const SUB_TABS: { key: SubTab; label: string; icon: typeof Users }[] = [
 
 export function AdminView() {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("users");
-  const { data: users } = useAdminUsers();
-  const { data: teams } = useAdminTeams();
-  const { data: grants } = useAdminGrants();
+  const { data: users } = useAdminUsers(activeSubTab === "users");
+  const { data: teams } = useAdminTeams(activeSubTab === "teams");
+  const { data: grants } = useAdminGrants(activeSubTab === "grants");
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -30,8 +30,8 @@ export function AdminView() {
           <div>
             <h1 className="text-xl font-semibold text-white">Access Control</h1>
             <p className="text-xs text-slate-500 font-mono mt-0.5">
-              {users?.length ?? 0} users &middot; {teams?.length ?? 0} teams &middot;{" "}
-              {grants?.length ?? 0} grants
+              {users?.pages[0]?.total ?? 0} users &middot; {teams?.length ?? 0} teams &middot;{" "}
+              {grants?.pages[0]?.total ?? 0} grants
             </p>
           </div>
         </div>

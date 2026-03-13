@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { ArrowRight, Plus, X } from "lucide-react";
 import { useAdminGrants, useAdminTeams, useAdminUsers, useCreateGrant, useDeleteGrant } from "@/hooks/use-admin";
 import { useQuery } from "@tanstack/react-query";
@@ -6,17 +6,34 @@ import { fetchPipelines } from "@/api/pipelines";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { GRANT_LEVEL_STYLES } from "@/lib/admin-styles";
 
 type GrantType = "pipeline" | "team";
 type GranteeType = "team" | "user";
 
 export function GrantsPanel() {
-  const { data: grants, isLoading, error, refetch } = useAdminGrants();
+  const {
+    data: grantsData,
+    fetchNextPage: fetchNextGrants,
+    hasNextPage: hasMoreGrants,
+    isFetchingNextPage: isFetchingMoreGrants,
+    isLoading,
+    error,
+    refetch,
+  } = useAdminGrants();
+  const grants = useMemo(
+    () => grantsData?.pages.flatMap((p) => p.items) ?? [],
+    [grantsData],
+  );
   const { data: teams } = useAdminTeams();
-  const { data: users } = useAdminUsers();
-  const { data: pipelines } = useQuery({
-    queryKey: ["pipelines"],
-    queryFn: () => fetchPipelines(),
+  const { data: usersData } = useAdminUsers();
+  const users = useMemo(
+    () => usersData?.pages.flatMap((p) => p.items) ?? [],
+    [usersData],
+  );
+  const { data: pipelinesData } = useQuery({
+    queryKey: ["pipelines-lookup"],
+    queryFn: () => fetchPipelines(undefined, 0, 500),
     staleTime: 2 * 60_000,
   });
   const createGrant = useCreateGrant();
@@ -63,8 +80,14 @@ export function GrantsPanel() {
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState message="Failed to load grants" onRetry={refetch} />;
 
-  const teamMap = new Map((teams ?? []).map((t) => [t.id, t.name]));
-  const pipelineMap = new Map((pipelines ?? []).map((p) => [p.id, p.name]));
+  const teamMap = useMemo(
+    () => new Map((teams ?? []).map((t) => [t.id, t.name])),
+    [teams],
+  );
+  const pipelineMap = useMemo(
+    () => new Map((pipelinesData?.items ?? []).map((p) => [p.id, p.name])),
+    [pipelinesData],
+  );
 
   return (
     <div className="space-y-4">
@@ -136,7 +159,7 @@ export function GrantsPanel() {
                 className="w-full bg-[#09090b] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/40 transition-colors"
               >
                 <option value="">Select user...</option>
-                {(users ?? []).map((u) => (
+                {users.map((u) => (
                   <option key={u.id} value={u.id}>
                     {u.display_name} ({u.email})
                   </option>
@@ -180,7 +203,7 @@ export function GrantsPanel() {
                 className="w-full bg-[#09090b] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/40 transition-colors"
               >
                 <option value="">Select pipeline...</option>
-                {(pipelines ?? []).map((p) => (
+                {(pipelinesData?.items ?? []).map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.name}
                   </option>
@@ -255,7 +278,7 @@ export function GrantsPanel() {
       )}
 
       {/* Grants list */}
-      {!grants || grants.length === 0 ? (
+      {grants.length === 0 ? (
         <EmptyState message="No visibility grants configured" />
       ) : (
         <div className="space-y-2">
@@ -318,9 +341,7 @@ export function GrantsPanel() {
                 {/* Grant level badge */}
                 <span
                   className={`text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border shrink-0 ${
-                    grant.grant_level === "editor"
-                      ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
-                      : "text-slate-400 bg-white/[0.03] border-white/[0.06]"
+                    GRANT_LEVEL_STYLES[grant.grant_level] ?? GRANT_LEVEL_STYLES.viewer
                   }`}
                 >
                   {grant.grant_level}
@@ -346,6 +367,19 @@ export function GrantsPanel() {
               </div>
             );
           })}
+
+          {hasMoreGrants && (
+            <button
+              type="button"
+              onClick={() => fetchNextGrants()}
+              disabled={isFetchingMoreGrants}
+              className="w-full py-3 rounded-xl border border-dashed border-white/[0.06] text-slate-600 hover:text-indigo-400 hover:border-indigo-500/20 transition-all cursor-pointer text-xs font-mono disabled:opacity-40"
+            >
+              {isFetchingMoreGrants
+                ? "Loading..."
+                : `Load more (${grants.length} of ${grantsData?.pages[0]?.total ?? 0})`}
+            </button>
+          )}
         </div>
       )}
     </div>

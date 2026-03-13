@@ -1,10 +1,12 @@
 """Pydantic schemas for team endpoints."""
 
+import uuid
+
 from pydantic import BaseModel
 
 
 class TeamMemberInfo(BaseModel):
-    id: str
+    id: uuid.UUID
     email: str
     display_name: str
     role: str
@@ -14,7 +16,7 @@ class TeamMemberInfo(BaseModel):
 
 
 class TeamResponse(BaseModel):
-    id: str
+    id: uuid.UUID
     name: str
     description: str | None = None
     source: str
@@ -24,7 +26,7 @@ class TeamResponse(BaseModel):
 
 
 class TeamDetailResponse(BaseModel):
-    id: str
+    id: uuid.UUID
     name: str
     description: str | None = None
     source: str

@@ -121,8 +121,10 @@ class PipelineRepository:
         description: str | None = None,
         documentation: str | None = None,
         updated_by: str = "System",
+        pipeline: "Pipeline | None" = None,
     ) -> Pipeline | None:
-        pipeline = await self.get_by_id(pipeline_id)
+        if pipeline is None:
+            pipeline = await self.get_by_id(pipeline_id)
         if not pipeline:
             return None
         if description is not None:
@@ -131,7 +133,7 @@ class PipelineRepository:
             pipeline.documentation = documentation
         pipeline.last_updated_by = updated_by
         pipeline.last_updated_at = datetime.now(timezone.utc)
-        await self.session.commit()
+        await self.session.flush()
         return pipeline
 
     async def list_visible(
@@ -141,12 +143,15 @@ class PipelineRepository:
         user_team_ids: set[uuid.UUID] | None = None,
         is_admin: bool = False,
         query: str | None = None,
-    ) -> list[Pipeline]:
-        """Return pipelines filtered by team visibility + optional text search."""
-        base = (
-            select(Pipeline)
-            .options(selectinload(Pipeline.airflow_status))
-        )
+        skip: int = 0,
+        limit: int = 200,
+    ) -> tuple[list[Pipeline], int]:
+        """Return pipelines filtered by team visibility + optional text search.
+
+        Returns (pipelines, total_count) where total_count is the full
+        count before offset/limit pagination.
+        """
+        conditions = []
 
         if query:
             pattern = f"%{query}%"
@@ -156,7 +161,7 @@ class PipelineRepository:
                 .distinct()
                 .scalar_subquery()
             )
-            base = base.where(
+            conditions.append(
                 or_(
                     Pipeline.name.ilike(pattern),
                     Pipeline.description.ilike(pattern),
@@ -167,62 +172,66 @@ class PipelineRepository:
         if not is_admin:
             visibility_conditions = [Pipeline.team_id.is_(None)]
 
-            # Team-based visibility: user's own teams
             if user_team_ids:
                 visibility_conditions.append(Pipeline.team_id.in_(user_team_ids))
 
-                # Grants targeting user's teams → specific pipeline
-                visibility_conditions.append(
-                    Pipeline.id.in_(
-                        select(VisibilityGrant.pipeline_id)
-                        .where(
-                            VisibilityGrant.grantee_team_id.in_(user_team_ids),
-                            VisibilityGrant.pipeline_id.isnot(None),
-                        )
-                        .scalar_subquery()
-                    )
+            # Pre-fetch all grant-visible pipeline IDs and team IDs in one flat query
+            # instead of 4 correlated subqueries
+            grant_conditions = []
+            if user_team_ids:
+                grant_conditions.append(
+                    VisibilityGrant.grantee_team_id.in_(user_team_ids)
                 )
-                # Grants targeting user's teams → all pipelines of a source team
-                visibility_conditions.append(
-                    Pipeline.team_id.in_(
-                        select(VisibilityGrant.source_team_id)
-                        .where(
-                            VisibilityGrant.grantee_team_id.in_(user_team_ids),
-                            VisibilityGrant.source_team_id.isnot(None),
-                        )
-                        .scalar_subquery()
-                    )
-                )
-
-            # Grants targeting specific user → specific pipeline
             if user_id:
-                visibility_conditions.append(
-                    Pipeline.id.in_(
-                        select(VisibilityGrant.pipeline_id)
-                        .where(
-                            VisibilityGrant.grantee_user_id == user_id,
-                            VisibilityGrant.pipeline_id.isnot(None),
-                        )
-                        .scalar_subquery()
-                    )
-                )
-                # Grants targeting specific user → all pipelines of a source team
-                visibility_conditions.append(
-                    Pipeline.team_id.in_(
-                        select(VisibilityGrant.source_team_id)
-                        .where(
-                            VisibilityGrant.grantee_user_id == user_id,
-                            VisibilityGrant.source_team_id.isnot(None),
-                        )
-                        .scalar_subquery()
-                    )
+                grant_conditions.append(
+                    VisibilityGrant.grantee_user_id == user_id
                 )
 
-            base = base.where(or_(*visibility_conditions))
+            if grant_conditions:
+                grant_stmt = select(
+                    VisibilityGrant.pipeline_id,
+                    VisibilityGrant.source_team_id,
+                ).where(or_(*grant_conditions))
+                grant_result = await self.session.execute(grant_stmt)
 
-        base = base.order_by(Pipeline.name).limit(200)
-        result = await self.session.execute(base)
-        return list(result.scalars().all())
+                granted_pipeline_ids: set[uuid.UUID] = set()
+                granted_source_team_ids: set[uuid.UUID] = set()
+                for row in grant_result.all():
+                    if row.pipeline_id:
+                        granted_pipeline_ids.add(row.pipeline_id)
+                    if row.source_team_id:
+                        granted_source_team_ids.add(row.source_team_id)
+
+                if granted_pipeline_ids:
+                    visibility_conditions.append(
+                        Pipeline.id.in_(granted_pipeline_ids)
+                    )
+                if granted_source_team_ids:
+                    visibility_conditions.append(
+                        Pipeline.team_id.in_(granted_source_team_ids)
+                    )
+
+            conditions.append(or_(*visibility_conditions))
+
+        # Count total matching rows (without offset/limit)
+        count_stmt = select(func.count()).select_from(Pipeline)
+        if conditions:
+            count_stmt = count_stmt.where(*conditions)
+        count_result = await self.session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        # Fetch paginated data
+        data_stmt = (
+            select(Pipeline)
+            .options(selectinload(Pipeline.airflow_status))
+            .order_by(Pipeline.name)
+            .offset(skip)
+            .limit(limit)
+        )
+        if conditions:
+            data_stmt = data_stmt.where(*conditions)
+        result = await self.session.execute(data_stmt)
+        return list(result.scalars().all()), total
 
     async def set_team(
         self,
@@ -256,3 +265,43 @@ class PipelineRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_shared_field_pipelines(
+        self, pipeline_id: uuid.UUID
+    ) -> list[dict]:
+        """Find pipelines sharing field names with the given pipeline via SQL.
+
+        Uses GROUP BY + array_agg instead of loading all pipelines+fields into memory.
+        Returns list of dicts with pipeline_id, pipeline_name, shared_fields.
+        """
+        # Subquery: field names for the target pipeline
+        my_fields = (
+            select(PipelineField.name)
+            .where(PipelineField.pipeline_id == pipeline_id)
+            .scalar_subquery()
+        )
+
+        # Find other pipelines sharing those field names
+        stmt = (
+            select(
+                Pipeline.id.label("pipeline_id"),
+                Pipeline.name.label("pipeline_name"),
+                func.array_agg(PipelineField.name).label("shared_fields"),
+            )
+            .join(PipelineField, PipelineField.pipeline_id == Pipeline.id)
+            .where(
+                PipelineField.name.in_(my_fields),
+                Pipeline.id != pipeline_id,
+            )
+            .group_by(Pipeline.id, Pipeline.name)
+            .order_by(func.count(PipelineField.name).desc())
+        )
+        result = await self.session.execute(stmt)
+        return [
+            {
+                "pipeline_id": row.pipeline_id,
+                "pipeline_name": row.pipeline_name,
+                "shared_fields": sorted(row.shared_fields),
+            }
+            for row in result.all()
+        ]

@@ -2,26 +2,31 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.auth import require_role
-from app.database import get_db_session
+from app.dependencies import get_user_repo
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
-from app.schemas.auth import RoleUpdateRequest, UserResponse, user_to_response
+from app.schemas.auth import RoleUpdateRequest, UserListResponse, UserResponse, user_to_response
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
-@router.get("", response_model=list[UserResponse])
+@router.get("", response_model=UserListResponse)
 async def list_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(200, ge=1, le=500),
     user: User = Depends(require_role("admin")),
-    session: AsyncSession = Depends(get_db_session),
-) -> list[UserResponse]:
+    repo: UserRepository = Depends(get_user_repo),
+) -> UserListResponse:
     """List all users with team memberships (admin only)."""
-    users = await UserRepository(session).get_all()
-    return [user_to_response(u) for u in users]
+    users = await repo.get_all(skip=skip, limit=limit)
+    total = await repo.count_all()
+    return UserListResponse(
+        items=[user_to_response(u) for u in users],
+        total=total,
+    )
 
 
 @router.patch("/{user_id}/role")
@@ -29,7 +34,7 @@ async def update_user_role(
     user_id: uuid.UUID,
     body: RoleUpdateRequest,
     user: User = Depends(require_role("admin")),
-    session: AsyncSession = Depends(get_db_session),
+    repo: UserRepository = Depends(get_user_repo),
 ) -> dict:
     """Change a user's global role (admin only).
 
@@ -46,8 +51,6 @@ async def update_user_role(
         HTTPException(400): Self-demotion or last-admin demotion.
         HTTPException(404): When no user with the given ID exists.
     """
-    repo = UserRepository(session)
-
     # SEC-08: Block self-demotion
     if user_id == user.id and body.role != user.role:
         raise HTTPException(

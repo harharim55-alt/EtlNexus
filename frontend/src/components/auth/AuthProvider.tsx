@@ -18,6 +18,18 @@ const DEFAULT_USER = {
   teams: [],
 };
 
+/**
+ * Top-level auth initialization component.
+ *
+ * Fetches `/api/auth/config` on mount to determine the SSO mode:
+ * - **SSO enabled**: wraps children in `OidcAuthProvider` (react-oidc-context)
+ *   so that downstream components can call `useAuth()`.
+ * - **SSO disabled** (or config fetch fails): sets a default admin user in the
+ *   auth store and renders children directly — no OIDC provider in the tree.
+ *
+ * Always wraps children in `AuthGuard`, which handles OIDC redirect flow and
+ * token syncing when SSO is active.
+ */
 export function AuthBootstrap({ children }: Props) {
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
   const [loading, setLoading] = useState(true);

@@ -1,9 +1,11 @@
-export interface AdminUser {
-  id: string;
-  email: string;
-  display_name: string;
-  role: string;
-  teams: { id: string; name: string; role_in_team: string }[];
+import type { UserInfo } from "./auth";
+
+/** Same shape as UserInfo — single source of truth for user data. */
+export type AdminUser = UserInfo;
+
+export interface UserListResponse {
+  items: AdminUser[];
+  total: number;
 }
 
 export interface AdminTeam {
@@ -27,6 +29,11 @@ export interface VisibilityGrant {
   grant_level: string;
   granted_by: string;
   created_at: string;
+}
+
+export interface GrantListResponse {
+  items: VisibilityGrant[];
+  total: number;
 }
 
 export interface TeamMember {

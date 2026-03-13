@@ -17,6 +17,11 @@ export interface PipelineListItem {
   team: string | null;
 }
 
+export interface PipelineListResponse {
+  items: PipelineListItem[];
+  total: number;
+}
+
 export interface PipelineDetail {
   id: string;
   name: string;

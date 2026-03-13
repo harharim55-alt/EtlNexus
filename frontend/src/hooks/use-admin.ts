@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchUsers,
   updateUserRole,
@@ -11,19 +11,29 @@ import {
 import type { VisibilityGrantRequest } from "@/types/admin";
 import { toast } from "sonner";
 
-export function useAdminUsers() {
-  return useQuery({
+const USERS_PAGE_SIZE = 100;
+const GRANTS_PAGE_SIZE = 100;
+
+export function useAdminUsers(enabled = true) {
+  return useInfiniteQuery({
     queryKey: ["admin-users"],
-    queryFn: fetchUsers,
+    queryFn: ({ pageParam = 0 }) => fetchUsers(pageParam, USERS_PAGE_SIZE),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
     staleTime: 2 * 60_000,
+    enabled,
   });
 }
 
-export function useAdminTeams() {
+export function useAdminTeams(enabled = true) {
   return useQuery({
     queryKey: ["admin-teams"],
     queryFn: fetchTeams,
     staleTime: 2 * 60_000,
+    enabled,
   });
 }
 
@@ -36,11 +46,17 @@ export function useTeamDetail(teamId: string | null) {
   });
 }
 
-export function useAdminGrants() {
-  return useQuery({
+export function useAdminGrants(enabled = true) {
+  return useInfiniteQuery({
     queryKey: ["admin-grants"],
-    queryFn: fetchGrants,
+    queryFn: ({ pageParam = 0 }) => fetchGrants(pageParam, GRANTS_PAGE_SIZE),
+    initialPageParam: 0,
+    getNextPageParam: (lastPage, allPages) => {
+      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0);
+      return loaded < lastPage.total ? loaded : undefined;
+    },
     staleTime: 2 * 60_000,
+    enabled,
   });
 }
 

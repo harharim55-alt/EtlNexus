@@ -1,7 +1,5 @@
 """Sensor endpoints — list sensors and query downstream topology."""
 
-from typing import Optional
-
 from fastapi import APIRouter, Depends, Query
 
 from app.auth import get_current_user
@@ -15,7 +13,7 @@ router = APIRouter(prefix="/api/sensors", tags=["sensors"])
 
 @router.get("", response_model=SensorListResponse)
 async def list_sensors(
-    team: Optional[str] = Query(None, description="Filter by team name"),
+    team: str | None = Query(None, description="Filter by team name"),
     user: User = Depends(get_current_user),
     service: SensorService = Depends(get_sensor_service),
 ):

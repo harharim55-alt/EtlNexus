@@ -1,14 +1,20 @@
 import apiClient from "./client";
 import type {
-  AdminUser,
   AdminTeam,
   TeamDetail,
+  UserListResponse,
+  GrantListResponse,
   VisibilityGrant,
   VisibilityGrantRequest,
 } from "@/types/admin";
 
-export async function fetchUsers(): Promise<AdminUser[]> {
-  const { data } = await apiClient.get<AdminUser[]>("/users");
+export async function fetchUsers(
+  skip = 0,
+  limit = 100,
+): Promise<UserListResponse> {
+  const { data } = await apiClient.get<UserListResponse>("/users", {
+    params: { skip, limit },
+  });
   return data;
 }
 
@@ -33,9 +39,13 @@ export async function fetchTeamDetail(teamId: string): Promise<TeamDetail> {
   return data;
 }
 
-export async function fetchGrants(): Promise<VisibilityGrant[]> {
-  const { data } = await apiClient.get<VisibilityGrant[]>(
+export async function fetchGrants(
+  skip = 0,
+  limit = 100,
+): Promise<GrantListResponse> {
+  const { data } = await apiClient.get<GrantListResponse>(
     "/visibility/grants",
+    { params: { skip, limit } },
   );
   return data;
 }

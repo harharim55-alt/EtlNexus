@@ -2,8 +2,6 @@
 
 import uuid
 from collections import defaultdict
-from typing import Optional
-
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -29,7 +27,7 @@ router = APIRouter(prefix="/api/pipelines", tags=["topology"])
 @router.get("/{pipeline_id}/topology", response_model=TopologyGraph)
 async def get_pipeline_topology(
     pipeline_id: uuid.UUID,
-    dag_id: Optional[str] = Query(None, description="Filter topology to a specific DAG"),
+    dag_id: str | None = Query(None, description="Filter topology to a specific DAG"),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):
@@ -193,7 +191,7 @@ async def get_pipeline_topology(
 @router.get("/{pipeline_id}/topology/upstream", response_model=UpstreamTopologyGraph)
 async def get_upstream_topology(
     pipeline_id: uuid.UUID,
-    dag_id: Optional[str] = Query(None, description="Filter to a specific DAG"),
+    dag_id: str | None = Query(None, description="Filter to a specific DAG"),
     user: User = Depends(get_current_user),
     session: AsyncSession = Depends(get_db_session),
 ):

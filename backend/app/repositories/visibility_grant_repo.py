@@ -2,10 +2,11 @@
 
 import uuid
 
-from sqlalchemy import or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.cache import grant_level_cache
 from app.models.visibility_grant import VisibilityGrant
 
 
@@ -69,6 +70,7 @@ class VisibilityGrantRepository:
             .options(
                 selectinload(VisibilityGrant.grantee_team),
                 selectinload(VisibilityGrant.grantee_user),
+                selectinload(VisibilityGrant.source_team),
             )
             .where(VisibilityGrant.grantee_team_id.in_(team_ids))
         )
@@ -84,24 +86,34 @@ class VisibilityGrantRepository:
             .options(
                 selectinload(VisibilityGrant.grantee_team),
                 selectinload(VisibilityGrant.grantee_user),
+                selectinload(VisibilityGrant.source_team),
             )
             .where(VisibilityGrant.grantee_user_id == user_id)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_all(self) -> list[VisibilityGrant]:
+    async def get_all(self, skip: int = 0, limit: int = 200) -> list[VisibilityGrant]:
         """List all grants (admin view)."""
         stmt = (
             select(VisibilityGrant)
             .options(
                 selectinload(VisibilityGrant.grantee_team),
                 selectinload(VisibilityGrant.grantee_user),
+                selectinload(VisibilityGrant.source_team),
             )
             .order_by(VisibilityGrant.created_at.desc())
+            .offset(skip)
+            .limit(limit)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_all(self) -> int:
+        """Count total visibility grants."""
+        stmt = select(func.count()).select_from(VisibilityGrant)
+        result = await self.session.execute(stmt)
+        return result.scalar_one()
 
     async def _find_existing_grant(
         self,
@@ -140,6 +152,7 @@ class VisibilityGrantRepository:
             .options(
                 selectinload(VisibilityGrant.grantee_team),
                 selectinload(VisibilityGrant.grantee_user),
+                selectinload(VisibilityGrant.source_team),
             )
             .where(VisibilityGrant.id == grant_id)
         )
@@ -225,14 +238,15 @@ class VisibilityGrantRepository:
         pipeline_id: uuid.UUID,
         user_id: uuid.UUID,
         user_team_ids: set[uuid.UUID],
+        pipeline_team_id: uuid.UUID | None = None,
     ) -> bool:
         """Check if a user has an editor-level grant for a pipeline (directly or via team)."""
-        from app.models.pipeline import Pipeline
+        if pipeline_team_id is None:
+            from app.models.pipeline import Pipeline
 
-        # Look up the pipeline's team_id for team-grant matching
-        pipeline_stmt = select(Pipeline.team_id).where(Pipeline.id == pipeline_id)
-        pipeline_result = await self.session.execute(pipeline_stmt)
-        pipeline_team_id = pipeline_result.scalar_one_or_none()
+            pipeline_stmt = select(Pipeline.team_id).where(Pipeline.id == pipeline_id)
+            pipeline_result = await self.session.execute(pipeline_stmt)
+            pipeline_team_id = pipeline_result.scalar_one_or_none()
 
         conditions = _build_grant_conditions(
             pipeline_id, user_id, user_team_ids, pipeline_team_id
@@ -251,6 +265,11 @@ class VisibilityGrantRepository:
         pipeline_team_id: uuid.UUID | None,
     ) -> str | None:
         """Return the highest grant level a user has for a pipeline, or None."""
+        cache_key = f"{user_id}:{pipeline_id}"
+        cached = grant_level_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
         conditions = _build_grant_conditions(
             pipeline_id, user_id, user_team_ids, pipeline_team_id
         )
@@ -260,10 +279,14 @@ class VisibilityGrantRepository:
         levels = [row[0] for row in result.all()]
 
         if "editor" in levels:
-            return "editor"
-        if "viewer" in levels:
-            return "viewer"
-        return None
+            level = "editor"
+        elif "viewer" in levels:
+            level = "viewer"
+        else:
+            level = ""
+
+        grant_level_cache.set(cache_key, level)
+        return level or None
 
     async def user_can_see_pipeline(
         self,

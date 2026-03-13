@@ -3,6 +3,7 @@ import { useNavigationStore } from "@/stores/navigation-store";
 import { useAirflowStatuses } from "@/hooks/use-airflow-status";
 import { useAuthStore } from "@/stores/auth-store";
 import { isAdmin } from "@/lib/permissions";
+import { AIRFLOW_URL } from "@/lib/config";
 import { useAuth } from "react-oidc-context";
 import { NavIcon } from "./NavIcon";
 import {
@@ -11,20 +12,9 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 
-function UserInitials({ name }: { name: string }) {
-  const initials = name
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-  return (
-    <div className="size-8 rounded-lg bg-indigo-500/15 border border-indigo-500/20 flex items-center justify-center text-[11px] font-semibold text-indigo-400 select-none">
-      {initials}
-    </div>
-  );
-}
+import { UserInitials } from "@/components/shared/UserInitials";
 
+/** Only rendered when ssoEnabled=true, which guarantees OidcAuthProvider context. */
 function SsoLogoutButton() {
   const auth = useAuth();
   const clearStore = useAuthStore((s) => s.logout);
@@ -112,7 +102,7 @@ export function Sidebar() {
         <Tooltip>
           <TooltipTrigger>
             <a
-              href="http://localhost:8080"
+              href={AIRFLOW_URL}
               target="_blank"
               rel="noopener noreferrer"
               className="cursor-pointer"

@@ -20,6 +20,9 @@ class Pipeline(Base):
     documentation: Mapped[str | None] = mapped_column(Text)
     last_updated_by: Mapped[str | None] = mapped_column(String(255))
     last_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    # Intentionally denormalized: `team` caches the team name from `owner_team`
+    # (via team_id FK). Both are set atomically in `PipelineRepository.set_team()`.
+    # This avoids JOINing the teams table on every pipeline list query.
     team: Mapped[str | None] = mapped_column(String(100), index=True)
     team_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("teams.id", ondelete="SET NULL"), index=True, nullable=True

@@ -59,3 +59,4 @@ class VisibilityGrant(Base):
 
     grantee_team: Mapped["Team"] = relationship(foreign_keys=[grantee_team_id])
     grantee_user: Mapped["User"] = relationship(foreign_keys=[grantee_user_id])
+    source_team: Mapped["Team | None"] = relationship(foreign_keys=[source_team_id])

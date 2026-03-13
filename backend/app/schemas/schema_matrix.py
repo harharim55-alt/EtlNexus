@@ -14,3 +14,4 @@ class FieldFrequencyRow(BaseModel):
 
 class SchemaMatrixResponse(BaseModel):
     fields: list[FieldFrequencyRow]
+    total: int = 0

@@ -1,4 +1,5 @@
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { usePipelines } from "@/hooks/use-pipelines";
 import { useDagSummary } from "@/hooks/use-dag-summary";
 import { usePipelineStore } from "@/stores/pipeline-store";
@@ -7,6 +8,7 @@ import { PipelineFilters } from "./PipelineFilters";
 import { PipelineListItem } from "./PipelineListItem";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shared/ErrorState";
+import { LoadingState } from "@/components/shared/LoadingState";
 import { X } from "lucide-react";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
 
@@ -14,6 +16,10 @@ interface CategoryGroup {
   category: string;
   pipelines: PipelineListItemType[];
 }
+
+type FlatItem =
+  | { type: "header"; category: string; count: number }
+  | { type: "pipeline"; pipeline: PipelineListItemType };
 
 export function PipelineRegistry() {
   const {
@@ -26,7 +32,19 @@ export function PipelineRegistry() {
     statusFilters,
     clearAllFilters,
   } = usePipelineStore();
-  const { data: pipelines, isLoading, isError, refetch } = usePipelines(searchQuery);
+  const {
+    data,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage,
+    isLoading,
+    isError,
+    refetch,
+  } = usePipelines(searchQuery);
+  const pipelines = useMemo(
+    () => data?.pages.flatMap((p) => p.items) ?? [],
+    [data],
+  );
   const { data: dagSummary } = useDagSummary();
 
   const hasActiveFilters =
@@ -150,7 +168,48 @@ export function PipelineRegistry() {
     return parts.join(" \u00b7 ");
   }, [hasActiveFilters, teamFilters, dagFilters, statusFilters]);
 
-  const isFiltered = hasActiveFilters && pipelines && filteredPipelines.length !== pipelines.length;
+  const isFiltered = hasActiveFilters && pipelines.length > 0 && filteredPipelines.length !== pipelines.length;
+
+  // Flatten grouped pipelines into a single virtual list
+  const flatItems = useMemo<FlatItem[]>(() => {
+    const items: FlatItem[] = [];
+    for (const group of groupedPipelines) {
+      items.push({ type: "header", category: group.category, count: group.pipelines.length });
+      for (const pipeline of group.pipelines) {
+        items.push({ type: "pipeline", pipeline });
+      }
+    }
+    return items;
+  }, [groupedPipelines]);
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const estimateSize = useCallback(
+    (index: number) => (flatItems[index].type === "header" ? 40 : 108),
+    [flatItems],
+  );
+
+  const virtualizer = useVirtualizer({
+    count: flatItems.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize,
+    overscan: 10,
+    measureElement: (el) => el.getBoundingClientRect().height,
+  });
+
+  // Infinite scroll: fetch next page when scrolling near bottom
+  const virtualItems = virtualizer.getVirtualItems();
+  const lastVirtualItem = virtualItems[virtualItems.length - 1];
+  useEffect(() => {
+    if (!lastVirtualItem) return;
+    if (
+      lastVirtualItem.index >= flatItems.length - 5 &&
+      hasNextPage &&
+      !isFetchingNextPage
+    ) {
+      fetchNextPage();
+    }
+  }, [lastVirtualItem?.index, flatItems.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <div className="w-[400px] border-r border-white/5 flex flex-col bg-[#09090b] shrink-0">
@@ -187,12 +246,12 @@ export function PipelineRegistry() {
       {isFiltered && (
         <div className="px-6 py-1.5">
           <span className="text-[10px] font-mono text-slate-600">
-            Showing {filteredPipelines.length} of {pipelines!.length}
+            Showing {filteredPipelines.length} of {pipelines.length}
           </span>
         </div>
       )}
 
-      <div className="flex-1 overflow-y-auto p-3 custom-scrollbar">
+      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 custom-scrollbar">
         {isLoading && (
           <div className="space-y-3 p-2">
             {Array.from({ length: 6 }).map((_, i) => (
@@ -208,35 +267,68 @@ export function PipelineRegistry() {
           />
         )}
 
-        {groupedPipelines.map((group) => (
-          <div key={group.category}>
-            <div className="sticky top-0 z-10 px-3 pt-4 pb-1.5 bg-[#09090b]">
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-                  {group.category}
-                </span>
-                <span className="text-[10px] font-mono text-slate-600">
-                  {group.pipelines.length}
-                </span>
-                <div className="flex-1 h-px bg-white/5" />
-              </div>
-            </div>
-            <div className="space-y-1">
-              {group.pipelines.map((pipeline) => (
-                <PipelineListItem
-                  key={pipeline.id}
-                  pipeline={pipeline}
-                  isActive={selectedPipelineId === pipeline.id}
-                  onClick={() => setSelectedPipelineId(pipeline.id)}
-                />
-              ))}
-            </div>
+        {flatItems.length > 0 && (
+          <div
+            style={{
+              height: `${virtualizer.getTotalSize()}px`,
+              position: "relative",
+            }}
+          >
+            {virtualizer.getVirtualItems().map((virtualRow) => {
+              const item = flatItems[virtualRow.index];
+              return (
+                <div
+                  key={virtualRow.index}
+                  ref={virtualizer.measureElement}
+                  data-index={virtualRow.index}
+                  style={{
+                    position: "absolute",
+                    top: 0,
+                    left: 0,
+                    width: "100%",
+                    transform: `translateY(${virtualRow.start}px)`,
+                  }}
+                >
+                  {item.type === "header" ? (
+                    <div className="px-3 pt-4 pb-1.5 bg-[#09090b]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                          {item.category}
+                        </span>
+                        <span className="text-[10px] font-mono text-slate-600">
+                          {item.count}
+                        </span>
+                        <div className="flex-1 h-px bg-white/5" />
+                      </div>
+                    </div>
+                  ) : (
+                    <PipelineListItem
+                      pipeline={item.pipeline}
+                      isActive={selectedPipelineId === item.pipeline.id}
+                      onClick={() => setSelectedPipelineId(item.pipeline.id)}
+                    />
+                  )}
+                </div>
+              );
+            })}
           </div>
-        ))}
+        )}
 
-        {pipelines && filteredPipelines.length === 0 && (
+        {isFetchingNextPage && (
+          <div className="py-4">
+            <LoadingState />
+          </div>
+        )}
+
+        {!isLoading && pipelines.length > 0 && filteredPipelines.length === 0 && (
           <div className="text-center text-slate-500 text-sm py-8">
-            {hasActiveFilters ? "No pipelines match filters" : "No pipelines found"}
+            No pipelines match filters
+          </div>
+        )}
+
+        {!isLoading && pipelines.length === 0 && (
+          <div className="text-center text-slate-500 text-sm py-8">
+            No pipelines found
           </div>
         )}
       </div>
