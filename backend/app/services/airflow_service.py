@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.integrations.airflow_client import airflow_client
+from app.integrations.airflow_client import airflow_client, strip_group_prefix
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
@@ -90,7 +90,8 @@ class AirflowService:
                 tasks = await airflow_client.get_task_instances(dag_id, dag_run_id)
 
                 for task in tasks:
-                    task_id = task.get("task_id")
+                    airflow_task_id = task.get("task_id")
+                    task_id = strip_group_prefix(airflow_task_id) if airflow_task_id else None
 
                     # Check if this is a sensor task (only track from latest run)
                     if task_id in sensor_name_set and run is runs[0]:
@@ -144,7 +145,7 @@ class AirflowService:
                         if needs_actuals:
                             try:
                                 log = await airflow_client.get_task_log(
-                                    dag_id, dag_run_id, task_id
+                                    dag_id, dag_run_id, airflow_task_id
                                 )
                                 actuals = self._parse_resource_actual(log)
                                 plan_json = self._parse_execution_plan(log)
@@ -158,7 +159,7 @@ class AirflowService:
                             except Exception:
                                 logger.debug(
                                     "Could not parse resource actuals for %s/%s/%s",
-                                    dag_id, dag_run_id, task_id,
+                                    dag_id, dag_run_id, airflow_task_id,
                                 )
 
                     # Track best status (most recent execution wins) — only from latest run

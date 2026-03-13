@@ -56,7 +56,7 @@ with DAG(
 ) as dag:
 
     # --- Sensors group (data ingestion) ---
-    with TaskGroup("VaultSensors", prefix_group_id=False) as sensors:
+    with TaskGroup("Vault-Sensors", prefix_group_id=True) as sensors:
         SyslogReceiverSensor = PythonOperator(
             task_id="SyslogReceiverSensor",
             python_callable=run_sensor,
@@ -106,7 +106,7 @@ with DAG(
         )
 
     # --- Sources group (depth 0) — two independent sources ---
-    with TaskGroup("VaultSources", prefix_group_id=False) as sources:
+    with TaskGroup("Vault-Sources", prefix_group_id=True) as sources:
         # SCENARIO 1: Flaky source — fails with RuntimeError (simulates DHCP server timeout)
         DhcpLeaseSync = PythonOperator(
             task_id="DhcpLeaseSync",
@@ -149,7 +149,7 @@ with DAG(
         )
 
     # --- Analysis group (depth 1) ---
-    with TaskGroup("VaultAnalysis", prefix_group_id=False) as analysis:
+    with TaskGroup("Vault-Analysis", prefix_group_id=True) as analysis:
         # SCENARIO 3: Prefers failed, needs succeeded → still works
         # Uses trigger_rule="all_done" to tolerate DhcpLeaseSync failure
         TrafficAttributionModel = PythonOperator(
@@ -234,7 +234,7 @@ with DAG(
         )
 
     # --- Output group (depth 2-3) ---
-    with TaskGroup("VaultOutput", prefix_group_id=False) as output:
+    with TaskGroup("Vault-Output", prefix_group_id=True) as output:
         # SCENARIO 5: All needs succeeded → normal happy path
         PeeringRoiCalculator = PythonOperator(
             task_id="PeeringRoiCalculator",

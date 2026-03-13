@@ -7,11 +7,25 @@ creating a new TCP connection per request.
 import logging
 import re
 from datetime import datetime
+from urllib.parse import quote
 
 import httpx
 
 from app.cache import TTLCache
 from app.config import settings
+
+
+def strip_group_prefix(task_id: str) -> str:
+    """Strip TaskGroup prefix from Airflow task_id.
+
+    With prefix_group_id=True, Airflow prepends '{group_id}.' to task_ids.
+    E.g., 'Dagger - Collection.SwitchPortCollector' -> 'SwitchPortCollector'
+         'Relay.BgpRouteSync' -> 'BgpRouteSync'
+         'SwitchPortCollector' -> 'SwitchPortCollector'  (no-op)
+    """
+    if "." in task_id:
+        return task_id.rsplit(".", 1)[1]
+    return task_id
 
 logger = logging.getLogger(__name__)
 
@@ -125,7 +139,7 @@ class AirflowClient:
         """Fetch the log content for a specific task instance attempt."""
         url = (
             f"{self.base_url}/dags/{dag_id}/dagRuns/{dag_run_id}"
-            f"/taskInstances/{task_id}/logs/{try_number}"
+            f"/taskInstances/{quote(task_id, safe='')}/logs/{try_number}"
         )
         try:
             resp = await self._client.get(
@@ -196,7 +210,7 @@ class AirflowClient:
                 group_stack.pop()
 
             # Detect: with TaskGroup("GroupName", ...) as ...:
-            tg_match = re.match(r'with\s+TaskGroup\(\s*["\'](\w+)["\']', stripped)
+            tg_match = re.match(r'with\s+TaskGroup\(\s*["\']([^"\']+)["\']', stripped)
             if tg_match:
                 group_stack.append((indent, tg_match.group(1)))
                 continue

@@ -36,7 +36,7 @@ with DAG(
 ) as dag:
 
     # --- Sensors group (data ingestion) ---
-    with TaskGroup("DaggerSensors", prefix_group_id=False) as sensors:
+    with TaskGroup("Dagger-Sensors", prefix_group_id=True) as sensors:
         SwitchTelemetrySensor = PythonOperator(
             task_id="SwitchTelemetrySensor",
             python_callable=run_sensor,
@@ -70,7 +70,7 @@ with DAG(
         )
 
     # --- Probes group (ETL tasks) ---
-    with TaskGroup("DaggerProbes", prefix_group_id=False) as probes:
+    with TaskGroup("Dagger-Probes", prefix_group_id=True) as probes:
         SwitchPortCollector = PythonOperator(
             task_id="SwitchPortCollector",
             python_callable=run_etl,

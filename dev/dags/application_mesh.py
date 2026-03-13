@@ -59,7 +59,7 @@ with DAG(
 ) as dag:
 
     # --- Sensors group (data ingestion) ---
-    with TaskGroup("PrismSensors", prefix_group_id=False) as sensors:
+    with TaskGroup("Prism-Sensors", prefix_group_id=True) as sensors:
         SwitchTelemetrySensor = PythonOperator(
             task_id="SwitchTelemetrySensor",
             python_callable=run_sensor,
@@ -93,7 +93,7 @@ with DAG(
         )
 
     # --- Ingestion group (depth 0-2) — collection and enrichment ---
-    with TaskGroup("PrismIngestion", prefix_group_id=False) as ingestion:
+    with TaskGroup("Prism-Ingestion", prefix_group_id=True) as ingestion:
         SwitchPortCollector = PythonOperator(
             task_id="SwitchPortCollector",
             python_callable=run_etl,
@@ -152,7 +152,7 @@ with DAG(
         )
 
     # --- Consumers group (depth 3) — downstream analytics ---
-    with TaskGroup("PrismConsumers", prefix_group_id=False) as consumers:
+    with TaskGroup("Prism-Consumers", prefix_group_id=True) as consumers:
         ProtocolAdoptionTracker = PythonOperator(
             task_id="ProtocolAdoptionTracker",
             python_callable=run_etl,

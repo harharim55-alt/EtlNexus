@@ -39,7 +39,7 @@ with DAG(
 ) as dag:
 
     # --- Sensors group (data ingestion) ---
-    with TaskGroup("OasisSensors", prefix_group_id=False) as sensors:
+    with TaskGroup("Oasis-Sensors", prefix_group_id=True) as sensors:
         SyslogReceiverSensor = PythonOperator(
             task_id="SyslogReceiverSensor",
             python_callable=run_sensor,
@@ -73,7 +73,7 @@ with DAG(
         )
 
     # --- Monitoring group (ETL tasks) ---
-    with TaskGroup("OasisMonitoring", prefix_group_id=False) as monitoring:
+    with TaskGroup("Oasis-Monitoring", prefix_group_id=True) as monitoring:
         SyslogEventStream = PythonOperator(
             task_id="SyslogEventStream",
             python_callable=run_etl,

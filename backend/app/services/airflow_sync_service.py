@@ -14,7 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 import re
 
-from app.integrations.airflow_client import airflow_client
+from app.integrations.airflow_client import airflow_client, strip_group_prefix
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.lineage_repo import LineageRepository
@@ -99,32 +99,32 @@ class AirflowSyncService:
             op_kwargs_by_task: dict[str, dict] = {}
 
             for inst in instances:
-                task_id = inst.get("task_id", "")
+                airflow_task_id = inst.get("task_id", "")
 
                 rendered = inst.get("rendered_fields", {}) or {}
                 op_kwargs = rendered.get("op_kwargs", {}) or {}
 
                 # Fall back to task definition params for upstream_failed tasks
                 if not op_kwargs.get("etl_name") and not op_kwargs.get("sensor_name"):
-                    params = params_by_task.get(task_id, {})
+                    params = params_by_task.get(airflow_task_id, {})
                     if params.get("etl_name") or params.get("sensor_name"):
                         logger.debug(
                             "Using params fallback for task %s in DAG %s (state=%s)",
-                            task_id, dag_id, inst.get("state", "?"),
+                            airflow_task_id, dag_id, inst.get("state", "?"),
                         )
                         op_kwargs = params
 
-                op_kwargs_by_task[task_id] = op_kwargs
+                op_kwargs_by_task[airflow_task_id] = op_kwargs
 
                 # Detect sensor tasks (sensor_name in op_kwargs)
                 sensor_name = op_kwargs.get("sensor_name")
                 if sensor_name:
                     if sensor_name not in seen_sensors:
                         log_content = await airflow_client.get_task_log(
-                            dag_id, dag_run_id, task_id
+                            dag_id, dag_run_id, airflow_task_id
                         )
                         volume = self._parse_sensor_volume(log_content)
-                        description = op_kwargs.get("description") or self._parse_sensor_description(log_content, task_id)
+                        description = op_kwargs.get("description") or self._parse_sensor_description(log_content, sensor_name)
                         seen_sensors[sensor_name] = {
                             "sensor_name": sensor_name,
                             "team": op_kwargs.get("team", ""),
@@ -137,11 +137,12 @@ class AirflowSyncService:
                             seen_sensors[sensor_name]["dag_ids"].append(dag_id)
                     continue
 
-                if not op_kwargs.get("etl_name"):
-                    if task_id not in seen_tasks:
+                etl_name = op_kwargs.get("etl_name")
+                if not etl_name:
+                    if airflow_task_id not in seen_tasks:
                         logger.debug(
                             "Skipping task %s in DAG %s — no etl_name in op_kwargs or params (keys: %s)",
-                            task_id,
+                            airflow_task_id,
                             dag_id,
                             list(op_kwargs.keys()) if op_kwargs else "empty",
                         )
@@ -150,41 +151,43 @@ class AirflowSyncService:
                 # Collect resource config for every DAG occurrence (before dedup skip)
                 raw_resources = op_kwargs.get("resources")
                 if raw_resources and isinstance(raw_resources, dict):
-                    resource_by_dag.setdefault(task_id, {})[dag_id] = raw_resources
+                    resource_by_dag.setdefault(etl_name, {})[dag_id] = raw_resources
 
-                if task_id in seen_tasks:
+                if etl_name in seen_tasks:
                     continue
 
                 # Parse destination tables from task logs
                 log_content = await airflow_client.get_task_log(
-                    dag_id, dag_run_id, task_id
+                    dag_id, dag_run_id, airflow_task_id
                 )
-                destination_tables = self._parse_writes(log_content, task_id)
-                description = self._parse_description(log_content, task_id)
+                destination_tables = self._parse_writes(log_content, etl_name)
+                description = self._parse_description(log_content, etl_name)
 
-                seen_tasks[task_id] = {
-                    "task_id": task_id,
+                seen_tasks[etl_name] = {
+                    "task_id": etl_name,
                     "category": op_kwargs.get("category", ""),
                     "schedule": op_kwargs.get("schedule"),
                     "destination_tables": destination_tables,
                     "description": description,
                     "needs": op_kwargs.get("needs", []),
-                    "task_group": task_group_map.get(task_id) or None,
+                    "task_group": task_group_map.get(etl_name) or None,
                 }
 
             # Build dag_task_graph entries for all tasks in this DAG (ETLs + sensors)
-            for task_id, op_kwargs in op_kwargs_by_task.items():
-                s_name = op_kwargs.get("sensor_name")
-                e_name = op_kwargs.get("etl_name")
+            for airflow_tid, op_kw in op_kwargs_by_task.items():
+                s_name = op_kw.get("sensor_name")
+                e_name = op_kw.get("etl_name")
                 if not s_name and not e_name:
                     continue
+                canonical_id = s_name or e_name
+                raw_downstream = downstream_map.get(airflow_tid, [])
                 dag_task_graph.append({
                     "dag_id": dag_id,
-                    "task_id": task_id,
-                    "downstream_task_ids": downstream_map.get(task_id, []),
-                    "needs": op_kwargs.get("needs", []),
-                    "prefers": op_kwargs.get("prefers", []),
-                    "task_group_id": task_group_map.get(task_id) or None,
+                    "task_id": canonical_id,
+                    "downstream_task_ids": [strip_group_prefix(d) for d in raw_downstream],
+                    "needs": op_kw.get("needs", []),
+                    "prefers": op_kw.get("prefers", []),
+                    "task_group_id": task_group_map.get(canonical_id) or None,
                     "sensor_name": s_name,
                 })
 
@@ -386,7 +389,7 @@ class AirflowSyncService:
                 for dag_id in uncached_list
             ])
             for dag_id, tasks_def in zip(uncached_list, check_results):
-                if any(t.get("task_id") == task_id for t in tasks_def):
+                if any(strip_group_prefix(t.get("task_id", "")) == task_id for t in tasks_def):
                     new_dag_ids.add(dag_id)
 
         target_dag_ids = list(cached_dag_ids | new_dag_ids)
@@ -427,7 +430,8 @@ class AirflowSyncService:
         for dag_id, instances in zip(run_dag_ids, instances_results):
             run = dag_latest_run[dag_id]
             for inst in instances:
-                if inst.get("task_id") != task_id:
+                airflow_task_id = inst.get("task_id", "")
+                if strip_group_prefix(airflow_task_id) != task_id:
                     continue
 
                 found_dags.add(dag_id)
@@ -449,7 +453,7 @@ class AirflowSyncService:
 
                 if meta is None:
                     log_content = await airflow_client.get_task_log(
-                        dag_id, run["dag_run_id"], task_id
+                        dag_id, run["dag_run_id"], airflow_task_id
                     )
                     destination_tables = self._parse_writes(log_content, task_id)
                     description = self._parse_description(log_content, task_id)
@@ -555,11 +559,21 @@ class AirflowSyncService:
             for dag_id, dag_run_id in all_run_pairs
         ])
 
+        # Determine the full Airflow task_id (with group prefix) for this pipeline
+        airflow_task_id = task_id  # fallback for unprefixed
+        for _, instances in zip(run_dag_ids, instances_results):
+            for inst in instances:
+                if strip_group_prefix(inst.get("task_id", "")) == task_id:
+                    airflow_task_id = inst["task_id"]
+                    break
+            if airflow_task_id != task_id:
+                break
+
         # Process instances sequentially (DB operations) and collect log-fetch needs
         needs_log_fetch: list[tuple[str, str]] = []
         for (dag_id, dag_run_id), instances in zip(all_run_pairs, all_instances_results):
             for inst in instances:
-                if inst.get("task_id") != task_id:
+                if strip_group_prefix(inst.get("task_id", "")) != task_id:
                     continue
 
                 state = inst.get("state", "unknown")
@@ -598,7 +612,7 @@ class AirflowSyncService:
         # Fetch all needed logs in parallel, then update actuals sequentially
         if needs_log_fetch:
             log_results = await asyncio.gather(*[
-                _limited(airflow_client.get_task_log(dag_id, dag_run_id, task_id))
+                _limited(airflow_client.get_task_log(dag_id, dag_run_id, airflow_task_id))
                 for dag_id, dag_run_id in needs_log_fetch
             ])
             for (dag_id, dag_run_id), log_content in zip(needs_log_fetch, log_results):
@@ -677,16 +691,21 @@ class AirflowSyncService:
     def _extract_team_from_task_group(
         task_group: str | None, known_teams: set[str]
     ) -> str | None:
-        """Extract team name from PascalCase task_group prefix.
+        """Extract team name from task_group.
 
-        Matches the longest known team name that is a prefix of the task_group.
-        E.g., 'DaggerCollection' with known_teams={'Dagger','Vault'} → 'Dagger'.
+        Supports:
+          'Dagger-Collection' -> 'Dagger'  (split on first '-')
+          'Relay'             -> 'Relay'   (exact match)
         """
         if not task_group:
             return None
-        for team in sorted(known_teams, key=len, reverse=True):
-            if task_group.startswith(team) and len(task_group) > len(team):
-                return team
+        if "-" in task_group:
+            team_part = task_group.split("-", 1)[0]
+            if team_part in known_teams:
+                return team_part
+            return None
+        if task_group in known_teams:
+            return task_group
         return None
 
     @staticmethod

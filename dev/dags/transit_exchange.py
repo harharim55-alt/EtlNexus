@@ -43,8 +43,8 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    # --- Sensors group (data ingestion) ---
-    with TaskGroup("RelaySensors", prefix_group_id=False) as sensors:
+    # --- Single Relay group (sensors + ETLs) ---
+    with TaskGroup("Relay", prefix_group_id=True) as relay:
         SwitchTelemetrySensor = PythonOperator(
             task_id="SwitchTelemetrySensor",
             python_callable=run_sensor,
@@ -93,8 +93,7 @@ with DAG(
             },
         )
 
-    # --- Exchange group (ETL tasks) ---
-    with TaskGroup("RelayExchange", prefix_group_id=False) as exchange:
+        # --- ETL tasks ---
         SwitchPortCollector = PythonOperator(
             task_id="SwitchPortCollector",
             python_callable=run_etl,

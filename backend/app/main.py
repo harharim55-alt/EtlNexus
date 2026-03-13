@@ -9,7 +9,6 @@ from fastapi.responses import JSONResponse
 
 from app.config import settings
 from app.routers import ai, airflow, auth, consumers, dag_summary, health, lineage, pipelines, resources, schema_matrix, sensors, teams, topology, usage, users, visibility
-from app.tasks.scheduler import setup_scheduler
 
 # Structured logging
 logging.config.dictConfig({
@@ -54,25 +53,21 @@ async def lifespan(app: FastAPI):
     from app.integrations.oidc_client import oidc_client
     await oidc_client.initialize()
 
-    # Run initial sync tasks on startup
-    from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
-    from app.tasks.airflow_poll_task import poll_airflow_statuses
-    from app.tasks.catalog_sync_task import sync_from_catalog
-    from app.tasks.seed_usage_data import seed_usage_data
+    from app.tasks.scheduler import setup_scheduler, run_startup_sync
 
-    async def _startup_sync():
-        try:
-            await sync_pipelines_from_airflow()
-            await seed_usage_data()
-            # Catalog sync runs after pipeline sync to match schemas to existing pipelines
-            await sync_from_catalog()
-            # Poll only after sync creates pipelines — avoids race on shared tables
-            await poll_airflow_statuses()
-        except Exception:
-            logger.exception("Startup sync failed — app will serve stale/empty data")
+    # Run initial syncs in background — don't block app startup.
+    # run_startup_sync waits for Airflow readiness and acquires _sync_lock.
+    startup_task = asyncio.create_task(run_startup_sync(), name="startup_sync")
 
-    # Run initial syncs in background — don't block app startup
-    asyncio.create_task(_startup_sync())
+    def _on_startup_done(task: asyncio.Task) -> None:
+        if task.cancelled():
+            logger.warning("Startup sync was cancelled")
+        elif exc := task.exception():
+            logger.error("Startup sync failed: %s", exc)
+        else:
+            logger.info("Startup sync completed successfully")
+
+    startup_task.add_done_callback(_on_startup_done)
 
     # Start background scheduler
     sched = setup_scheduler()
@@ -82,6 +77,9 @@ async def lifespan(app: FastAPI):
     yield
 
     # Shutdown
+    if not startup_task.done():
+        startup_task.cancel()
+        logger.info("Cancelled in-progress startup sync")
     sched.shutdown(wait=False)
     from app.integrations.airflow_client import airflow_client
     await airflow_client.close()

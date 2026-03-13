@@ -59,7 +59,7 @@ with DAG(
 ) as dag:
 
     # --- Sensors group (data ingestion) ---
-    with TaskGroup("DaggerSensors", prefix_group_id=False) as sensors:
+    with TaskGroup("Dagger-Sensors", prefix_group_id=True) as sensors:
         SwitchTelemetrySensor = PythonOperator(
             task_id="SwitchTelemetrySensor",
             python_callable=run_sensor,
@@ -125,7 +125,7 @@ with DAG(
         )
 
     # --- Collection group (depth 0-1) ---
-    with TaskGroup("DaggerCollection", prefix_group_id=False) as collection:
+    with TaskGroup("Dagger-Collection", prefix_group_id=True) as collection:
         SwitchPortCollector = PythonOperator(
             task_id="SwitchPortCollector",
             python_callable=run_etl,
@@ -184,7 +184,7 @@ with DAG(
         )
 
     # --- Oasis cross-DAG tasks ---
-    with TaskGroup("OasisCollection", prefix_group_id=False) as oasis_collection:
+    with TaskGroup("Oasis-Collection", prefix_group_id=True) as oasis_collection:
         DnsRecordSync = PythonOperator(
             task_id="DnsRecordSync",
             python_callable=run_etl,
@@ -205,7 +205,7 @@ with DAG(
         )
 
     # --- Enrichment group (depth 2-3) ---
-    with TaskGroup("DaggerEnrichment", prefix_group_id=False) as enrichment:
+    with TaskGroup("Dagger-Enrichment", prefix_group_id=True) as enrichment:
         DeviceFingerprintEnrichment = PythonOperator(
             task_id="DeviceFingerprintEnrichment",
             python_callable=run_etl,
@@ -283,7 +283,7 @@ with DAG(
         )
 
     # --- Delivery group (depth 4) — leaf nodes ---
-    with TaskGroup("DaggerDelivery", prefix_group_id=False) as delivery:
+    with TaskGroup("Dagger-Delivery", prefix_group_id=True) as delivery:
         NocDashboardSnapshot = PythonOperator(
             task_id="NocDashboardSnapshot",
             python_callable=run_etl,
