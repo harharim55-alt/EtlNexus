@@ -28,6 +28,7 @@ def _grant_to_response(g: VisibilityGrant) -> VisibilityGrantResponse:
         source_team_name=g.source_team.name if g.source_team else None,
         grant_level=g.grant_level,
         granted_by=g.granted_by,
+        granted_by_user_id=g.granted_by_user_id,
         created_at=g.created_at,
     )
 
@@ -86,6 +87,7 @@ async def create_grant(
         grantee_user_id=body.grantee_user_id,
         granted_by=user.display_name,
         grant_level=body.grant_level,
+        granted_by_user_id=user.id,
     )
 
     return _grant_to_response(grant)

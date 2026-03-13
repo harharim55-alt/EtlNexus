@@ -30,7 +30,27 @@ import remarkGfm from "remark-gfm";
 import remarkDirective from "remark-directive";
 import remarkDirectiveRehype from "remark-directive-rehype";
 import rehypeRaw from "rehype-raw";
+import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeHighlight from "rehype-highlight";
+
+/** Allow safe HTML elements while blocking XSS vectors like <script>. */
+const sanitizeSchema = {
+  ...defaultSchema,
+  tagNames: [
+    ...(defaultSchema.tagNames ?? []),
+    "details",
+    "summary",
+    "section",
+  ],
+  attributes: {
+    ...defaultSchema.attributes,
+    div: [...(defaultSchema.attributes?.div ?? []), "dir", "lang", "className"],
+    section: [...(defaultSchema.attributes?.section ?? []), "className"],
+    code: [...(defaultSchema.attributes?.code ?? []), "className"],
+    span: [...(defaultSchema.attributes?.span ?? []), "className"],
+    pre: [...(defaultSchema.attributes?.pre ?? []), "className"],
+  },
+};
 import type { Components } from "react-markdown";
 
 /* ── Copy button for code blocks ──────────────────────────────────── */
@@ -709,7 +729,7 @@ export function DocumentationModal({
               {previewContent.trim() ? (
                 <ReactMarkdown
                   remarkPlugins={[remarkGfm, remarkDirective, remarkDirectiveRehype]}
-                  rehypePlugins={[rehypeRaw, rehypeHighlight]}
+                  rehypePlugins={[rehypeRaw, [rehypeSanitize, sanitizeSchema], rehypeHighlight]}
                   components={markdownComponents}
                 >
                   {previewContent}

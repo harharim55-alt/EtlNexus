@@ -1,4 +1,4 @@
-"""User management endpoints — admin listing and role updates."""
+"""User management endpoints — admin listing, role updates, and activation."""
 
 import uuid
 
@@ -8,7 +8,14 @@ from app.auth import require_role
 from app.dependencies import get_user_repo
 from app.models.user import User
 from app.repositories.user_repo import UserRepository
-from app.schemas.auth import RoleUpdateRequest, UserListResponse, UserResponse, user_to_response
+from app.schemas.auth import (
+    ActiveUpdateRequest,
+    RoleUpdateRequest,
+    UserListResponse,
+    UserResponse,
+    user_to_response,
+)
+from app.services.user_auth_service import invalidate_user_cache
 
 router = APIRouter(prefix="/api/users", tags=["users"])
 
@@ -36,21 +43,7 @@ async def update_user_role(
     user: User = Depends(require_role("admin")),
     repo: UserRepository = Depends(get_user_repo),
 ) -> dict:
-    """Change a user's global role (admin only).
-
-    Args:
-        user_id: UUID of the user whose role should be updated.
-        body: Request payload with validated role field.
-        user: Authenticated admin caller.
-        session: Async DB session.
-
-    Returns:
-        ``{"ok": True}`` on success.
-
-    Raises:
-        HTTPException(400): Self-demotion or last-admin demotion.
-        HTTPException(404): When no user with the given ID exists.
-    """
+    """Change a user's global role (admin only)."""
     # SEC-08: Block self-demotion
     if user_id == user.id and body.role != user.role:
         raise HTTPException(
@@ -75,4 +68,27 @@ async def update_user_role(
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
 
+    await invalidate_user_cache()
+    return {"ok": True}
+
+
+@router.patch("/{user_id}/active")
+async def update_user_active(
+    user_id: uuid.UUID,
+    body: ActiveUpdateRequest,
+    user: User = Depends(require_role("admin")),
+    repo: UserRepository = Depends(get_user_repo),
+) -> dict:
+    """Activate or deactivate a user account (admin only)."""
+    if user_id == user.id and not body.is_active:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot deactivate yourself",
+        )
+
+    updated = await repo.update_active(user_id, body.is_active)
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await invalidate_user_cache()
     return {"ok": True}

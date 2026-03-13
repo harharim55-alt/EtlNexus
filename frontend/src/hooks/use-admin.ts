@@ -2,6 +2,7 @@ import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tansta
 import {
   fetchUsers,
   updateUserRole,
+  updateUserActive,
   fetchTeams,
   fetchTeamDetail,
   fetchGrants,
@@ -71,6 +72,21 @@ export function useUpdateUserRole() {
     },
     onError: () => {
       toast.error("Failed to update role");
+    },
+  });
+}
+
+export function useUpdateUserActive() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, isActive }: { userId: string; isActive: boolean }) =>
+      updateUserActive(userId, isActive),
+    onSuccess: () => {
+      toast.success("User status updated");
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: () => {
+      toast.error("Failed to update user status");
     },
   });
 }

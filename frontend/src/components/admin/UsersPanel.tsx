@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
-import { ArrowRight, ChevronDown, Search } from "lucide-react";
-import { useAdminUsers, useAdminGrants, useAdminTeams, useUpdateUserRole } from "@/hooks/use-admin";
+import { ArrowRight, Ban, ChevronDown, Search } from "lucide-react";
+import { useAdminUsers, useAdminGrants, useAdminTeams, useUpdateUserRole, useUpdateUserActive } from "@/hooks/use-admin";
 import { useQuery } from "@tanstack/react-query";
 import { fetchPipelines } from "@/api/pipelines";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -37,6 +37,7 @@ export function UsersPanel() {
     staleTime: 2 * 60_000,
   });
   const updateRole = useUpdateUserRole();
+  const updateActive = useUpdateUserActive();
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -108,11 +109,16 @@ export function UsersPanel() {
                 >
                   <UserInitials name={u.display_name} size="lg" />
 
-                  <div className="flex-1 min-w-0">
+                  <div className={`flex-1 min-w-0 ${!u.is_active ? "opacity-50" : ""}`}>
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-medium text-white truncate">
                         {u.display_name}
                       </span>
+                      {!u.is_active && (
+                        <span className="text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-400 border border-rose-500/20">
+                          deactivated
+                        </span>
+                      )}
                       {u.teams.length > 0 && (
                         <div className="flex items-center gap-1">
                           {u.teams.map((t) => (
@@ -172,6 +178,31 @@ export function UsersPanel() {
                         {u.role}
                       </button>
                     )}
+                  </div>
+
+                  {/* Activate / deactivate toggle */}
+                  <div
+                    className="shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateActive.mutate({
+                          userId: u.id,
+                          isActive: !u.is_active,
+                        })
+                      }
+                      disabled={updateActive.isPending}
+                      title={u.is_active ? "Deactivate user" : "Activate user"}
+                      className={`p-1.5 rounded-md border transition-all cursor-pointer ${
+                        u.is_active
+                          ? "text-slate-500 border-transparent hover:text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/20"
+                          : "text-rose-400 bg-rose-500/10 border-rose-500/20"
+                      }`}
+                    >
+                      <Ban className="size-3.5" />
+                    </button>
                   </div>
 
                   <ChevronDown

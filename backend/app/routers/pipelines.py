@@ -2,12 +2,14 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.auth import get_current_user, require_team_membership_or_editor_grant
+from app.auth import get_current_user, require_team_membership, require_team_membership_or_editor_grant
 from app.dependencies import (
     get_airflow_sync_service,
+    get_pipeline_repo,
     get_pipeline_service,
     get_visibility_grant_repo,
 )
+from app.repositories.pipeline_repo import PipelineRepository
 from app.models.user import User
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.schemas.pipeline import (
@@ -92,7 +94,11 @@ async def update_pipeline(
     return result
 
 
-@router.post("/{pipeline_id}/sync", response_model=SyncResponse)
+@router.post(
+    "/{pipeline_id}/sync",
+    response_model=SyncResponse,
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
+)
 async def sync_pipeline(
     pipeline_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -110,7 +116,22 @@ async def get_join_suggestions(
     pipeline_id: uuid.UUID,
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
+    grant_repo: VisibilityGrantRepository = Depends(get_visibility_grant_repo),
+    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
 ):
+    if user.role != "admin":
+        pipeline = await pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            raise HTTPException(status_code=404, detail="Pipeline not found")
+        user_team_ids = {ut.team_id for ut in (user.team_memberships or [])}
+        can_see = await grant_repo.user_can_see_pipeline(
+            pipeline_id=pipeline_id,
+            pipeline_team_id=pipeline.team_id,
+            user_id=user.id,
+            user_team_ids=user_team_ids,
+        )
+        if not can_see:
+            raise HTTPException(status_code=404, detail="Pipeline not found")
     result = await service.get_join_suggestions(pipeline_id)
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")

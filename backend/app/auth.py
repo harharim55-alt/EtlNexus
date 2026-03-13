@@ -57,7 +57,10 @@ async def get_current_user(
         logger.warning("JWT validation failed: %s", exc)
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 
-    return await auth_service.upsert_from_claims(claims)
+    user = await auth_service.upsert_from_claims(claims)
+    if not user.is_active:
+        raise HTTPException(status_code=403, detail="Account deactivated")
+    return user
 
 
 async def get_current_user_optional(

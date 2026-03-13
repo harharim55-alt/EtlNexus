@@ -38,8 +38,9 @@ export function AuthGuard({ children }: AuthGuardProps) {
 function SSOGuard({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   const setToken = useAuthStore((s) => s.setToken);
+  const setOidcSignout = useAuthStore((s) => s.setOidcSignout);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const { isLoading: isLoadingUser } = useCurrentUser();
+  const { isLoading: isLoadingUser, isError: isUserError } = useCurrentUser();
 
   // Sync OIDC token to auth store
   useEffect(() => {
@@ -47,6 +48,14 @@ function SSOGuard({ children }: { children: React.ReactNode }) {
       setToken(auth.user.access_token);
     }
   }, [auth.isAuthenticated, auth.user?.access_token, setToken]);
+
+  // Register OIDC signout callback so the 401 interceptor can trigger a real signout
+  useEffect(() => {
+    if (auth.isAuthenticated) {
+      setOidcSignout(() => auth.removeUser());
+    }
+    return () => setOidcSignout(null);
+  }, [auth.isAuthenticated, auth.removeUser, setOidcSignout]);
 
   // Handle OIDC callback (remove code/state from URL)
   useEffect(() => {
@@ -71,6 +80,11 @@ function SSOGuard({ children }: { children: React.ReactNode }) {
     return <LoginPage />;
   }
 
+  // Authenticated with OIDC but /me fetch failed after retries
+  if (!isAuthenticated && isUserError) {
+    return <AuthErrorScreen onRetry={() => window.location.reload()} />;
+  }
+
   // Authenticated with OIDC but still fetching user info
   if (!isAuthenticated && isLoadingUser) {
     return <AuthLoadingScreen />;
@@ -88,6 +102,25 @@ function AuthLoadingScreen() {
         <p className="text-xs text-slate-600 font-mono mt-2">
           Authenticating...
         </p>
+      </div>
+    </div>
+  );
+}
+
+function AuthErrorScreen({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="flex h-screen w-full items-center justify-center bg-[#09090b]">
+      <div className="flex flex-col items-center gap-4 text-center">
+        <div className="size-12 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
+          <span className="text-rose-400 text-lg">!</span>
+        </div>
+        <p className="text-sm text-slate-400">Failed to load user profile</p>
+        <button
+          onClick={onRetry}
+          className="text-xs text-indigo-400 hover:text-indigo-300 font-mono underline underline-offset-2"
+        >
+          Retry
+        </button>
       </div>
     </div>
   );

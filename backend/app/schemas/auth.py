@@ -31,6 +31,7 @@ class UserResponse(BaseModel):
     email: str = Field(description="User email address from SSO claims")
     display_name: str = Field(description="User display name from SSO claims")
     role: str = Field(description="Global role: admin, member, or viewer")
+    is_active: bool = Field(description="Whether the user account is active")
     teams: list[TeamMembershipResponse] = Field(description="Teams the user belongs to")
 
     model_config = {"from_attributes": True}
@@ -45,6 +46,10 @@ class RoleUpdateRequest(BaseModel):
     role: Literal["admin", "member", "viewer"] = Field(
         description="New role to assign (admin, member, or viewer)"
     )
+
+
+class ActiveUpdateRequest(BaseModel):
+    is_active: bool = Field(description="Whether the user account is active")
 
 
 def user_to_response(u: User) -> UserResponse:
@@ -65,5 +70,6 @@ def user_to_response(u: User) -> UserResponse:
         email=u.email,
         display_name=u.display_name,
         role=u.role,
+        is_active=u.is_active,
         teams=teams,
     )

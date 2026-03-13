@@ -16,5 +16,6 @@ export interface UserInfo {
   email: string;
   display_name: string;
   role: string;
+  is_active: boolean;
   teams: TeamMembership[];
 }

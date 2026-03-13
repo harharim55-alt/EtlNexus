@@ -48,15 +48,19 @@ class VisibilityGrant(Base):
         ForeignKey("users.id", ondelete="CASCADE"), index=True
     )
     pipeline_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("pipelines.id", ondelete="CASCADE")
+        ForeignKey("pipelines.id", ondelete="CASCADE"), index=True
     )
     source_team_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("teams.id", ondelete="CASCADE")
+        ForeignKey("teams.id", ondelete="CASCADE"), index=True
     )
     grant_level: Mapped[str] = mapped_column(String(20), default="viewer")
     granted_by: Mapped[str] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    granted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
-    grantee_team: Mapped["Team"] = relationship(foreign_keys=[grantee_team_id])
-    grantee_user: Mapped["User"] = relationship(foreign_keys=[grantee_user_id])
+    grantee_team: Mapped["Team | None"] = relationship(foreign_keys=[grantee_team_id])
+    grantee_user: Mapped["User | None"] = relationship(foreign_keys=[grantee_user_id])
     source_team: Mapped["Team | None"] = relationship(foreign_keys=[source_team_id])
+    granted_by_user: Mapped["User | None"] = relationship(foreign_keys=[granted_by_user_id])

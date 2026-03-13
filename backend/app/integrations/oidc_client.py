@@ -23,6 +23,9 @@ logger = logging.getLogger(__name__)
 # JWKS cache TTL in seconds (6 hours)
 _JWKS_TTL: float = 6 * 3600
 
+# Minimum interval between on-demand JWKS refreshes triggered by unknown kid
+_ON_DEMAND_REFRESH_COOLDOWN: float = 30.0
+
 # Roles accepted by the application — anything else is treated as "member".
 VALID_ROLES: set[str] = {"admin", "member", "viewer"}
 
@@ -38,6 +41,7 @@ class OIDCClient:
     def __init__(self) -> None:
         self._jwks: dict = {}
         self._jwks_fetched_at: float = 0.0
+        self._last_on_demand_refresh_at: float = 0.0
         self._well_known: dict = {}
         self._client: httpx.AsyncClient | None = None
         self._initialized: bool = False
@@ -184,8 +188,11 @@ class OIDCClient:
 
         signing_key = self._get_signing_key(kid)
         if signing_key is None:
-            # Attempt a one-shot async refresh on cache miss (key rotation).
-            await self._refresh_jwks()
+            # Rate-limited on-demand refresh on cache miss (key rotation).
+            now = time.monotonic()
+            if (now - self._last_on_demand_refresh_at) >= _ON_DEMAND_REFRESH_COOLDOWN:
+                await self._refresh_jwks()
+                self._last_on_demand_refresh_at = now
             signing_key = self._get_signing_key(kid)
             if signing_key is None:
                 raise JWTError(f"Unknown signing key kid='{kid}'")

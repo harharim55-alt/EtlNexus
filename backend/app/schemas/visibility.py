@@ -32,6 +32,7 @@ class VisibilityGrantResponse(BaseModel):
     source_team_name: str | None = None
     grant_level: Literal["viewer", "editor"] = "viewer"
     granted_by: str
+    granted_by_user_id: uuid.UUID | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

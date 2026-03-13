@@ -56,6 +56,16 @@ def _evict_stale_entries() -> None:
             _PROVISION_CACHE.popitem(last=False)
 
 
+async def invalidate_user_cache() -> None:
+    """Clear the entire provision cache.
+
+    Call after admin operations (role change, deactivation) so the next
+    API call re-reads from the database.
+    """
+    async with _CACHE_LOCK:
+        _PROVISION_CACHE.clear()
+
+
 class UserAuthService:
     def __init__(self, session: AsyncSession):
         self.session = session

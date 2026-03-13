@@ -68,7 +68,6 @@ class UserRepository:
                 set_={
                     "email": email,
                     "display_name": display_name,
-                    "role": role,
                     "last_login": now,
                 },
             )
@@ -109,6 +108,15 @@ class UserRepository:
         if not user:
             return None
         user.role = role
+        await self.session.flush()
+        return user
+
+    async def update_active(self, user_id: uuid.UUID, is_active: bool) -> User | None:
+        """Activate or deactivate a user (admin only)."""
+        user = await self.get_by_id(user_id)
+        if not user:
+            return None
+        user.is_active = is_active
         await self.session.flush()
         return user
 

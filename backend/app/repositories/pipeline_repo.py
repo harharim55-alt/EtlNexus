@@ -10,6 +10,11 @@ from app.models.run_history import PipelineRunHistory
 from app.models.visibility_grant import VisibilityGrant
 
 
+def _escape_like(value: str) -> str:
+    """Escape LIKE special characters so they are treated as literals."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 class PipelineRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
@@ -38,11 +43,11 @@ class PipelineRepository:
         return result.scalar_one_or_none()
 
     async def search(self, query: str) -> list[Pipeline]:
-        pattern = f"%{query}%"
+        pattern = f"%{_escape_like(query)}%"
         # Search across pipeline name, description, and field names
         field_subq = (
             select(PipelineField.pipeline_id)
-            .where(PipelineField.name.ilike(pattern))
+            .where(PipelineField.name.ilike(pattern, escape="\\"))
             .distinct()
             .scalar_subquery()
         )
@@ -51,8 +56,8 @@ class PipelineRepository:
             .options(selectinload(Pipeline.airflow_status))
             .where(
                 or_(
-                    Pipeline.name.ilike(pattern),
-                    Pipeline.description.ilike(pattern),
+                    Pipeline.name.ilike(pattern, escape="\\"),
+                    Pipeline.description.ilike(pattern, escape="\\"),
                     Pipeline.id.in_(field_subq),
                 )
             )
@@ -154,17 +159,17 @@ class PipelineRepository:
         conditions = []
 
         if query:
-            pattern = f"%{query}%"
+            pattern = f"%{_escape_like(query)}%"
             field_subq = (
                 select(PipelineField.pipeline_id)
-                .where(PipelineField.name.ilike(pattern))
+                .where(PipelineField.name.ilike(pattern, escape="\\"))
                 .distinct()
                 .scalar_subquery()
             )
             conditions.append(
                 or_(
-                    Pipeline.name.ilike(pattern),
-                    Pipeline.description.ilike(pattern),
+                    Pipeline.name.ilike(pattern, escape="\\"),
+                    Pipeline.description.ilike(pattern, escape="\\"),
                     Pipeline.id.in_(field_subq),
                 )
             )

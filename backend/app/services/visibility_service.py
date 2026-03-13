@@ -2,6 +2,7 @@
 
 import uuid
 
+from app.cache import grant_level_cache
 from app.models.visibility_grant import VisibilityGrant
 from app.repositories.team_repo import TeamRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
@@ -32,6 +33,7 @@ class VisibilityService:
         grantee_user_id: uuid.UUID | None = None,
         granted_by: str = "",
         grant_level: str = "viewer",
+        granted_by_user_id: uuid.UUID | None = None,
     ) -> VisibilityGrant:
         """Create a visibility grant.
 
@@ -51,22 +53,30 @@ class VisibilityService:
             raise ValueError("grant_level must be 'viewer' or 'editor'")
 
         if pipeline_id is not None:
-            return await self.grant_repo.create_pipeline_grant(
+            grant = await self.grant_repo.create_pipeline_grant(
                 pipeline_id=pipeline_id,
                 granted_by=granted_by,
                 grantee_team_id=grantee_team_id,
                 grantee_user_id=grantee_user_id,
                 grant_level=grant_level,
+                granted_by_user_id=granted_by_user_id,
+            )
+        else:
+            grant = await self.grant_repo.create_team_grant(
+                source_team_id=source_team_id,  # type: ignore[arg-type]
+                granted_by=granted_by,
+                grantee_team_id=grantee_team_id,
+                grantee_user_id=grantee_user_id,
+                grant_level=grant_level,
+                granted_by_user_id=granted_by_user_id,
             )
 
-        return await self.grant_repo.create_team_grant(
-            source_team_id=source_team_id,  # type: ignore[arg-type]
-            granted_by=granted_by,
-            grantee_team_id=grantee_team_id,
-            grantee_user_id=grantee_user_id,
-            grant_level=grant_level,
-        )
+        grant_level_cache.clear()
+        return grant
 
     async def delete_grant(self, grant_id: uuid.UUID) -> bool:
         """Delete a visibility grant. Returns True if deleted, False if not found."""
-        return await self.grant_repo.delete_grant(grant_id)
+        deleted = await self.grant_repo.delete_grant(grant_id)
+        if deleted:
+            grant_level_cache.clear()
+        return deleted

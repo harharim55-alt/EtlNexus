@@ -18,19 +18,40 @@ apiClient.interceptors.request.use((config) => {
 
 apiClient.interceptors.response.use(
   (response) => response,
-  (error) => {
-    if (error.response?.status === 401) {
-      const { ssoEnabled, logout } = useAuthStore.getState();
+  async (error) => {
+    const originalRequest = error.config;
+
+    if (error.response?.status === 401 && !originalRequest._retry) {
+      const { ssoEnabled } = useAuthStore.getState();
       if (ssoEnabled) {
-        // Token expired or invalid — clear state so AuthGuard redirects to login
+        // Token may be mid-silent-renewal — retry once after a short delay
+        originalRequest._retry = true;
+        const oldToken = useAuthStore.getState().token;
+
+        await new Promise((r) => setTimeout(r, 2000));
+
+        const newToken = useAuthStore.getState().token;
+        if (newToken && newToken !== oldToken) {
+          // Token was refreshed during the wait — retry with the new token
+          originalRequest.headers.Authorization = `Bearer ${newToken}`;
+          return apiClient(originalRequest);
+        }
+
+        // Token unchanged — genuine auth failure, trigger full logout
+        const { logout, oidcSignout } = useAuthStore.getState();
         logout();
+        if (oidcSignout) {
+          await oidcSignout().catch(() => {});
+        }
       }
     }
+
     if (error.response?.status === 503) {
       console.warn("Service temporarily unavailable:", error.response.data);
     }
+
     return Promise.reject(error);
-  }
+  },
 );
 
 export default apiClient;

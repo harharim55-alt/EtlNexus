@@ -15,6 +15,7 @@ const DEFAULT_USER = {
   email: "admin@localhost",
   display_name: "Local Admin",
   role: "admin",
+  is_active: true,
   teams: [],
 };
 

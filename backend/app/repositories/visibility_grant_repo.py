@@ -166,6 +166,7 @@ class VisibilityGrantRepository:
         grantee_team_id: uuid.UUID | None = None,
         grantee_user_id: uuid.UUID | None = None,
         grant_level: str = "viewer",
+        granted_by_user_id: uuid.UUID | None = None,
     ) -> VisibilityGrant:
         """Grant a specific pipeline's visibility to a team or user.
 
@@ -180,6 +181,7 @@ class VisibilityGrantRepository:
         if existing:
             existing.grant_level = grant_level
             existing.granted_by = granted_by
+            existing.granted_by_user_id = granted_by_user_id
             await self.session.flush()
             return await self._refetch(existing.id)
 
@@ -191,6 +193,7 @@ class VisibilityGrantRepository:
             source_team_id=None,
             grant_level=grant_level,
             granted_by=granted_by,
+            granted_by_user_id=granted_by_user_id,
         )
         self.session.add(grant)
         await self.session.flush()
@@ -203,6 +206,7 @@ class VisibilityGrantRepository:
         grantee_team_id: uuid.UUID | None = None,
         grantee_user_id: uuid.UUID | None = None,
         grant_level: str = "viewer",
+        granted_by_user_id: uuid.UUID | None = None,
     ) -> VisibilityGrant:
         """Grant all pipelines of a team to another team or user.
 
@@ -217,6 +221,7 @@ class VisibilityGrantRepository:
         if existing:
             existing.grant_level = grant_level
             existing.granted_by = granted_by
+            existing.granted_by_user_id = granted_by_user_id
             await self.session.flush()
             return await self._refetch(existing.id)
 
@@ -228,6 +233,7 @@ class VisibilityGrantRepository:
             source_team_id=source_team_id,
             grant_level=grant_level,
             granted_by=granted_by,
+            granted_by_user_id=granted_by_user_id,
         )
         self.session.add(grant)
         await self.session.flush()
