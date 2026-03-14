@@ -40,6 +40,7 @@ export function SchemaMatrixView() {
     [data],
   );
   const total = data?.pages[0]?.total ?? 0;
+  const totalLabel = useMemo(() => (total > 0 ? total : fields.length), [total, fields.length]);
 
   const getScrollElement = useCallback(() => scrollRef.current, []);
   const estimateSize = useCallback(() => ROW_HEIGHT, []);
@@ -93,8 +94,6 @@ export function SchemaMatrixView() {
       </div>
     );
   }
-
-  const totalLabel = useMemo(() => (total > 0 ? total : fields.length), [total, fields.length]);
 
   return (
     <div ref={scrollRef} data-section="schema-matrix" className="flex-1 overflow-y-auto custom-scrollbar">
