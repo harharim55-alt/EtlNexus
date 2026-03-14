@@ -77,12 +77,12 @@ export function BentoWorkspace() {
         />
 
         {/* Row 2: Resource & Performance */}
-        {!isApiPipeline(pipeline.category) && (
+        {!isApiPipeline(pipeline.pipeline_type) && (
           <ResourcePerformanceCard pipelineId={pipeline.id} />
         )}
 
         {/* Row 2.5: Execution Plan Tree */}
-        {!isApiPipeline(pipeline.category) && (
+        {!isApiPipeline(pipeline.pipeline_type) && (
           <TransformInspectorCard pipelineId={pipeline.id} />
         )}
 
@@ -93,7 +93,7 @@ export function BentoWorkspace() {
         </div>
         <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
           <JoinIntelligence pipelineId={pipeline.id} />
-          <ConsumeSnippet pipelineName={pipeline.name} category={pipeline.category ?? undefined} />
+          <ConsumeSnippet pipelineName={pipeline.name} pipelineType={pipeline.pipeline_type} />
         </div>
       </div>
     </div>

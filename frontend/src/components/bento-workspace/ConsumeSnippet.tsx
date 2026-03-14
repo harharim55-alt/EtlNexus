@@ -4,12 +4,12 @@ import { isApiPipeline } from "@/lib/utils";
 
 interface ConsumeSnippetProps {
   pipelineName: string;
-  category?: string;
+  pipelineType?: string;
 }
 
-export function ConsumeSnippet({ pipelineName, category }: ConsumeSnippetProps) {
+export function ConsumeSnippet({ pipelineName, pipelineType }: ConsumeSnippetProps) {
   const importName = pipelineName.toLowerCase().replace(/ /g, "_");
-  const isApi = isApiPipeline(category);
+  const isApi = isApiPipeline(pipelineType);
 
   if (isApi) {
     const apiCode = `from path import api\n\n${importName} = ${importName}(start_date, end_date)`;

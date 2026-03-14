@@ -5,6 +5,6 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-export function isApiPipeline(category: string | null | undefined): boolean {
-  return category?.toLowerCase().includes("api") ?? false;
+export function isApiPipeline(pipelineType: string | null | undefined): boolean {
+  return pipelineType === "api";
 }

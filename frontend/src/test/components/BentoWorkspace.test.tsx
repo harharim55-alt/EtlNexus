@@ -94,6 +94,7 @@ function makePipelineDetail(overrides: Partial<PipelineDetail> = {}): PipelineDe
     task_id: "SwitchPortCollector",
     description: "Collects switch port data",
     category: "Network Infrastructure",
+    pipeline_type: "etl",
     schedule: "@daily",
     rows_per_day: "50K",
     airflow_status: "success",
@@ -220,9 +221,9 @@ describe("BentoWorkspace — pipeline loaded", () => {
     expect(screen.getByTestId("resource-performance-card")).toBeInTheDocument();
   });
 
-  it("does not render resource performance card for API category pipeline", () => {
+  it("does not render resource performance card for API pipeline", () => {
     mockUsePipelineDetail.mockReturnValue({
-      data: makePipelineDetail({ category: "Network APIs" }),
+      data: makePipelineDetail({ pipeline_type: "api" }),
       isLoading: false,
       error: null,
       refetch: vi.fn(),
