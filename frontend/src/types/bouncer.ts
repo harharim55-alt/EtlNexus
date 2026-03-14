@@ -1,6 +1,6 @@
 export interface Bouncer {
   id: string;
-  sensor_name: string;
+  bouncer_name: string;
   display_name: string;
   description: string | null;
   team: string | null;

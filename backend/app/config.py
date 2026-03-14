@@ -39,6 +39,13 @@ class Settings(BaseSettings):
     # Airflow Auto-Discovery
     airflow_exclude_operator_types: str = "EmptyOperator,DummyOperator,BranchPythonOperator,TriggerDagRunOperator,ShortCircuitOperator"
 
+    # Cache TTLs (seconds) and page limits
+    cache_ttl_short: int = 30
+    cache_ttl_medium: int = 60
+    cache_ttl_airflow: int = 300
+    default_page_limit: int = 200
+    default_page_limit_small: int = 20
+
     # SSO / OIDC
     sso_enabled: bool = False
     sso_issuer_url: str = "http://keycloak:8090/realms/etlnexus"

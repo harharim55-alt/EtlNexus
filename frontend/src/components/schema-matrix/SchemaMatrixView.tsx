@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useCallback } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
 import { Network } from "lucide-react";
 import { useSchemaMatrix } from "@/hooks/use-schema-matrix";
@@ -6,6 +6,22 @@ import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { FieldFrequencyRow } from "./FieldFrequencyRow";
+
+/* ── Module-level constants ────────────────────────────────────────── */
+
+const ROW_HEIGHT = 48;
+
+const VIRTUAL_ROW_STYLE: React.CSSProperties = {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  width: "100%",
+};
+
+const TOTAL_SIZE_STYLE = (height: number): React.CSSProperties => ({
+  height: `${height}px`,
+  position: "relative",
+});
 
 export function SchemaMatrixView() {
   const {
@@ -24,13 +40,21 @@ export function SchemaMatrixView() {
     [data],
   );
   const total = data?.pages[0]?.total ?? 0;
+  const totalLabel = useMemo(() => (total > 0 ? total : fields.length), [total, fields.length]);
+
+  const getScrollElement = useCallback(() => scrollRef.current, []);
+  const estimateSize = useCallback(() => ROW_HEIGHT, []);
+  const measureElement = useCallback(
+    (el: Element) => el.getBoundingClientRect().height,
+    [],
+  );
 
   const virtualizer = useVirtualizer({
     count: fields.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => 48,
+    getScrollElement,
+    estimateSize,
     overscan: 15,
-    measureElement: (el) => el.getBoundingClientRect().height,
+    measureElement,
   });
 
   // Infinite scroll: fetch next page when scrolling near bottom
@@ -71,8 +95,6 @@ export function SchemaMatrixView() {
     );
   }
 
-  const totalLabel = total > 0 ? total : fields.length;
-
   return (
     <div ref={scrollRef} data-section="schema-matrix" className="flex-1 overflow-y-auto custom-scrollbar">
       <div className="p-8">
@@ -99,12 +121,7 @@ export function SchemaMatrixView() {
         </div>
 
         {/* Virtualized Rows */}
-        <div
-          style={{
-            height: `${virtualizer.getTotalSize()}px`,
-            position: "relative",
-          }}
-        >
+        <div style={TOTAL_SIZE_STYLE(virtualizer.getTotalSize())}>
           {virtualizer.getVirtualItems().map((virtualRow) => {
             const row = fields[virtualRow.index];
             return (
@@ -113,10 +130,7 @@ export function SchemaMatrixView() {
                 ref={virtualizer.measureElement}
                 data-index={virtualRow.index}
                 style={{
-                  position: "absolute",
-                  top: 0,
-                  left: 0,
-                  width: "100%",
+                  ...VIRTUAL_ROW_STYLE,
                   transform: `translateY(${virtualRow.start}px)`,
                 }}
               >

@@ -16,10 +16,19 @@ class LLMClient:
         self.model = settings.llm_model
         self.max_tokens = settings.llm_max_tokens
         self.timeout = httpx.Timeout(30.0)
+        self._client: httpx.AsyncClient | None = None
 
     @property
     def is_configured(self) -> bool:
         return bool(self.base_url)
+
+    def _get_client(self) -> httpx.AsyncClient:
+        if self._client is None or self._client.is_closed:
+            self._client = httpx.AsyncClient(
+                timeout=self.timeout,
+                limits=httpx.Limits(max_connections=5, max_keepalive_connections=2),
+            )
+        return self._client
 
     async def chat(
         self,
@@ -47,15 +56,15 @@ class LLMClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         try:
-            async with httpx.AsyncClient(timeout=self.timeout) as client:
-                resp = await client.post(
-                    f"{self.base_url}/chat/completions",
-                    json=payload,
-                    headers=headers,
-                )
-                resp.raise_for_status()
-                data = resp.json()
-                return data["choices"][0]["message"]["content"]
+            client = self._get_client()
+            resp = await client.post(
+                f"{self.base_url}/chat/completions",
+                json=payload,
+                headers=headers,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return data["choices"][0]["message"]["content"]
         except httpx.HTTPStatusError as e:
             logger.error("LLM API error: %s %s", e.response.status_code, e.response.text[:200])
             return f"LLM API error: {e.response.status_code}"
@@ -65,6 +74,12 @@ class LLMClient:
         except (KeyError, IndexError):
             logger.error("Unexpected LLM response format")
             return "Unexpected response from the LLM endpoint."
+
+    async def close(self):
+        """Close the persistent HTTP client."""
+        if self._client and not self._client.is_closed:
+            await self._client.aclose()
+            self._client = None
 
 
 llm_client = LLMClient()

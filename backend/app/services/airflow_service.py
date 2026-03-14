@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.integrations.airflow_client import airflow_client, strip_group_prefix
 from app.parsers.log_parser import parse_execution_plan, parse_resource_actual
 from app.repositories.airflow_repo import AirflowRepository
+from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
-from app.repositories.sensor_repo import BouncerRepository
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +75,7 @@ class AirflowService:
 
         # Build bouncer name set for quick lookup
         all_bouncers = await self.bouncer_repo.get_all()
-        bouncer_name_set = {s.sensor_name for s in all_bouncers}
+        bouncer_name_set = {s.bouncer_name for s in all_bouncers}
         bouncer_best_status: dict[str, str] = {}
 
         best: dict[str, dict] = {}
@@ -211,8 +211,8 @@ class AirflowService:
             updated += 1
 
         bouncer_updated = 0
-        for sensor_name, status in bouncer_best_status.items():
-            bouncer = await self.bouncer_repo.get_by_name(sensor_name)
+        for bouncer_name, status in bouncer_best_status.items():
+            bouncer = await self.bouncer_repo.get_by_name(bouncer_name)
             if bouncer:
                 bouncer.status = status
                 bouncer_updated += 1

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, memo } from "react";
 import { Clock, Layers, Timer, Workflow, CheckCircle, Pause, CalendarClock, AlertTriangle, ChevronDown } from "lucide-react";
 import { TaskStatusDots } from "./TaskStatusDots";
 import { getStatusStyle, STATUS_SEVERITY_ORDER } from "@/lib/status-config";
@@ -78,7 +78,7 @@ interface DagCardProps {
   dag: DagSummary;
 }
 
-export function DagCard({ dag }: DagCardProps) {
+export const DagCard = memo(function DagCard({ dag }: DagCardProps) {
   const [showFailed, setShowFailed] = useState(false);
 
   const sortedTasks = [...dag.tasks].sort((a, b) => {
@@ -327,4 +327,4 @@ export function DagCard({ dag }: DagCardProps) {
       </div>
     </div>
   );
-}
+});

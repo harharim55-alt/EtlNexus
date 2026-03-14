@@ -85,18 +85,20 @@ export function OnboardingOverlay() {
 
     // Auto-select first non-API pipeline for catalog/workspace steps
     if ((step.id === "catalog" || step.id === "workspace")) {
-      const cached = queryClient.getQueryData<{
+      // Use partial key match — the full key is ["pipelines", searchQuery, dateParams]
+      const queries = queryClient.getQueriesData<{
         pages: Array<{ items: PipelineListItem[]; total: number }>;
-      }>(["pipelines", ""]);
+      }>({ queryKey: ["pipelines"] });
+      const cached = queries.find(([, data]) => data?.pages?.length)?.[1];
       if (cached?.pages) {
         const allPipelines = cached.pages.flatMap((p) => p.items);
         const currentPipeline = selectedPipelineId
           ? allPipelines.find((p) => p.id === selectedPipelineId)
           : null;
         // Force non-API selection if nothing selected or current is API
-        if (!currentPipeline || currentPipeline.category?.toLowerCase().includes("api")) {
+        if (!currentPipeline || currentPipeline.pipeline_type === "api") {
           const etlPipeline = allPipelines.find(
-            (p) => !p.category?.toLowerCase().includes("api"),
+            (p) => p.pipeline_type !== "api",
           );
           // Fallback to first pipeline if all are API
           const target = etlPipeline ?? allPipelines[0];
@@ -115,7 +117,7 @@ export function OnboardingOverlay() {
         const bouncers = data.bouncers;
         if (bouncers.length === 0) return;
         if (bouncers.length === 1) {
-          store.toggleBouncer(bouncers[0].sensor_name);
+          store.toggleBouncer(bouncers[0].bouncer_name);
           return;
         }
         // Single-pass: find a pair sharing a dag_id for intersection mode
@@ -124,11 +126,11 @@ export function OnboardingOverlay() {
         for (const bouncer of bouncers) {
           for (const dagId of bouncer.dag_ids) {
             const other = dagToBouncer.get(dagId);
-            if (other && other !== bouncer.sensor_name) {
-              picked = [other, bouncer.sensor_name];
+            if (other && other !== bouncer.bouncer_name) {
+              picked = [other, bouncer.bouncer_name];
               break;
             }
-            dagToBouncer.set(dagId, bouncer.sensor_name);
+            dagToBouncer.set(dagId, bouncer.bouncer_name);
           }
           if (picked) break;
         }
@@ -138,8 +140,8 @@ export function OnboardingOverlay() {
           store.setTopologyMode("intersection");
         } else {
           // No intersection found — pick first two with union
-          store.toggleBouncer(bouncers[0].sensor_name);
-          store.toggleBouncer(bouncers[1].sensor_name);
+          store.toggleBouncer(bouncers[0].bouncer_name);
+          store.toggleBouncer(bouncers[1].bouncer_name);
           store.setTopologyMode("union");
         }
       };

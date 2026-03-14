@@ -12,6 +12,7 @@ import { JoinIntelligence } from "./JoinIntelligence";
 import { UsageCard } from "./UsageCard";
 import { ResourcePerformanceCard } from "./ResourcePerformanceCard";
 import { TransformInspectorCard } from "./TransformInspectorCard";
+import { isApiPipeline } from "@/lib/utils";
 
 export function BentoWorkspace() {
   const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
@@ -68,32 +69,37 @@ export function BentoWorkspace() {
       />
 
       <div className="grid grid-cols-12 gap-6 mt-6">
-        {/* Row 1: Lineage + Metrics */}
-        <LineageTopology pipelineId={pipeline.id} />
-        <MetricsCards
-          rowsPerDay={pipeline.rows_per_day}
-          schedule={pipeline.schedule}
-        />
-
-        {/* Row 2: Resource & Performance */}
-        {!pipeline.category?.toLowerCase().includes("api") && (
-          <ResourcePerformanceCard pipelineId={pipeline.id} />
+        {isApiPipeline(pipeline.pipeline_type) ? (
+          <>
+            {/* API layout: Topology full-width, then Usage + Consume side by side */}
+            <LineageTopology pipelineId={pipeline.id} fullWidth />
+            <div className="col-span-12 lg:col-span-7">
+              <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
+            </div>
+            <div className="col-span-12 lg:col-span-5">
+              <ConsumeSnippet pipelineName={pipeline.name} pipelineType={pipeline.pipeline_type} />
+            </div>
+          </>
+        ) : (
+          <>
+            {/* ETL layout: Topology + Metrics, Resources, Plan, Schema + Usage + Joins */}
+            <LineageTopology pipelineId={pipeline.id} />
+            <MetricsCards
+              rowsPerDay={pipeline.rows_per_day}
+              schedule={pipeline.schedule}
+            />
+            <ResourcePerformanceCard pipelineId={pipeline.id} />
+            <TransformInspectorCard pipelineId={pipeline.id} />
+            <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
+              <SchemaViewer fields={pipeline.fields} />
+              <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
+            </div>
+            <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
+              <JoinIntelligence pipelineId={pipeline.id} />
+              <ConsumeSnippet pipelineName={pipeline.name} pipelineType={pipeline.pipeline_type} />
+            </div>
+          </>
         )}
-
-        {/* Row 2.5: Execution Plan Tree */}
-        {!pipeline.category?.toLowerCase().includes("api") && (
-          <TransformInspectorCard pipelineId={pipeline.id} />
-        )}
-
-        {/* Row 3: Schema + Usage (left) | Join Intelligence + Consume (right) */}
-        <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
-          <SchemaViewer fields={pipeline.fields} />
-          <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
-        </div>
-        <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
-          <JoinIntelligence pipelineId={pipeline.id} />
-          <ConsumeSnippet pipelineName={pipeline.name} category={pipeline.category ?? undefined} />
-        </div>
       </div>
     </div>
   );

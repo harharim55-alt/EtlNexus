@@ -24,7 +24,7 @@ interface BouncerCardProps {
 export function BouncerCard({ bouncer }: BouncerCardProps) {
   const selectedBouncers = useBouncerStore((s) => s.selectedBouncers);
   const toggleBouncer = useBouncerStore((s) => s.toggleBouncer);
-  const isSelected = selectedBouncers.includes(bouncer.sensor_name);
+  const isSelected = selectedBouncers.includes(bouncer.bouncer_name);
   const status = bouncer.status || "unknown";
   const cfg = getStatusStyle(status);
   const teamColors =
@@ -34,7 +34,7 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
   return (
     <button
       type="button"
-      onClick={() => toggleBouncer(bouncer.sensor_name)}
+      onClick={() => toggleBouncer(bouncer.bouncer_name)}
       className={`
         group relative w-full text-left rounded-xl border p-4 transition-all duration-200 cursor-pointer
         ${
@@ -84,7 +84,7 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
             </h4>
           </div>
           <p className="text-[9px] font-mono text-slate-600 truncate">
-            {bouncer.sensor_name}
+            {bouncer.bouncer_name}
           </p>
         </div>
       </div>

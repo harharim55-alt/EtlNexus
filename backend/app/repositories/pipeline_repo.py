@@ -1,10 +1,12 @@
 import uuid
 from datetime import UTC, datetime, timedelta
+from types import SimpleNamespace
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.cache import task_id_map_cache
 from app.models.pipeline import Pipeline, PipelineField
 from app.models.run_history import PipelineRunHistory
 from app.models.visibility_grant import VisibilityGrant
@@ -30,6 +32,51 @@ class PipelineRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_task_id_map(self) -> dict[str, SimpleNamespace]:
+        """Return a lightweight {task_id: summary} map without eager-loading relationships.
+
+        Each value is a SimpleNamespace with .id, .name, .task_id, .status,
+        .execution_date, .category, .description — sufficient for topology,
+        consumer, usage, bouncer, and AI catalog context lookups.
+
+        Results are cached via task_id_map_cache (short TTL, cleared on sync).
+        """
+        cache_key = "task_id_map"
+        cached = task_id_map_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        from app.models.airflow_status import AirflowRunStatus
+
+        stmt = (
+            select(
+                Pipeline.id,
+                Pipeline.name,
+                Pipeline.task_id,
+                Pipeline.category,
+                Pipeline.description,
+                AirflowRunStatus.status,
+                AirflowRunStatus.execution_date,
+            )
+            .outerjoin(AirflowRunStatus, Pipeline.id == AirflowRunStatus.pipeline_id)
+            .where(Pipeline.task_id.isnot(None))
+        )
+        result = await self.session.execute(stmt)
+        pipeline_map = {
+            row.task_id: SimpleNamespace(
+                id=row.id,
+                name=row.name,
+                task_id=row.task_id,
+                status=row.status or "unknown",
+                execution_date=row.execution_date,
+                category=row.category,
+                description=row.description,
+            )
+            for row in result.all()
+        }
+        task_id_map_cache.set(cache_key, pipeline_map)
+        return pipeline_map
 
     async def get_by_id(self, pipeline_id: uuid.UUID) -> Pipeline | None:
         stmt = (

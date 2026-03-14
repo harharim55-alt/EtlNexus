@@ -23,9 +23,8 @@ class ConsumerService:
         if not dag_entries:
             return PipelineConsumersResponse(consumers=[])
 
-        # Build pipeline lookup by task_id (PascalCase)
-        all_pipelines = await self.pipeline_repo.get_all()
-        task_id_to_pipeline = {p.task_id: p for p in all_pipelines if p.task_id}
+        # Build pipeline lookup by task_id (lightweight — no eager-loaded relationships)
+        task_id_to_pipeline = await self.pipeline_repo.get_task_id_map()
 
         # Collect downstream tasks across all DAGs (deduplicated by task_id)
         downstream_info: dict[str, dict] = {}
@@ -33,12 +32,10 @@ class ConsumerService:
             for tid in entry.downstream_task_ids or []:
                 if tid not in downstream_info:
                     p = task_id_to_pipeline.get(tid)
-                    status = "unknown"
-                    if p and p.airflow_status:
-                        status = p.airflow_status.status
+                    status = p.status if p else "unknown"
                     exec_date = None
-                    if p and p.airflow_status and p.airflow_status.execution_date:
-                        exec_date = p.airflow_status.execution_date.isoformat()
+                    if p and p.execution_date:
+                        exec_date = p.execution_date.isoformat()
                     downstream_info[tid] = {
                         "status": status,
                         "exec_date": exec_date,

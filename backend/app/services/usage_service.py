@@ -39,9 +39,8 @@ class UsageService:
         if not dag_entries:
             return PipelineUsageResponse(usages=[])
 
-        # 2. Build pipeline lookup by task_id (PascalCase)
-        all_pipelines = await self.pipeline_repo.get_all()
-        task_id_to_pipeline = {p.task_id: p for p in all_pipelines if p.task_id}
+        # 2. Build pipeline lookup by task_id (lightweight — no eager-loaded relationships)
+        task_id_to_pipeline = await self.pipeline_repo.get_task_id_map()
 
         # 3. Collect downstream task_ids + status across all DAGs
         downstream_info: dict[str, dict] = {}
@@ -49,19 +48,17 @@ class UsageService:
         my_dag_id = dag_entries[0].dag_id
 
         current_pipeline = task_id_to_pipeline.get(etl_name)
-        if current_pipeline and current_pipeline.airflow_status:
-            my_status = current_pipeline.airflow_status.status
+        if current_pipeline:
+            my_status = current_pipeline.status
 
         for entry in dag_entries:
             for tid in entry.downstream_task_ids or []:
                 if tid not in downstream_info:
                     p = task_id_to_pipeline.get(tid)
-                    status = "unknown"
+                    status = p.status if p else "unknown"
                     exec_date = None
-                    if p and p.airflow_status:
-                        status = p.airflow_status.status
-                        if p.airflow_status.execution_date:
-                            exec_date = p.airflow_status.execution_date.isoformat()
+                    if p and p.execution_date:
+                        exec_date = p.execution_date.isoformat()
                     downstream_info[tid] = {
                         "status": status,
                         "exec_date": exec_date,

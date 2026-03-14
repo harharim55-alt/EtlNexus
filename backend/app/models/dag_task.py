@@ -25,15 +25,15 @@ class DagTask(Base):
     needs: Mapped[list] = mapped_column(JSON, default=list)
     prefers: Mapped[list] = mapped_column(JSON, default=list)
     task_group_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    sensor_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    sensor_id: Mapped[uuid.UUID | None] = mapped_column(
-        ForeignKey("sensors.id", ondelete="SET NULL"), index=True, nullable=True
+    bouncer_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    bouncer_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("bouncers.id", ondelete="SET NULL"), index=True, nullable=True
     )
     synced_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
 
     pipeline: Mapped["Pipeline | None"] = relationship(foreign_keys=[pipeline_id])
-    sensor: Mapped["Bouncer | None"] = relationship(foreign_keys=[sensor_id])
+    bouncer: Mapped["Bouncer | None"] = relationship(foreign_keys=[bouncer_id])
 
 
+from app.models.bouncer import Bouncer  # noqa: E402, F401
 from app.models.pipeline import Pipeline  # noqa: E402, F401
-from app.models.sensor import Bouncer  # noqa: E402, F401

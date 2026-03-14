@@ -11,9 +11,9 @@ class TopologyTask(BaseModel):
 
 
 class TopologyBouncer(BaseModel):
-    sensor_name: str
+    bouncer_name: str
     display_name: str
-    sensor_id: str | None = None
+    bouncer_id: str | None = None
     status: str | None = None
     team: str | None = None
     volume_per_day: int | None = None

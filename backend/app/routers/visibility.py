@@ -59,27 +59,6 @@ async def create_grant(
     Exactly one of ``pipeline_id`` or ``source_team_id`` must be set (target).
     Exactly one of ``grantee_team_id`` or ``grantee_user_id`` must be set (recipient).
     """
-    if not body.pipeline_id and not body.source_team_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Must specify pipeline_id or source_team_id",
-        )
-    if body.pipeline_id and body.source_team_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot specify both pipeline_id and source_team_id",
-        )
-    if not body.grantee_team_id and not body.grantee_user_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Must specify grantee_team_id or grantee_user_id",
-        )
-    if body.grantee_team_id and body.grantee_user_id:
-        raise HTTPException(
-            status_code=400,
-            detail="Cannot specify both grantee_team_id and grantee_user_id",
-        )
-
     grant = await service.create_grant(
         pipeline_id=body.pipeline_id,
         source_team_id=body.source_team_id,

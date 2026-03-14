@@ -2,17 +2,22 @@ import asyncio
 import logging
 import logging.config
 import time
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
+from app.rate_limit import limiter
 from app.routers import (
     ai,
     airflow,
     auth,
+    bouncers,
     consumers,
     dag_summary,
     health,
@@ -20,7 +25,6 @@ from app.routers import (
     pipelines,
     resources,
     schema_matrix,
-    sensors,
     teams,
     topology,
     usage,
@@ -103,6 +107,8 @@ async def lifespan(app: FastAPI):
     await airflow_client.close()
     from app.integrations.oidc_client import oidc_client as _oidc
     await _oidc.close()
+    from app.integrations.llm_client import llm_client
+    await llm_client.close()
     from app.integrations.iceberg_client import iceberg_client
     iceberg_client.stop()
     logger.info("ETL Explorer Hub shutting down")
@@ -113,7 +119,13 @@ app = FastAPI(
     description="Data architecture command center API",
     version="0.1.0",
     lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
+
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
@@ -122,6 +134,14 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = str(uuid.uuid4())
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
 
 
 # Request logging middleware
@@ -171,7 +191,7 @@ app.include_router(consumers.router)
 app.include_router(topology.router)
 app.include_router(resources.router)
 app.include_router(dag_summary.router)
-app.include_router(sensors.router)
+app.include_router(bouncers.router)
 app.include_router(ai.router)
 app.include_router(auth.router)
 app.include_router(teams.router)

@@ -23,11 +23,11 @@ from app.parsers.log_parser import (
     parse_writes,
 )
 from app.repositories.airflow_repo import AirflowRepository
+from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
-from app.repositories.sensor_repo import BouncerRepository
 from app.repositories.team_repo import TeamRepository
 from app.services.airflow_service import _STATUS_PRIORITY, KNOWN_AIRFLOW_STATES
 from app.services.sync.task_classifier import (
@@ -63,7 +63,7 @@ class AirflowSyncService:
         resource_repo: ResourceRepository | None = None,
         airflow_repo: AirflowRepository | None = None,
         dag_task_repo: DagTaskRepository | None = None,
-        sensor_repo: BouncerRepository | None = None,
+        bouncer_repo: BouncerRepository | None = None,
         team_repo: TeamRepository | None = None,
     ):
         self.session = session
@@ -72,13 +72,13 @@ class AirflowSyncService:
         self.resource_repo = resource_repo or ResourceRepository(session)
         self.airflow_repo = airflow_repo or AirflowRepository(session)
         self.dag_task_repo = dag_task_repo or DagTaskRepository(session)
-        self.sensor_repo = sensor_repo or BouncerRepository(session)
+        self.bouncer_repo = bouncer_repo or BouncerRepository(session)
         self.team_repo = team_repo or TeamRepository(session)
 
     async def sync_pipelines_from_airflow(self) -> int:
         """Discover all tasks across all DAGs and register as pipelines + lineage.
 
-        Auto-discovers tasks using task_id — no etl_name/sensor_name gate.
+        Auto-discovers tasks using task_id — no etl_name/bouncer_name gate.
         - Category: from TaskGroup (second part after dash)
         - Schedule: from DAG native (timetable_description or schedule_interval)
         - Lineage: from params (needs/prefers)
@@ -180,7 +180,7 @@ class AirflowSyncService:
                         description = op_kwargs.get("description")
                         log_requests.append((dag_id, dag_run_id, airflow_task_id, "bouncer", canonical_tid))
                         seen_bouncers[canonical_tid] = {
-                            "sensor_name": canonical_tid,
+                            "bouncer_name": canonical_tid,
                             "description": description,
                             "dag_ids": [dag_id],
                             "task_group": task_group_map.get(canonical_tid) or None,
@@ -254,7 +254,7 @@ class AirflowSyncService:
                     "needs": params.get("needs", []),
                     "prefers": params.get("prefers", []),
                     "task_group_id": task_group_map.get(canonical_tid) or None,
-                    "sensor_name": canonical_tid if task_is_bouncer else None,
+                    "bouncer_name": canonical_tid if task_is_bouncer else None,
                 })
 
         logger.info(
@@ -381,8 +381,8 @@ class AirflowSyncService:
             display_name = task_id_to_display_name(bouncer_name)
             task_group = meta.get("task_group")
             team_name = extract_team_from_task_group(task_group, known_teams)
-            bouncer = await self.sensor_repo.upsert({
-                "sensor_name": bouncer_name,
+            bouncer = await self.bouncer_repo.upsert({
+                "bouncer_name": bouncer_name,
                 "display_name": display_name,
                 "description": meta.get("description") or display_name,
                 "team": team_name or "",
@@ -397,9 +397,9 @@ class AirflowSyncService:
         for entry in dag_task_graph:
             entry["pipeline_id"] = task_id_to_pipeline_id.get(entry["task_id"])
             # Link bouncer entries to bouncer records
-            s_name = entry.get("sensor_name")
+            s_name = entry.get("bouncer_name")
             if s_name:
-                entry["sensor_id"] = bouncer_name_to_id.get(s_name)
+                entry["bouncer_id"] = bouncer_name_to_id.get(s_name)
             await self.dag_task_repo.upsert(entry)
             current_pairs.add((entry["dag_id"], entry["task_id"]))
 
