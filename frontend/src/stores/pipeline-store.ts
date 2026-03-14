@@ -1,6 +1,6 @@
 import { create } from "zustand";
 
-interface PipelineState {
+export interface PipelineState {
   selectedPipelineId: string | null;
   selectedDagId: string | null;
   searchQuery: string;
