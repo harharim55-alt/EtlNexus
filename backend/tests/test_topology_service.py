@@ -17,7 +17,7 @@ def make_dag_task(
     needs: list | None = None,
     prefers: list | None = None,
     task_group_id: str | None = None,
-    sensor_name: str | None = None,
+    bouncer_name: str | None = None,
     pipeline_id: uuid.UUID | None = None,
 ):
     dt = MagicMock()
@@ -27,16 +27,16 @@ def make_dag_task(
     dt.needs = needs or []
     dt.prefers = prefers or []
     dt.task_group_id = task_group_id
-    dt.sensor_name = sensor_name
+    dt.bouncer_name = bouncer_name
     dt.pipeline_id = pipeline_id
     return dt
 
 
-def make_bouncer(*, sensor_name: str, display_name: str | None = None):
+def make_bouncer(*, bouncer_name: str, display_name: str | None = None):
     b = MagicMock()
     b.id = uuid.uuid4()
-    b.sensor_name = sensor_name
-    b.display_name = display_name or sensor_name.replace("_", " ").title()
+    b.bouncer_name = bouncer_name
+    b.display_name = display_name or bouncer_name.replace("_", " ").title()
     b.status = "success"
     b.team = "Dagger"
     b.volume_per_day = 10000
@@ -126,7 +126,7 @@ class TestBuildPipelineTopology:
         bouncer_dt = make_dag_task(
             dag_id="backbone_core",
             task_id="SwitchBouncer",
-            sensor_name="SwitchBouncer",
+            bouncer_name="SwitchBouncer",
             downstream_task_ids=["CollectorA"],
         )
         collector_dt = make_dag_task(
@@ -140,13 +140,13 @@ class TestBuildPipelineTopology:
             bouncer_dt, collector_dt,
         ]
         service.pipeline_repo.get_all.return_value = [pipeline]
-        bouncer_obj = make_bouncer(sensor_name="SwitchBouncer")
+        bouncer_obj = make_bouncer(bouncer_name="SwitchBouncer")
         service.bouncer_repo.get_by_names.return_value = [bouncer_obj]
 
         result = await service.build_pipeline_topology(pipeline.id)
         assert result is not None
         assert len(result.upstream_bouncers) == 1
-        assert result.upstream_bouncers[0].sensor_name == "SwitchBouncer"
+        assert result.upstream_bouncers[0].bouncer_name == "SwitchBouncer"
 
     async def test_filters_by_dag_id(self, service):
         pipeline = make_pipeline(task_id="CollectorA")
@@ -225,7 +225,7 @@ class TestEnrichBouncers:
 
     async def test_enriches_with_db_metadata(self, service):
         bouncer_obj = make_bouncer(
-            sensor_name="TrafficBouncer",
+            bouncer_name="TrafficBouncer",
             display_name="Traffic Bouncer",
         )
         service.bouncer_repo.get_by_names.return_value = [bouncer_obj]
@@ -234,7 +234,7 @@ class TestEnrichBouncers:
             {"TrafficBouncer": {"dag1", "dag2"}}
         )
         assert len(result) == 1
-        assert result[0].sensor_name == "TrafficBouncer"
+        assert result[0].bouncer_name == "TrafficBouncer"
         assert result[0].display_name == "Traffic Bouncer"
         assert sorted(result[0].dag_ids) == ["dag1", "dag2"]
 
@@ -245,5 +245,5 @@ class TestEnrichBouncers:
             {"UnknownBouncer": {"dag1"}}
         )
         assert len(result) == 1
-        assert result[0].sensor_name == "UnknownBouncer"
+        assert result[0].bouncer_name == "UnknownBouncer"
         assert result[0].status is None

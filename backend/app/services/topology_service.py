@@ -85,7 +85,7 @@ class TopologyService:
                     reverse_adj[adid][downstream_tid].add(dt.task_id)
 
         # BFS upstream from current task to find ancestor bouncers
-        found_bouncers: dict[str, set[str]] = {}  # sensor_name -> dag_ids
+        found_bouncers: dict[str, set[str]] = {}  # bouncer_name -> dag_ids
         for adid in active_dag_ids:
             tid_to_dt = {dt.task_id: dt for dt in dag_tasks_by_dag[adid]}
             visited: set[str] = set()
@@ -96,8 +96,8 @@ class TopologyService:
                     continue
                 visited.add(tid)
                 dt_entry = tid_to_dt.get(tid)
-                if dt_entry and dt_entry.sensor_name:
-                    found_bouncers.setdefault(dt_entry.sensor_name, set()).add(adid)
+                if dt_entry and dt_entry.bouncer_name:
+                    found_bouncers.setdefault(dt_entry.bouncer_name, set()).add(adid)
                     continue  # bouncers are terminal roots
                 for upstream_tid in reverse_adj[adid].get(tid, set()):
                     if upstream_tid not in visited:
@@ -274,8 +274,8 @@ class TopologyService:
                 if upstream_tid in bouncer_visited:
                     continue
                 dt_entry = tid_to_dt.get(upstream_tid)
-                if dt_entry and dt_entry.sensor_name:
-                    found_bouncers.setdefault(dt_entry.sensor_name, set()).add(dag_id)
+                if dt_entry and dt_entry.bouncer_name:
+                    found_bouncers.setdefault(dt_entry.bouncer_name, set()).add(dag_id)
                 elif upstream_tid not in visited:
                     bouncer_queue.append(upstream_tid)
 
@@ -304,7 +304,7 @@ class TopologyService:
             bouncer_depth = max_depth + 1
             bouncer_names_list = list(found_bouncers.keys())
             bouncers_db = await self.bouncer_repo.get_by_names(bouncer_names_list)
-            bouncer_by_name = {s.sensor_name: s for s in bouncers_db}
+            bouncer_by_name = {s.bouncer_name: s for s in bouncers_db}
 
             for sname in sorted(found_bouncers.keys()):
                 s = bouncer_by_name.get(sname)
@@ -366,14 +366,14 @@ class TopologyService:
 
         bouncer_names_list = list(found_bouncers.keys())
         bouncers_db = await self.bouncer_repo.get_by_names(bouncer_names_list)
-        bouncer_by_name = {s.sensor_name: s for s in bouncers_db}
+        bouncer_by_name = {s.bouncer_name: s for s in bouncers_db}
 
         result: list[TopologyBouncer] = []
         for sname, dag_id_set in sorted(found_bouncers.items()):
             s = bouncer_by_name.get(sname)
             result.append(
                 TopologyBouncer(
-                    sensor_name=sname,
+                    bouncer_name=sname,
                     display_name=s.display_name if s else sname.replace("_", " ").title(),
                     sensor_id=str(s.id) if s else None,
                     status=s.status if s else None,
