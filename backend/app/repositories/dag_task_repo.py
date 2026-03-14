@@ -1,12 +1,12 @@
 """Repository for dag_tasks — cached Airflow DAG membership and task graph."""
 
-import uuid
 
 from sqlalchemy import delete, distinct, func, select, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.dag_task import DagTask
+from app.repositories.base import apply_updates
 
 
 class DagTaskRepository:
@@ -22,9 +22,7 @@ class DagTaskRepository:
         row = result.scalar_one_or_none()
 
         if row:
-            for key, value in data.items():
-                if hasattr(row, key):
-                    setattr(row, key, value)
+            apply_updates(row, data)
         else:
             row = DagTask(**data)
             self.session.add(row)

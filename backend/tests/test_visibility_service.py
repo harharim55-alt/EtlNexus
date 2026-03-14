@@ -1,7 +1,7 @@
 """Tests for VisibilityService — business logic for grant management."""
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 

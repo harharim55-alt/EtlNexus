@@ -4,7 +4,7 @@ Verifies request/response schemas enforce constraints and serialize correctly.
 """
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 from pydantic import ValidationError
@@ -19,7 +19,6 @@ from app.schemas.pipeline import (
     JoinSuggestion,
     JoinSuggestionsResponse,
     PipelineDetail,
-    PipelineFieldSchema,
     PipelineListItem,
     PipelineListResponse,
     PipelineUpdateRequest,
@@ -27,7 +26,6 @@ from app.schemas.pipeline import (
 )
 from app.schemas.team import TeamDetailResponse, TeamMemberInfo, TeamResponse
 from app.schemas.visibility import VisibilityGrantRequest, VisibilityGrantResponse
-
 
 # ---------------------------------------------------------------------------
 # Auth schemas
@@ -174,7 +172,7 @@ class TestPipelineUpdateResponse:
             id=uuid.uuid4(),
             description="Updated",
             last_updated_by="admin",
-            last_updated_at=datetime.now(timezone.utc),
+            last_updated_at=datetime.now(UTC),
         )
         assert resp.description == "Updated"
 
@@ -242,7 +240,7 @@ class TestVisibilityGrantResponse:
             pipeline_id=uuid.uuid4(),
             grant_level="editor",
             granted_by="Admin",
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
         data = resp.model_dump()
         assert data["grantee_team_name"] == "Dagger"

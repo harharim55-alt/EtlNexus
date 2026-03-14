@@ -6,16 +6,22 @@ DAG schedules, and params. Resources come from op_kwargs.
 """
 
 import asyncio
-import json
+import contextlib
 import logging
-import re
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.integrations.airflow_client import airflow_client, strip_group_prefix
+from app.parsers.log_parser import (
+    parse_bouncer_description,
+    parse_description,
+    parse_execution_plan,
+    parse_resource_actual,
+    parse_writes,
+)
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.lineage_repo import LineageRepository
@@ -23,12 +29,22 @@ from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
 from app.repositories.sensor_repo import BouncerRepository
 from app.repositories.team_repo import TeamRepository
-from app.services.airflow_service import KNOWN_AIRFLOW_STATES, _STATUS_PRIORITY
+from app.services.airflow_service import _STATUS_PRIORITY, KNOWN_AIRFLOW_STATES
+from app.services.sync.task_classifier import (
+    extract_category_from_task_group,
+    extract_dag_schedule,
+    extract_team_from_task_group,
+    is_api,
+    is_bouncer,
+    parse_datetime,
+    task_id_to_display_name,
+    unwrap_params,
+)
 
 logger = logging.getLogger(__name__)
 
 # Limits concurrent Airflow API calls — leaves headroom below httpx max_connections=10
-_AIRFLOW_SEMAPHORE = asyncio.Semaphore(6)
+_AIRFLOW_SEMAPHORE = asyncio.Semaphore(settings.airflow_semaphore_limit)
 
 # Operator types to skip during auto-discovery (infrastructure tasks)
 _EXCLUDE_OPERATOR_TYPES: set[str] = {
@@ -137,7 +153,7 @@ class AirflowSyncService:
                 t["task_id"]: t.get("downstream_task_ids", []) for t in tasks_def
             }
             params_by_task = {
-                t["task_id"]: self._unwrap_params(t.get("params", {}))
+                t["task_id"]: unwrap_params(t.get("params", {}))
                 for t in tasks_def
             }
             instances = instances_results[idx]
@@ -158,7 +174,7 @@ class AirflowSyncService:
 
                 canonical_by_airflow_tid[airflow_task_id] = canonical_tid
 
-                if self._is_bouncer(canonical_tid):
+                if is_bouncer(canonical_tid):
                     # ── Bouncer task ──
                     if canonical_tid not in seen_bouncers:
                         description = op_kwargs.get("description")
@@ -183,8 +199,8 @@ class AirflowSyncService:
                         task_group = task_group_map.get(canonical_tid) or None
                         seen_tasks[canonical_tid] = {
                             "task_id": canonical_tid,
-                            "category": self._extract_category_from_task_group(task_group),
-                            "schedule": self._extract_dag_schedule(dag_defs_by_id.get(dag_id, {})),
+                            "category": extract_category_from_task_group(task_group),
+                            "schedule": extract_dag_schedule(dag_defs_by_id.get(dag_id, {})),
                             "destination_tables": [],
                             "description": "",
                             "needs": params.get("needs", []),
@@ -210,16 +226,16 @@ class AirflowSyncService:
             log_results = []
 
         # Phase E: Process log results
-        for (dag_id, _, _, kind, key), log_content in zip(log_requests, log_results):
+        for (_dag_id, _, _, kind, key), log_content in zip(log_requests, log_results):
             if kind == "bouncer":
                 meta = seen_bouncers[key]
                 # Use op_kwargs description if available, otherwise parse from logs
                 if not meta.get("description"):
-                    meta["description"] = self._parse_bouncer_description(log_content, key)
+                    meta["description"] = parse_bouncer_description(log_content, task_id_to_display_name(key))
             elif kind == "etl":
                 meta = seen_tasks[key]
-                meta["destination_tables"] = self._parse_writes(log_content, key)
-                meta["description"] = self._parse_description(log_content, key)
+                meta["destination_tables"] = parse_writes(log_content, key)
+                meta["description"] = parse_description(log_content, task_id_to_display_name(key))
 
         # Build dag_task_graph from all discovered tasks
         for proc in dag_processed:
@@ -228,7 +244,7 @@ class AirflowSyncService:
             downstream_map = proc["downstream_map"]
             params_by_task = proc["params_by_task"]
             for airflow_tid, canonical_tid in proc["canonical_by_airflow_tid"].items():
-                is_bouncer = self._is_bouncer(canonical_tid)
+                task_is_bouncer = is_bouncer(canonical_tid)
                 raw_downstream = downstream_map.get(airflow_tid, [])
                 params = params_by_task.get(airflow_tid, {})
                 dag_task_graph.append({
@@ -238,7 +254,7 @@ class AirflowSyncService:
                     "needs": params.get("needs", []),
                     "prefers": params.get("prefers", []),
                     "task_group_id": task_group_map.get(canonical_tid) or None,
-                    "sensor_name": canonical_tid if is_bouncer else None,
+                    "sensor_name": canonical_tid if task_is_bouncer else None,
                 })
 
         logger.info(
@@ -258,7 +274,7 @@ class AirflowSyncService:
         task_id_to_pipeline_id: dict[str, uuid.UUID] = {}
 
         for task_id, meta in seen_tasks.items():
-            display_name = self._task_id_to_display_name(task_id)
+            display_name = task_id_to_display_name(task_id)
 
             pipeline = await self.pipeline_repo.upsert({
                 "name": display_name,
@@ -271,7 +287,7 @@ class AirflowSyncService:
 
             # Assign team from task_group prefix
             task_group = meta.get("task_group")
-            team_name = self._extract_team_from_task_group(task_group, known_teams)
+            team_name = extract_team_from_task_group(task_group, known_teams)
             if team_name:
                 team = await self.team_repo.get_or_create(team_name, source="airflow")
                 known_teams.add(team_name)
@@ -291,7 +307,7 @@ class AirflowSyncService:
                     "edge_type": "reads_from",
                 })
 
-            if not self._is_api(task_id):
+            if not is_api(task_id):
                 for dest in meta["destination_tables"]:
                     edges_to_create.append({
                         "source_pipeline_id": pipeline.id,
@@ -351,7 +367,7 @@ class AirflowSyncService:
                         "spark_executor_cores": effective.get("spark_executor_cores"),
                         "spark_num_executors": effective.get("spark_num_executors"),
                         "is_dag_override": bool(override),
-                        "synced_at": datetime.now(timezone.utc),
+                        "synced_at": datetime.now(UTC),
                     })
                     resource_count += 1
                 except Exception:
@@ -362,9 +378,9 @@ class AirflowSyncService:
         # Pass 4: Upsert bouncers (volume_per_day preserved in DB — not overwritten)
         bouncer_name_to_id: dict[str, uuid.UUID] = {}
         for bouncer_name, meta in seen_bouncers.items():
-            display_name = self._task_id_to_display_name(bouncer_name)
+            display_name = task_id_to_display_name(bouncer_name)
             task_group = meta.get("task_group")
-            team_name = self._extract_team_from_task_group(task_group, known_teams)
+            team_name = extract_team_from_task_group(task_group, known_teams)
             bouncer = await self.sensor_repo.upsert({
                 "sensor_name": bouncer_name,
                 "display_name": display_name,
@@ -500,7 +516,7 @@ class AirflowSyncService:
             run = dag_latest_run[dag_id]
             task_group_map = tg_results_single[i]
             params_by_task = {
-                t["task_id"]: self._unwrap_params(t.get("params", {}))
+                t["task_id"]: unwrap_params(t.get("params", {}))
                 for t in tasks_def_results[i]
             }
             for inst in instances:
@@ -529,14 +545,14 @@ class AirflowSyncService:
                     log_content = await airflow_client.get_task_log(
                         dag_id, run["dag_run_id"], airflow_task_id
                     )
-                    destination_tables = self._parse_writes(log_content, task_id)
-                    description = self._parse_description(log_content, task_id)
+                    destination_tables = parse_writes(log_content, task_id)
+                    description = parse_description(log_content, task_id_to_display_name(task_id))
                     task_group = task_group_map.get(task_id) or None
                     params = params_by_task.get(airflow_task_id, {})
 
                     meta = {
-                        "category": self._extract_category_from_task_group(task_group),
-                        "schedule": self._extract_dag_schedule(dag_defs_by_id.get(dag_id, {})),
+                        "category": extract_category_from_task_group(task_group),
+                        "schedule": extract_dag_schedule(dag_defs_by_id.get(dag_id, {})),
                         "destination_tables": destination_tables,
                         "description": description,
                         "needs": params.get("needs", []),
@@ -571,7 +587,7 @@ class AirflowSyncService:
                 edge["source_pipeline_id"] = upstream.id
             edges_to_create.append(edge)
 
-        if not self._is_api(task_id):
+        if not is_api(task_id):
             for dest in meta["destination_tables"]:
                 edges_to_create.append({
                     "source_pipeline_id": pipeline_id,
@@ -603,7 +619,7 @@ class AirflowSyncService:
                     "spark_executor_cores": effective.get("spark_executor_cores"),
                     "spark_num_executors": effective.get("spark_num_executors"),
                     "is_dag_override": bool(override),
-                    "synced_at": datetime.now(timezone.utc),
+                    "synced_at": datetime.now(UTC),
                 })
             except Exception:
                 logger.exception(
@@ -658,8 +674,8 @@ class AirflowSyncService:
                 if duration is None:
                     break
 
-                start_date = self._parse_datetime(inst.get("start_date"))
-                end_date = self._parse_datetime(inst.get("end_date"))
+                start_date = parse_datetime(inst.get("start_date"))
+                end_date = parse_datetime(inst.get("end_date"))
 
                 await self.resource_repo.upsert_run({
                     "pipeline_id": pipeline_id,
@@ -690,8 +706,8 @@ class AirflowSyncService:
             ])
             for (dag_id, dag_run_id), log_content in zip(needs_log_fetch, log_results):
                 try:
-                    actuals = self._parse_resource_actual(log_content)
-                    plan_json = self._parse_execution_plan(log_content)
+                    actuals = parse_resource_actual(log_content)
+                    plan_json = parse_execution_plan(log_content)
                     if plan_json:
                         actuals = actuals or {}
                         actuals["execution_plan"] = plan_json
@@ -713,10 +729,8 @@ class AirflowSyncService:
             clean_exec_date = None
             if best_exec_date:
                 if isinstance(best_exec_date, str):
-                    try:
+                    with contextlib.suppress(ValueError):
                         clean_exec_date = datetime.fromisoformat(best_exec_date.replace("Z", "+00:00"))
-                    except ValueError:
-                        pass
                 elif isinstance(best_exec_date, datetime):
                     clean_exec_date = best_exec_date
 
@@ -725,173 +739,11 @@ class AirflowSyncService:
                 "dag_id": best_dag_id,
                 "status": best_status,
                 "execution_date": clean_exec_date,
-                "last_checked_at": datetime.now(timezone.utc),
+                "last_checked_at": datetime.now(UTC),
             })
 
         await self.session.commit()
         logger.info("Manual sync completed for pipeline %s", display_name)
         return {"synced": True, "pipeline_name": display_name}
 
-    @staticmethod
-    def _parse_writes(log_content: str, task_id: str) -> list[str]:
-        """Parse ETL_WRITES_TO lines from a task's log output."""
-        if not log_content:
-            return [task_id]
-        tables = []
-        for line in log_content.splitlines():
-            if "ETL_WRITES_TO:" in line:
-                parts = line.split("ETL_WRITES_TO:", 1)
-                if len(parts) == 2:
-                    table = parts[1].strip()
-                    if table:
-                        tables.append(table)
-        return tables if tables else [task_id]
 
-    @staticmethod
-    def _parse_description(log_content: str, task_id: str) -> str:
-        """Parse ETL_DESCRIPTION line from a task's log output."""
-        if log_content:
-            for line in log_content.splitlines():
-                if "ETL_DESCRIPTION:" in line:
-                    parts = line.split("ETL_DESCRIPTION:", 1)
-                    if len(parts) == 2:
-                        desc = parts[1].strip()
-                        if desc:
-                            return desc
-        return AirflowSyncService._task_id_to_display_name(task_id)
-
-    @staticmethod
-    def _extract_team_from_task_group(
-        task_group: str | None, known_teams: set[str]
-    ) -> str | None:
-        """Extract team name from task_group.
-
-        Supports:
-          'Dagger-Collection' -> 'Dagger'  (split on first '-')
-          'Relay'             -> 'Relay'   (exact match)
-        """
-        if not task_group:
-            return None
-        if "-" in task_group:
-            team_part = task_group.split("-", 1)[0]
-            if team_part in known_teams:
-                return team_part
-            return None
-        if task_group in known_teams:
-            return task_group
-        return None
-
-    @staticmethod
-    def _task_id_to_display_name(task_id: str) -> str:
-        """Convert task_id to display name.
-
-        Handles both PascalCase and snake_case:
-          'SwitchPortCollector' -> 'Switch Port Collector'
-          'switch_port_collector' -> 'Switch Port Collector'
-        """
-        # Insert space before each uppercase that follows a lowercase letter or digit
-        spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", task_id)
-        # Also handle any remaining snake_case or kebab-case
-        return spaced.replace("_", " ").replace("-", " ").strip().title()
-
-    @staticmethod
-    def _parse_datetime(date_str: str | None) -> datetime | None:
-        if not date_str:
-            return None
-        try:
-            return datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        except (ValueError, TypeError):
-            return None
-
-    @staticmethod
-    def _unwrap_params(raw_params: dict) -> dict:
-        """Unwrap Airflow Param objects to plain values.
-
-        Airflow REST API serialises params as:
-          {"key": {"__class": "airflow.models.param.Param", "value": X}}
-        This extracts the inner 'value' for each key.
-        """
-        if not raw_params:
-            return {}
-        result: dict = {}
-        for key, val in raw_params.items():
-            if isinstance(val, dict) and "value" in val:
-                result[key] = val["value"]
-            else:
-                result[key] = val
-        return result
-
-    @staticmethod
-    def _parse_resource_actual(log_content: str) -> dict | None:
-        """Parse ETL_RESOURCE_ACTUAL JSON from task log."""
-        if not log_content:
-            return None
-        for line in log_content.splitlines():
-            if "ETL_RESOURCE_ACTUAL:" in line:
-                json_str = line.split("ETL_RESOURCE_ACTUAL:", 1)[1].strip()
-                try:
-                    return json.loads(json_str)
-                except json.JSONDecodeError:
-                    pass
-        return None
-
-    @staticmethod
-    def _parse_execution_plan(log: str) -> str | None:
-        """Extract execution plan JSON from task log."""
-        for line in log.splitlines():
-            if "ETL_EXECUTION_PLAN:" in line:
-                raw = line.split("ETL_EXECUTION_PLAN:", 1)[1].strip()
-                try:
-                    json.loads(raw)  # validate it's valid JSON
-                    return raw
-                except (json.JSONDecodeError, ValueError):
-                    pass
-        return None
-
-    @staticmethod
-    def _is_bouncer(task_id: str) -> bool:
-        """Check if a task_id represents a bouncer (data ingestion root task)."""
-        return "Bouncer" in task_id
-
-    @staticmethod
-    def _is_api(task_id: str) -> bool:
-        """Check if a task_id represents an API task (skip writes_to lineage)."""
-        return "Api" in task_id or "API" in task_id
-
-    @staticmethod
-    def _extract_category_from_task_group(task_group: str | None) -> str:
-        """Extract category from TaskGroup name.
-
-        'Dagger-Collection' -> 'Collection'
-        'Relay'             -> 'Relay'
-        None                -> 'Uncategorized'
-        """
-        if not task_group:
-            return "Uncategorized"
-        if "-" in task_group:
-            return task_group.split("-", 1)[1]
-        return task_group
-
-    @staticmethod
-    def _extract_dag_schedule(dag_def: dict) -> str | None:
-        """Extract schedule from DAG definition.
-
-        Prefers timetable_description, falls back to schedule_interval.
-        """
-        schedule = dag_def.get("timetable_description")
-        if schedule and schedule != "Never":
-            return schedule
-        return dag_def.get("schedule_interval") or None
-
-    @staticmethod
-    def _parse_bouncer_description(log_content: str, task_id: str) -> str:
-        """Parse BOUNCER_DESCRIPTION line from a bouncer task's log output."""
-        if log_content:
-            for line in log_content.splitlines():
-                if "BOUNCER_DESCRIPTION:" in line:
-                    parts = line.split("BOUNCER_DESCRIPTION:", 1)
-                    if len(parts) == 2:
-                        desc = parts[1].strip()
-                        if desc:
-                            return desc
-        return AirflowSyncService._task_id_to_display_name(task_id)

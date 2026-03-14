@@ -5,7 +5,6 @@ import uuid
 from app.integrations.llm_client import llm_client
 from app.repositories.pipeline_repo import PipelineRepository
 
-
 SYSTEM_PROMPT = """You are an expert data architect assistant for ETL Explorer Hub.
 You have access to the organization's data catalog. Help users understand data pipelines,
 suggest optimizations, explain lineage, and provide data architecture guidance.

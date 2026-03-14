@@ -1,14 +1,15 @@
 """Repository for pipeline resource configs and run history."""
 
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
-from sqlalchemy import Float, distinct, extract, select, func, case
+from sqlalchemy import Float, case, distinct, extract, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.resource_config import PipelineResourceConfig
 from app.models.run_history import PipelineRunHistory
+from app.repositories.base import apply_updates
 
 
 class ResourceRepository:
@@ -28,9 +29,7 @@ class ResourceRepository:
         config = result.scalar_one_or_none()
 
         if config:
-            for key, value in data.items():
-                if hasattr(config, key):
-                    setattr(config, key, value)
+            apply_updates(config, data)
         else:
             config = PipelineResourceConfig(**data)
             self.session.add(config)
@@ -257,7 +256,7 @@ class ResourceRepository:
         date_to: datetime | None = None,
     ) -> dict:
         """Compute aggregate stats from run history (bounded by date range or last N days)."""
-        cutoff = date_from or (datetime.now(timezone.utc) - timedelta(days=days))
+        cutoff = date_from or (datetime.now(UTC) - timedelta(days=days))
         conditions = [
             PipelineRunHistory.pipeline_id == pipeline_id,
             PipelineRunHistory.duration_seconds.isnot(None),
@@ -336,7 +335,7 @@ class ResourceRepository:
         date_to: datetime | None = None,
     ) -> dict:
         """Aggregate run history for all tasks in a DAG (bounded by date range or last N days)."""
-        cutoff = date_from or (datetime.now(timezone.utc) - timedelta(days=days))
+        cutoff = date_from or (datetime.now(UTC) - timedelta(days=days))
         conditions = [
             PipelineRunHistory.dag_id == dag_id,
             PipelineRunHistory.duration_seconds.isnot(None),
@@ -408,7 +407,7 @@ class ResourceRepository:
         date_to: datetime | None = None,
     ) -> str | None:
         """Compute the average finish hour for a DAG from successful runs."""
-        cutoff = date_from or (datetime.now(timezone.utc) - timedelta(days=days))
+        cutoff = date_from or (datetime.now(UTC) - timedelta(days=days))
         conditions = [
             PipelineRunHistory.dag_id == dag_id,
             PipelineRunHistory.status == "success",

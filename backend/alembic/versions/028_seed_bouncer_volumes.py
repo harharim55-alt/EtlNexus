@@ -5,15 +5,16 @@ Revises: 027_add_pipeline_revisions
 Create Date: 2026-03-13
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
 
+from alembic import op
+
 revision: str = "028_seed_bouncer_volumes"
-down_revision: Union[str, None] = "027_add_pipeline_revisions"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "027_add_pipeline_revisions"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 # Bouncer volume data (previously hardcoded in DAG op_kwargs)
 BOUNCER_VOLUMES = {

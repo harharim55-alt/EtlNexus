@@ -5,16 +5,17 @@ Revises: 015_add_users_teams
 Create Date: 2026-03-11
 """
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 # revision identifiers, used by Alembic.
 revision: str = "016_add_team_to_pipelines"
-down_revision: Union[str, None] = "015_add_users_teams"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "015_add_users_teams"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:

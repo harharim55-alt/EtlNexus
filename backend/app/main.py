@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import logging.config
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -8,7 +9,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from app.config import settings
-from app.routers import ai, airflow, auth, consumers, dag_summary, health, lineage, pipelines, resources, schema_matrix, sensors, teams, topology, usage, users, visibility
+from app.routers import (
+    ai,
+    airflow,
+    auth,
+    consumers,
+    dag_summary,
+    health,
+    lineage,
+    pipelines,
+    resources,
+    schema_matrix,
+    sensors,
+    teams,
+    topology,
+    usage,
+    users,
+    visibility,
+)
 
 # Structured logging
 logging.config.dictConfig({
@@ -53,7 +71,7 @@ async def lifespan(app: FastAPI):
     from app.integrations.oidc_client import oidc_client
     await oidc_client.initialize()
 
-    from app.tasks.scheduler import setup_scheduler, run_startup_sync
+    from app.tasks.scheduler import run_startup_sync, setup_scheduler
 
     # Run initial syncs in background — don't block app startup.
     # run_startup_sync waits for Airflow readiness and acquires _sync_lock.
@@ -104,6 +122,24 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# Request logging middleware
+@app.middleware("http")
+async def request_logging_middleware(request: Request, call_next):
+    if request.url.path == "/api/health":
+        return await call_next(request)
+    start = time.monotonic()
+    response = await call_next(request)
+    duration_ms = (time.monotonic() - start) * 1000
+    logger.info(
+        "%s %s %d %.0fms",
+        request.method,
+        request.url.path,
+        response.status_code,
+        duration_ms,
+    )
+    return response
 
 
 # Exception handlers

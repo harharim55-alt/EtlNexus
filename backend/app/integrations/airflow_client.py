@@ -4,6 +4,7 @@ Uses a persistent httpx.AsyncClient with connection pooling to avoid
 creating a new TCP connection per request.
 """
 
+import contextlib
 import logging
 import re
 from datetime import datetime
@@ -233,10 +234,8 @@ class AirflowClient:
             exec_date_str = run.get("execution_date")
             exec_date = None
             if exec_date_str:
-                try:
+                with contextlib.suppress(ValueError, TypeError):
                     exec_date = datetime.fromisoformat(exec_date_str.replace("Z", "+00:00"))
-                except (ValueError, TypeError):
-                    pass
             return {
                 "status": state,
                 "execution_date": exec_date,

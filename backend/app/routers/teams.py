@@ -8,8 +8,8 @@ from app.auth import get_current_user
 from app.dependencies import get_team_service
 from app.models.user import User
 from app.models.user_team import UserTeam
-from app.schemas.team import TeamDetailResponse, TeamMemberInfo, TeamResponse
 from app.schemas.pipeline import PipelineListItem
+from app.schemas.team import TeamDetailResponse, TeamMemberInfo, TeamResponse
 from app.services.team_service import TeamService
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])

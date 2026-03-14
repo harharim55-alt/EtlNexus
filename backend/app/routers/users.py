@@ -12,7 +12,6 @@ from app.schemas.auth import (
     ActiveUpdateRequest,
     RoleUpdateRequest,
     UserListResponse,
-    UserResponse,
     user_to_response,
 )
 from app.services.user_auth_service import invalidate_user_cache

@@ -2,17 +2,8 @@ import { useState } from "react";
 import { Clock, Layers, Timer, Workflow, CheckCircle, Pause, CalendarClock, AlertTriangle, ChevronDown } from "lucide-react";
 import { TaskStatusDots } from "./TaskStatusDots";
 import { getStatusStyle, STATUS_SEVERITY_ORDER } from "@/lib/status-config";
+import { formatDuration } from "@/lib/format";
 import type { DagSummary, DagTaskSummary } from "@/types/dag-summary";
-
-function formatDuration(seconds: number): string {
-  if (seconds < 60) return `${Math.round(seconds)}s`;
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.round(seconds % 60);
-  if (mins < 60) return secs > 0 ? `${mins}m ${secs}s` : `${mins}m`;
-  const hrs = Math.floor(mins / 60);
-  const remainMins = mins % 60;
-  return remainMins > 0 ? `${hrs}h ${remainMins}m` : `${hrs}h`;
-}
 
 function formatDagName(dagId: string): string {
   return dagId

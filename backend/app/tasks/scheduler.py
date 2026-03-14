@@ -7,7 +7,7 @@ pipeline_run_history).
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
@@ -63,18 +63,19 @@ async def run_startup_sync() -> None:
     """
     from app.integrations.airflow_client import airflow_client
 
-    # Wait for Airflow to become available (up to 5 min, poll every 15s)
-    max_attempts = 20
+    # Wait for Airflow to become available
+    max_attempts = settings.airflow_startup_max_attempts
+    retry_seconds = settings.airflow_startup_retry_seconds
     for attempt in range(1, max_attempts + 1):
         if await airflow_client.check_health():
             logger.info("Airflow is ready (attempt %d)", attempt)
             break
         if attempt < max_attempts:
             logger.info(
-                "Airflow not ready (attempt %d/%d), retrying in 15s",
-                attempt, max_attempts,
+                "Airflow not ready (attempt %d/%d), retrying in %ds",
+                attempt, max_attempts, retry_seconds,
             )
-            await asyncio.sleep(15)
+            await asyncio.sleep(retry_seconds)
     else:
         logger.warning(
             "Airflow not available after %d attempts — scheduler will retry at next interval",
@@ -83,11 +84,11 @@ async def run_startup_sync() -> None:
         return
 
     async with _sync_lock:
-        from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
         from app.tasks.airflow_poll_task import poll_airflow_statuses
+        from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
         from app.tasks.catalog_sync_task import sync_from_catalog
-        from app.tasks.seed_usage_data import seed_usage_data
         from app.tasks.seed_bouncer_volumes import seed_bouncer_volumes
+        from app.tasks.seed_usage_data import seed_usage_data
 
         pipeline_sync_ok = False
         try:
@@ -132,7 +133,7 @@ def setup_scheduler() -> AsyncIOScheduler:
     """
     from app.tasks.catalog_sync_task import sync_from_catalog
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Airflow pipeline discovery (independent from poll)
     scheduler.add_job(

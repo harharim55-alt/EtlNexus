@@ -1,13 +1,13 @@
 """Airflow integration service — polls network DAG task statuses and updates the database."""
 
 import asyncio
-import json
 import logging
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.integrations.airflow_client import airflow_client, strip_group_prefix
+from app.parsers.log_parser import parse_execution_plan, parse_resource_actual
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
@@ -176,7 +176,7 @@ class AirflowService:
                         "dag_id": dag_id,
                         "status": status,
                         "execution_date": exec_date,
-                        "last_checked_at": datetime.now(timezone.utc),
+                        "last_checked_at": datetime.now(UTC),
                     }
 
         # Phase 4: Parallel fetch all needed logs
@@ -190,8 +190,8 @@ class AirflowService:
                 log_fetch_requests, log_results
             ):
                 try:
-                    actuals = self._parse_resource_actual(log_content)
-                    plan_json = self._parse_execution_plan(log_content)
+                    actuals = parse_resource_actual(log_content)
+                    plan_json = parse_execution_plan(log_content)
                     if plan_json:
                         actuals = actuals or {}
                         actuals["execution_plan"] = plan_json
@@ -235,29 +235,3 @@ class AirflowService:
         except (ValueError, TypeError):
             return None
 
-    @staticmethod
-    def _parse_resource_actual(log_content: str) -> dict | None:
-        """Parse ETL_RESOURCE_ACTUAL JSON from task log."""
-        if not log_content:
-            return None
-        for line in log_content.splitlines():
-            if "ETL_RESOURCE_ACTUAL:" in line:
-                json_str = line.split("ETL_RESOURCE_ACTUAL:", 1)[1].strip()
-                try:
-                    return json.loads(json_str)
-                except json.JSONDecodeError:
-                    pass
-        return None
-
-    @staticmethod
-    def _parse_execution_plan(log: str) -> str | None:
-        """Extract execution plan JSON from task log."""
-        for line in log.splitlines():
-            if "ETL_EXECUTION_PLAN:" in line:
-                raw = line.split("ETL_EXECUTION_PLAN:", 1)[1].strip()
-                try:
-                    json.loads(raw)  # validate it's valid JSON
-                    return raw
-                except (json.JSONDecodeError, ValueError):
-                    pass
-        return None
