@@ -42,17 +42,15 @@ class AIService:
             return "Pipeline not found."
 
         field_names = [f.name for f in pipeline.fields]
-        all_pipelines = await self.pipeline_repo.get_all_with_fields()
 
-        # Build context about overlapping fields
+        # Use SQL-based overlap query instead of loading all pipelines with fields
+        shared_field_results = await self.pipeline_repo.get_shared_field_pipelines(pipeline_id)
+
         overlaps = []
-        for other in all_pipelines:
-            if other.id == pipeline_id:
-                continue
-            other_fields = {f.name for f in other.fields}
-            shared = set(field_names) & other_fields
-            if shared:
-                overlaps.append(f"- {other.name}: shared fields [{', '.join(sorted(shared))}]")
+        for row in shared_field_results:
+            overlaps.append(
+                f"- {row['pipeline_name']}: shared fields [{', '.join(row['shared_fields'])}]"
+            )
 
         if not overlaps:
             return f"No field overlaps found for {pipeline.name}. Consider adding standardized field names."
@@ -71,12 +69,12 @@ class AIService:
 
     async def _build_catalog_context(self) -> str:
         """Build a summary of the catalog for the system prompt."""
-        pipelines = await self.pipeline_repo.get_all()
-        if not pipelines:
+        pipeline_map = await self.pipeline_repo.get_task_id_map()
+        if not pipeline_map:
             return "No pipelines currently in the catalog."
 
         lines = []
-        for p in pipelines[:20]:  # Limit context size
+        for p in list(pipeline_map.values())[:20]:  # Limit context size
             line = f"- {p.name}"
             if p.category:
                 line += f" [{p.category}]"

@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class BouncerResponse(BaseModel):
     id: str
-    sensor_name: str
+    bouncer_name: str
     display_name: str
     description: str | None = None
     team: str | None = None

@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
-from app.repositories.sensor_repo import BouncerRepository
+from app.repositories.bouncer_repo import BouncerRepository
 from app.schemas.topology import (
     TopologyBouncer,
     TopologyGraph,

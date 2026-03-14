@@ -111,7 +111,7 @@ export function BouncerNode({
           {bouncer.display_name}
         </span>
         <span className="text-[9px] font-mono text-slate-600 block truncate">
-          {bouncer.sensor_name}
+          {bouncer.bouncer_name}
         </span>
       </div>
       <span

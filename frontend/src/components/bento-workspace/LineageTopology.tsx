@@ -145,9 +145,9 @@ export function LineageTopology({ pipelineId }: LineageTopologyProps) {
                     <div className="flex flex-col gap-1.5">
                       {topology!.upstream_bouncers.map((s) => (
                         <BouncerNode
-                          key={s.sensor_name}
+                          key={s.bouncer_name}
                           bouncer={s}
-                          onClick={() => handleBouncerClick(s.sensor_name)}
+                          onClick={() => handleBouncerClick(s.bouncer_name)}
                         />
                       ))}
                     </div>

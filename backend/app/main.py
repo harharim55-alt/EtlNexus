@@ -13,6 +13,7 @@ from app.routers import (
     ai,
     airflow,
     auth,
+    bouncers,
     consumers,
     dag_summary,
     health,
@@ -20,7 +21,6 @@ from app.routers import (
     pipelines,
     resources,
     schema_matrix,
-    sensors,
     teams,
     topology,
     usage,
@@ -103,6 +103,8 @@ async def lifespan(app: FastAPI):
     await airflow_client.close()
     from app.integrations.oidc_client import oidc_client as _oidc
     await _oidc.close()
+    from app.integrations.llm_client import llm_client
+    await llm_client.close()
     from app.integrations.iceberg_client import iceberg_client
     iceberg_client.stop()
     logger.info("ETL Explorer Hub shutting down")
@@ -171,7 +173,7 @@ app.include_router(consumers.router)
 app.include_router(topology.router)
 app.include_router(resources.router)
 app.include_router(dag_summary.router)
-app.include_router(sensors.router)
+app.include_router(bouncers.router)
 app.include_router(ai.router)
 app.include_router(auth.router)
 app.include_router(teams.router)

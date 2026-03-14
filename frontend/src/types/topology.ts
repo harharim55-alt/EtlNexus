@@ -8,9 +8,9 @@ export interface TopologyTask {
 }
 
 export interface TopologyBouncer {
-  sensor_name: string;
+  bouncer_name: string;
   display_name: string;
-  sensor_id: string | null;
+  bouncer_id: string | null;
   status: string | null;
   team: string | null;
   volume_per_day: number | null;

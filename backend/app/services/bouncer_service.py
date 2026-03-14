@@ -6,8 +6,8 @@ from collections import defaultdict
 from app.cache import bouncer_cache, bouncer_topology_cache
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
-from app.repositories.sensor_repo import BouncerRepository
-from app.schemas.sensor import (
+from app.repositories.bouncer_repo import BouncerRepository
+from app.schemas.bouncer import (
     BouncerListResponse,
     BouncerResponse,
     BouncerTopologyNode,
@@ -44,7 +44,7 @@ class BouncerService:
         items = [
             BouncerResponse(
                 id=str(s.id),
-                sensor_name=s.sensor_name,
+                bouncer_name=s.bouncer_name,
                 display_name=s.display_name,
                 description=s.description,
                 team=s.team,
@@ -78,18 +78,14 @@ class BouncerService:
             task_index[(dt.dag_id, dt.task_id)] = dt
             task_by_id[dt.task_id].append(dt)
 
-        # Build pipeline lookup
-        all_pipelines = await self.pipeline_repo.get_all()
-        task_id_to_pipeline: dict[str, object] = {}
-        for p in all_pipelines:
-            if p.task_id:
-                task_id_to_pipeline[p.task_id] = p
+        # Build pipeline lookup (lightweight — no eager-loaded relationships)
+        task_id_to_pipeline = await self.pipeline_repo.get_task_id_map()
 
         # Status map
-        status_map: dict[str, str] = {}
-        for p in all_pipelines:
-            if p.task_id and p.airflow_status:
-                status_map[p.task_id] = p.airflow_status.status
+        status_map: dict[str, str] = {
+            tid: p.status for tid, p in task_id_to_pipeline.items()
+            if p.status != "unknown"
+        }
 
         # BFS from each selected bouncer, collecting downstream ETLs
         bouncer_to_reachable: dict[str, set[tuple[str, str]]] = {}
@@ -98,7 +94,7 @@ class BouncerService:
             reachable: set[tuple[str, str]] = set()  # (dag_id, task_id)
             # Find all dag_task entries for this bouncer
             bouncer_entries = [
-                dt for dt in all_dag_tasks if dt.sensor_name == bouncer_name
+                dt for dt in all_dag_tasks if dt.bouncer_name == bouncer_name
             ]
 
             for entry in bouncer_entries:
@@ -115,7 +111,7 @@ class BouncerService:
 
                     # Only include ETL tasks (those with pipeline_id, not bouncers)
                     dt_entry = task_index.get((dag_id, tid))
-                    if dt_entry and not dt_entry.sensor_name:
+                    if dt_entry and not dt_entry.bouncer_name:
                         reachable.add((dag_id, tid))
                         # Continue BFS through downstream
                         for downstream_tid in dt_entry.downstream_task_ids or []:

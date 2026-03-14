@@ -5,7 +5,7 @@ import uuid
 from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.sensor import Bouncer
+from app.models.bouncer import Bouncer
 from app.repositories.base import apply_updates
 
 
@@ -32,15 +32,15 @@ class BouncerRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_by_name(self, sensor_name: str) -> Bouncer | None:
-        stmt = select(Bouncer).where(Bouncer.sensor_name == sensor_name)
+    async def get_by_name(self, bouncer_name: str) -> Bouncer | None:
+        stmt = select(Bouncer).where(Bouncer.bouncer_name == bouncer_name)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_names(self, sensor_names: list[str]) -> list[Bouncer]:
+    async def get_by_names(self, bouncer_names: list[str]) -> list[Bouncer]:
         stmt = (
             select(Bouncer)
-            .where(Bouncer.sensor_name.in_(sensor_names))
+            .where(Bouncer.bouncer_name.in_(bouncer_names))
             .order_by(Bouncer.display_name)
         )
         result = await self.session.execute(stmt)
@@ -56,17 +56,17 @@ class BouncerRepository:
         return [row[0] for row in result.all()]
 
     async def upsert(self, data: dict) -> Bouncer:
-        sensor_name = data["sensor_name"]
-        existing = await self.get_by_name(sensor_name)
+        bouncer_name = data["bouncer_name"]
+        existing = await self.get_by_name(bouncer_name)
         if existing:
-            apply_updates(existing, data, exclude_keys={"sensor_name"})
+            apply_updates(existing, data, exclude_keys={"bouncer_name"})
             await self.session.flush()
             return existing
         else:
             bouncer = Bouncer(
                 id=uuid.uuid4(),
-                sensor_name=sensor_name,
-                display_name=data.get("display_name", sensor_name),
+                bouncer_name=bouncer_name,
+                display_name=data.get("display_name", bouncer_name),
                 description=data.get("description"),
                 team=data.get("team"),
                 volume_per_day=data.get("volume_per_day"),

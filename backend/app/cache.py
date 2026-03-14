@@ -45,6 +45,7 @@ bouncer_cache = TTLCache(ttl=60)             # bouncer list
 bouncer_topology_cache = TTLCache(ttl=30)    # bouncer topology
 grant_level_cache = TTLCache(ttl=30)         # per-user grant level for pipeline
 join_suggestions_cache = TTLCache(ttl=60)    # join suggestions per pipeline
+task_id_map_cache = TTLCache(ttl=30)         # lightweight {task_id: summary} lookup
 
 
 def clear_all() -> None:
@@ -57,4 +58,5 @@ def clear_all() -> None:
     bouncer_topology_cache.clear()
     grant_level_cache.clear()
     join_suggestions_cache.clear()
+    task_id_map_cache.clear()
     logger.debug("All application caches cleared")

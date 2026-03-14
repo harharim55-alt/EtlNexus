@@ -5,7 +5,7 @@ import logging
 from sqlalchemy import select, update
 
 from app.database import async_session_factory
-from app.models.sensor import Bouncer
+from app.models.bouncer import Bouncer
 
 logger = logging.getLogger(__name__)
 
@@ -27,8 +27,8 @@ async def seed_bouncer_volumes() -> None:
     try:
         async with async_session_factory() as session:
             # Check if any bouncers are missing volume data
-            stmt = select(Bouncer.sensor_name).where(
-                Bouncer.sensor_name.in_(list(BOUNCER_VOLUMES.keys())),
+            stmt = select(Bouncer.bouncer_name).where(
+                Bouncer.bouncer_name.in_(list(BOUNCER_VOLUMES.keys())),
                 Bouncer.volume_per_day.is_(None),
             )
             result = await session.execute(stmt)
@@ -41,7 +41,7 @@ async def seed_bouncer_volumes() -> None:
             for name in missing:
                 await session.execute(
                     update(Bouncer)
-                    .where(Bouncer.sensor_name == name)
+                    .where(Bouncer.bouncer_name == name)
                     .values(volume_per_day=BOUNCER_VOLUMES[name])
                 )
 

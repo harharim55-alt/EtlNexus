@@ -115,7 +115,7 @@ export function OnboardingOverlay() {
         const bouncers = data.bouncers;
         if (bouncers.length === 0) return;
         if (bouncers.length === 1) {
-          store.toggleBouncer(bouncers[0].sensor_name);
+          store.toggleBouncer(bouncers[0].bouncer_name);
           return;
         }
         // Single-pass: find a pair sharing a dag_id for intersection mode
@@ -124,11 +124,11 @@ export function OnboardingOverlay() {
         for (const bouncer of bouncers) {
           for (const dagId of bouncer.dag_ids) {
             const other = dagToBouncer.get(dagId);
-            if (other && other !== bouncer.sensor_name) {
-              picked = [other, bouncer.sensor_name];
+            if (other && other !== bouncer.bouncer_name) {
+              picked = [other, bouncer.bouncer_name];
               break;
             }
-            dagToBouncer.set(dagId, bouncer.sensor_name);
+            dagToBouncer.set(dagId, bouncer.bouncer_name);
           }
           if (picked) break;
         }
@@ -138,8 +138,8 @@ export function OnboardingOverlay() {
           store.setTopologyMode("intersection");
         } else {
           // No intersection found — pick first two with union
-          store.toggleBouncer(bouncers[0].sensor_name);
-          store.toggleBouncer(bouncers[1].sensor_name);
+          store.toggleBouncer(bouncers[0].bouncer_name);
+          store.toggleBouncer(bouncers[1].bouncer_name);
           store.setTopologyMode("union");
         }
       };

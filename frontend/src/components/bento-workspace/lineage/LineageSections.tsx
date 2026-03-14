@@ -60,9 +60,9 @@ export function BouncerDagGroup({
         <div ref={contentRef} className="px-2 pb-2 flex flex-col gap-1.5">
           {bouncers.map((s) => (
             <BouncerNode
-              key={s.sensor_name}
+              key={s.bouncer_name}
               bouncer={s}
-              onClick={() => onBouncerClick(s.sensor_name)}
+              onClick={() => onBouncerClick(s.bouncer_name)}
             />
           ))}
         </div>

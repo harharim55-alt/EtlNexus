@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, Query
 from app.auth import get_current_user
 from app.dependencies import get_bouncer_service
 from app.models.user import User
-from app.schemas.sensor import BouncerListResponse, BouncerTopologyResponse
-from app.services.sensor_service import BouncerService
+from app.schemas.bouncer import BouncerListResponse, BouncerTopologyResponse
+from app.services.bouncer_service import BouncerService
 
 router = APIRouter(prefix="/api/bouncers", tags=["bouncers"])
 
