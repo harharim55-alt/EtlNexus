@@ -9,17 +9,19 @@ import logging
 import time
 from typing import Any
 
+from app.config import settings
+
 logger = logging.getLogger(__name__)
 
 
-class TTLCache:
-    """Simple TTL cache backed by a plain dict."""
+class TTLCache[T]:
+    """Simple generic TTL cache backed by a plain dict."""
 
     def __init__(self, ttl: int = 30):
         self._ttl = ttl
-        self._store: dict[str, tuple[float, Any]] = {}
+        self._store: dict[str, tuple[float, T]] = {}
 
-    def get(self, key: str) -> Any | None:
+    def get(self, key: str) -> T | None:
         entry = self._store.get(key)
         if entry is None:
             return None
@@ -29,7 +31,7 @@ class TTLCache:
             return None
         return value
 
-    def set(self, key: str, value: Any) -> None:
+    def set(self, key: str, value: T) -> None:
         self._store[key] = (time.monotonic(), value)
 
     def clear(self) -> None:
@@ -37,15 +39,15 @@ class TTLCache:
 
 
 # ── Module-level singletons ──────────────────────────────────────────
-pipeline_list_cache = TTLCache(ttl=30)       # list_pipelines (no query)
-schema_matrix_cache = TTLCache(ttl=60)       # schema matrix response
-topology_cache = TTLCache(ttl=30)            # topology per pipeline+dag
-dag_summary_cache = TTLCache(ttl=60)         # dag summary/statistics
-bouncer_cache = TTLCache(ttl=60)             # bouncer list
-bouncer_topology_cache = TTLCache(ttl=30)    # bouncer topology
-grant_level_cache = TTLCache(ttl=30)         # per-user grant level for pipeline
-join_suggestions_cache = TTLCache(ttl=60)    # join suggestions per pipeline
-task_id_map_cache = TTLCache(ttl=30)         # lightweight {task_id: summary} lookup
+pipeline_list_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)     # list_pipelines (no query)
+schema_matrix_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium)    # schema matrix response
+topology_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)          # topology per pipeline+dag
+dag_summary_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium)      # dag summary/statistics
+bouncer_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium)          # bouncer list
+bouncer_topology_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)  # bouncer topology
+grant_level_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)       # per-user grant level for pipeline
+join_suggestions_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium) # join suggestions per pipeline
+task_id_map_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)       # lightweight {task_id: summary} lookup
 
 
 def clear_all() -> None:

@@ -16,6 +16,25 @@ apiClient.interceptors.request.use((config) => {
   return config;
 });
 
+// Retry transient errors (502/503/504, network errors) up to 2 times with 1s delay
+apiClient.interceptors.response.use(undefined, async (error) => {
+  const config = error.config;
+  if (config) {
+    const status = error.response?.status;
+    const isTransient = !status || status === 502 || status === 503 || status === 504;
+    const isNotClientError = !status || status >= 500;
+    if (isTransient && isNotClientError) {
+      config._retryCount = config._retryCount ?? 0;
+      if (config._retryCount < 2) {
+        config._retryCount += 1;
+        await new Promise((r) => setTimeout(r, 1000));
+        return apiClient(config);
+      }
+    }
+  }
+  return Promise.reject(error);
+});
+
 apiClient.interceptors.response.use(
   (response) => response,
   async (error) => {

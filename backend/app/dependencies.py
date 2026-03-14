@@ -3,25 +3,25 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db_session
 from app.repositories.airflow_repo import AirflowRepository
+from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.field_frequency_repo import FieldFrequencyRepository
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
 from app.repositories.revision_repo import RevisionRepository
-from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.team_repo import TeamRepository
 from app.repositories.usage_repo import UsageRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.ai_service import AIService
 from app.services.airflow_sync_service import AirflowSyncService
+from app.services.bouncer_service import BouncerService
 from app.services.consumer_service import ConsumerService
 from app.services.dag_summary_service import DagSummaryService
 from app.services.pipeline_service import PipelineService
 from app.services.resource_service import ResourceService
 from app.services.schema_matrix_service import SchemaMatrixService
-from app.services.bouncer_service import BouncerService
 from app.services.team_service import TeamService
 from app.services.usage_service import UsageService
 from app.services.visibility_service import VisibilityService

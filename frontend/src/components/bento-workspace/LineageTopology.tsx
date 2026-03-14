@@ -1,5 +1,5 @@
 import { useState, useCallback } from "react";
-import { GitFork, Layers, Lock, Network, Sparkles } from "lucide-react";
+import { GitFork, Layers, Network } from "lucide-react";
 import { UpstreamTopologyModal } from "./UpstreamTopologyModal";
 import { useLineage } from "@/hooks/use-lineage";
 import { useTopology } from "@/hooks/use-topology";
@@ -8,9 +8,11 @@ import { useNavigationStore } from "@/stores/navigation-store";
 import { useBouncerStore } from "@/stores/bouncer-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TopologyTask } from "@/types/topology";
-import { TaskNode, BouncerNode, FlowArrow, SectionLabel, TaskGroupLabel } from "./lineage/LineageNodes";
-import { BouncerDagGroup, NeedsPrefDagGroup, DownstreamDagGroup } from "./lineage/LineageSections";
-import { groupBouncersByDag, groupByDag, groupByTaskGroup } from "./lineage/lineage-utils";
+import { TaskNode, FlowArrow, TaskGroupLabel } from "./lineage/LineageNodes";
+import { DownstreamDagGroup } from "./lineage/LineageSections";
+import { groupByDag, groupByTaskGroup } from "./lineage/lineage-utils";
+import { DagGroupSection } from "./lineage/DagGroupSection";
+import { DependencySection } from "./lineage/DependencySection";
 
 interface LineageTopologyProps {
   pipelineId: string;
@@ -126,179 +128,21 @@ export function LineageTopology({ pipelineId }: LineageTopologyProps) {
       {hasTopology ? (
         <div className="flex items-start justify-center gap-0">
           {/* Bouncers column (leftmost) — grouped by DAG */}
-          {hasBouncers && (() => {
-            const bouncersByDag = groupBouncersByDag(topology!.upstream_bouncers);
-            const bouncerDagIds = Object.keys(bouncersByDag).sort();
-            const isSingleGroup = bouncerDagIds.length === 1;
-
-            return (
-              <>
-                <div className="flex-1 min-w-0 max-w-[200px] self-center">
-                  <span className="text-[9px] font-mono uppercase tracking-[0.15em] text-teal-400/50 mb-2 block text-center">
-                    Bouncers
-                    <span className="text-teal-500/30 ml-1.5">
-                      ({topology!.upstream_bouncers.length})
-                    </span>
-                  </span>
-
-                  {isSingleGroup ? (
-                    <div className="flex flex-col gap-1.5">
-                      {topology!.upstream_bouncers.map((s) => (
-                        <BouncerNode
-                          key={s.bouncer_name}
-                          bouncer={s}
-                          onClick={() => handleBouncerClick(s.bouncer_name)}
-                        />
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-1">
-                      {bouncerDagIds.map((dagId) => (
-                        <BouncerDagGroup
-                          key={dagId}
-                          dagId={dagId}
-                          bouncers={bouncersByDag[dagId]}
-                          onBouncerClick={handleBouncerClick}
-                          defaultOpen={bouncerDagIds.length <= 3}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center self-center pt-3">
-                  <FlowArrow />
-                </div>
-              </>
-            );
-          })()}
+          {hasBouncers && (
+            <DagGroupSection
+              bouncers={topology!.upstream_bouncers}
+              onBouncerClick={handleBouncerClick}
+            />
+          )}
 
           {/* Needs / Prefers column — grouped by DAG */}
-          {hasNeedsPrefers && (() => {
-            const needsByDag = groupByDag(topology!.upstream_needs);
-            const prefersByDag = groupByDag(topology!.upstream_prefers);
-            const npDagIds = [
-              ...new Set([
-                ...Object.keys(needsByDag),
-                ...Object.keys(prefersByDag),
-              ]),
-            ].sort();
-            const isSingleGroup = npDagIds.length === 1;
-            const totalNP =
-              topology!.upstream_needs.length +
-              topology!.upstream_prefers.length;
-
-            return (
-              <>
-                <div className="flex-1 min-w-0 max-w-[240px] self-center">
-                  <span className="text-[9px] font-mono uppercase tracking-[0.15em] text-slate-600 mb-2 block text-center">
-                    Dependencies
-                    <span className="text-slate-700 ml-1.5">
-                      ({totalNP})
-                    </span>
-                  </span>
-
-                  {isSingleGroup ? (
-                    <div className="flex flex-col gap-1">
-                      {topology!.upstream_needs.length > 0 && (
-                        <div>
-                          <SectionLabel
-                            label="Needs"
-                            icon={<Lock className="w-2.5 h-2.5 text-orange-400/60" />}
-                            accentColor="text-orange-400/60"
-                          />
-                          <div className="flex flex-col gap-1.5">
-                            {(() => {
-                              const { grouped, hasGroups } = groupByTaskGroup(topology!.upstream_needs);
-                              if (!hasGroups) {
-                                return topology!.upstream_needs.map((t) => (
-                                  <TaskNode
-                                    key={t.task_id}
-                                    task={t}
-                                    onClick={() =>
-                                      t.pipeline_id && setSelectedPipelineId(t.pipeline_id)
-                                    }
-                                  />
-                                ));
-                              }
-                              return Object.entries(grouped).map(([gId, gTasks]) => (
-                                <div key={gId}>
-                                  {gId !== "_ungrouped" && <TaskGroupLabel groupId={gId} />}
-                                  {gTasks.map((t) => (
-                                    <TaskNode
-                                      key={t.task_id}
-                                      task={t}
-                                      onClick={() =>
-                                        t.pipeline_id && setSelectedPipelineId(t.pipeline_id)
-                                      }
-                                    />
-                                  ))}
-                                </div>
-                              ));
-                            })()}
-                          </div>
-                        </div>
-                      )}
-                      {topology!.upstream_prefers.length > 0 && (
-                        <div>
-                          <SectionLabel
-                            label="Prefers"
-                            icon={<Sparkles className="w-2.5 h-2.5 text-sky-400/60" />}
-                            accentColor="text-sky-400/60"
-                          />
-                          <div className="flex flex-col gap-1.5">
-                            {(() => {
-                              const { grouped, hasGroups } = groupByTaskGroup(topology!.upstream_prefers);
-                              if (!hasGroups) {
-                                return topology!.upstream_prefers.map((t) => (
-                                  <TaskNode
-                                    key={t.task_id}
-                                    task={t}
-                                    onClick={() =>
-                                      t.pipeline_id && setSelectedPipelineId(t.pipeline_id)
-                                    }
-                                  />
-                                ));
-                              }
-                              return Object.entries(grouped).map(([gId, gTasks]) => (
-                                <div key={gId}>
-                                  {gId !== "_ungrouped" && <TaskGroupLabel groupId={gId} />}
-                                  {gTasks.map((t) => (
-                                    <TaskNode
-                                      key={t.task_id}
-                                      task={t}
-                                      onClick={() =>
-                                        t.pipeline_id && setSelectedPipelineId(t.pipeline_id)
-                                      }
-                                    />
-                                  ))}
-                                </div>
-                              ));
-                            })()}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-1">
-                      {npDagIds.map((dagId) => (
-                        <NeedsPrefDagGroup
-                          key={dagId}
-                          dagId={dagId}
-                          needs={needsByDag[dagId] ?? []}
-                          prefers={prefersByDag[dagId] ?? []}
-                          onTaskClick={setSelectedPipelineId}
-                          defaultOpen={npDagIds.length <= 3}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div className="flex items-center self-center pt-3">
-                  <FlowArrow />
-                </div>
-              </>
-            );
-          })()}
+          {hasNeedsPrefers && (
+            <DependencySection
+              needs={topology!.upstream_needs}
+              prefers={topology!.upstream_prefers}
+              onTaskClick={setSelectedPipelineId}
+            />
+          )}
 
           {/* Current pipeline (center) */}
           <div className="flex-1 min-w-0 max-w-[240px] self-center">

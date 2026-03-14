@@ -27,3 +27,23 @@ class TeamService:
     async def get_team_pipelines(self, team_id: uuid.UUID) -> list:
         """Get all pipelines owned by this team."""
         return await self.pipeline_repo.get_by_team_id(team_id)
+
+    @staticmethod
+    def user_can_access_team(user: "object", team_id: uuid.UUID) -> bool:
+        """Return whether the user may access team detail or team pipelines.
+
+        Admins may always access any team.  Other roles may only access teams
+        they belong to.
+
+        Args:
+            user: Authenticated ``User`` ORM instance (or compatible mock).
+            team_id: UUID of the team to check access for.
+
+        Returns:
+            ``True`` when access is permitted, ``False`` otherwise.
+        """
+        if getattr(user, "role", None) == "admin":
+            return True
+        memberships = getattr(user, "team_memberships", None) or []
+        user_team_ids = {ut.team_id for ut in memberships}
+        return team_id in user_team_ids

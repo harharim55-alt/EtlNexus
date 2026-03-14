@@ -66,8 +66,7 @@ async def get_team(
         raise HTTPException(status_code=404, detail="Team not found")
 
     # Restrict full member details to admins and same-team members
-    user_team_ids = {ut.team_id for ut in (user.team_memberships or [])}
-    if user.role != "admin" and team_id not in user_team_ids:
+    if not service.user_can_access_team(user, team_id):
         raise HTTPException(
             status_code=403,
             detail="Access restricted to team members and admins",
@@ -118,8 +117,7 @@ async def get_team_pipelines(
         raise HTTPException(status_code=404, detail="Team not found")
 
     # Restrict to admins and same-team members
-    user_team_ids = {ut.team_id for ut in (user.team_memberships or [])}
-    if user.role != "admin" and team_id not in user_team_ids:
+    if not service.user_can_access_team(user, team_id):
         raise HTTPException(
             status_code=403,
             detail="Access restricted to team members and admins",

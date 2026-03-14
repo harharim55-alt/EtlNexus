@@ -1,5 +1,6 @@
 import { Code } from "lucide-react";
 import { CopyButton } from "@/components/shared/CopyButton";
+import { isApiPipeline } from "@/lib/utils";
 
 interface ConsumeSnippetProps {
   pipelineName: string;
@@ -8,7 +9,7 @@ interface ConsumeSnippetProps {
 
 export function ConsumeSnippet({ pipelineName, category }: ConsumeSnippetProps) {
   const importName = pipelineName.toLowerCase().replace(/ /g, "_");
-  const isApi = category?.toLowerCase().includes("api") ?? false;
+  const isApi = isApiPipeline(category);
 
   if (isApi) {
     const apiCode = `from path import api\n\n${importName} = ${importName}(start_date, end_date)`;

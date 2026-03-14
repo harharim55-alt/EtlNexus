@@ -6,6 +6,7 @@ import { usePipelineStore } from "@/stores/pipeline-store";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStatusStyle } from "@/lib/status-config";
+import { groupByDag } from "@/components/bento-workspace/lineage/lineage-utils";
 import type { BouncerTopologyNode } from "@/types/bouncer";
 
 function FlowArrow() {
@@ -70,16 +71,6 @@ function EtlNode({
       </span>
     </button>
   );
-}
-
-function groupByDag(nodes: BouncerTopologyNode[]): Record<string, BouncerTopologyNode[]> {
-  const groups: Record<string, BouncerTopologyNode[]> = {};
-  for (const n of nodes) {
-    const key = n.dag_id || "unassigned";
-    if (!groups[key]) groups[key] = [];
-    groups[key].push(n);
-  }
-  return groups;
 }
 
 function statusSummary(nodes: BouncerTopologyNode[]) {

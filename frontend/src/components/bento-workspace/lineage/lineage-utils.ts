@@ -13,8 +13,8 @@ export function groupBouncersByDag(
   return groups;
 }
 
-export function groupByDag(tasks: TopologyTask[]): Record<string, TopologyTask[]> {
-  const groups: Record<string, TopologyTask[]> = {};
+export function groupByDag<T extends { dag_id: string }>(tasks: T[]): Record<string, T[]> {
+  const groups: Record<string, T[]> = {};
   for (const t of tasks) {
     const key = t.dag_id || "unassigned";
     if (!groups[key]) groups[key] = [];

@@ -269,8 +269,29 @@ class PipelineService:
         return result
 
     async def get_join_suggestions(
-        self, pipeline_id: uuid.UUID
+        self,
+        pipeline_id: uuid.UUID,
+        user_id: uuid.UUID | None = None,
+        user_team_ids: set[uuid.UUID] | None = None,
+        is_admin: bool = False,
+        grant_repo: VisibilityGrantRepository | None = None,
     ) -> JoinSuggestionsResponse | None:
+        """Return schema-based join suggestions for the given pipeline.
+
+        When ``grant_repo`` is provided and the caller is not an admin, the
+        pipeline visibility is enforced before returning results.
+
+        Args:
+            pipeline_id: UUID of the pipeline to fetch join suggestions for.
+            user_id: ID of the requesting user (used for visibility checks).
+            user_team_ids: Set of team IDs the user belongs to.
+            is_admin: When ``True``, bypass all visibility checks.
+            grant_repo: Repository used for visibility enforcement.
+
+        Returns:
+            ``JoinSuggestionsResponse`` when the pipeline is visible and found,
+            ``None`` otherwise (callers should raise 404).
+        """
         cache_key = str(pipeline_id)
         cached = join_suggestions_cache.get(cache_key)
         if cached is not None:
@@ -279,6 +300,16 @@ class PipelineService:
         pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
         if not pipeline:
             return None
+
+        if not is_admin and grant_repo is not None:
+            can_see = await grant_repo.user_can_see_pipeline(
+                pipeline_id=pipeline_id,
+                pipeline_team_id=pipeline.team_id,
+                user_id=user_id,
+                user_team_ids=user_team_ids or set(),
+            )
+            if not can_see:
+                return None
 
         # Use SQL-based field intersection instead of loading all pipelines into memory
         rows = await self.pipeline_repo.get_shared_field_pipelines(pipeline_id)

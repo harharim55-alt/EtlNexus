@@ -12,6 +12,20 @@ import { LoadingState } from "@/components/shared/LoadingState";
 import { X } from "lucide-react";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
 
+/* ── Module-level constants ────────────────────────────────────────── */
+
+const VIRTUAL_ROW_STYLE: React.CSSProperties = {
+  position: "absolute",
+  top: 0,
+  left: 0,
+  width: "100%",
+};
+
+const TOTAL_SIZE_STYLE = (height: number): React.CSSProperties => ({
+  height: `${height}px`,
+  position: "relative",
+});
+
 interface CategoryGroup {
   category: string;
   pipelines: PipelineListItemType[];
@@ -184,6 +198,13 @@ export function PipelineRegistry() {
 
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const handleSelectPipeline = useCallback(
+    (id: string) => setSelectedPipelineId(id),
+    [setSelectedPipelineId],
+  );
+
+  const handleRetry = useCallback(() => refetch(), [refetch]);
+
   const estimateSize = useCallback(
     (index: number) => (flatItems[index].type === "header" ? 40 : 108),
     [flatItems],
@@ -263,17 +284,12 @@ export function PipelineRegistry() {
         {isError && (
           <ErrorState
             message="Failed to load pipelines"
-            onRetry={() => refetch()}
+            onRetry={handleRetry}
           />
         )}
 
         {flatItems.length > 0 && (
-          <div
-            style={{
-              height: `${virtualizer.getTotalSize()}px`,
-              position: "relative",
-            }}
-          >
+          <div style={TOTAL_SIZE_STYLE(virtualizer.getTotalSize())}>
             {virtualizer.getVirtualItems().map((virtualRow) => {
               const item = flatItems[virtualRow.index];
               return (
@@ -282,10 +298,7 @@ export function PipelineRegistry() {
                   ref={virtualizer.measureElement}
                   data-index={virtualRow.index}
                   style={{
-                    position: "absolute",
-                    top: 0,
-                    left: 0,
-                    width: "100%",
+                    ...VIRTUAL_ROW_STYLE,
                     transform: `translateY(${virtualRow.start}px)`,
                   }}
                 >
@@ -305,7 +318,7 @@ export function PipelineRegistry() {
                     <PipelineListItem
                       pipeline={item.pipeline}
                       isActive={selectedPipelineId === item.pipeline.id}
-                      onClick={() => setSelectedPipelineId(item.pipeline.id)}
+                      onClick={() => handleSelectPipeline(item.pipeline.id)}
                     />
                   )}
                 </div>

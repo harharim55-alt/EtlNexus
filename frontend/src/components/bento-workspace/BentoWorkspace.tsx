@@ -12,6 +12,7 @@ import { JoinIntelligence } from "./JoinIntelligence";
 import { UsageCard } from "./UsageCard";
 import { ResourcePerformanceCard } from "./ResourcePerformanceCard";
 import { TransformInspectorCard } from "./TransformInspectorCard";
+import { isApiPipeline } from "@/lib/utils";
 
 export function BentoWorkspace() {
   const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
@@ -76,12 +77,12 @@ export function BentoWorkspace() {
         />
 
         {/* Row 2: Resource & Performance */}
-        {!pipeline.category?.toLowerCase().includes("api") && (
+        {!isApiPipeline(pipeline.category) && (
           <ResourcePerformanceCard pipelineId={pipeline.id} />
         )}
 
         {/* Row 2.5: Execution Plan Tree */}
-        {!pipeline.category?.toLowerCase().includes("api") && (
+        {!isApiPipeline(pipeline.category) && (
           <TransformInspectorCard pipelineId={pipeline.id} />
         )}
 

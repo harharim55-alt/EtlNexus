@@ -9,9 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.integrations.airflow_client import airflow_client, strip_group_prefix
 from app.parsers.log_parser import parse_execution_plan, parse_resource_actual
 from app.repositories.airflow_repo import AirflowRepository
+from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
-from app.repositories.bouncer_repo import BouncerRepository
 
 logger = logging.getLogger(__name__)
 

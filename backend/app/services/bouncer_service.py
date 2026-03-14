@@ -4,9 +4,9 @@ import logging
 from collections import defaultdict
 
 from app.cache import bouncer_cache, bouncer_topology_cache
+from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
-from app.repositories.bouncer_repo import BouncerRepository
 from app.schemas.bouncer import (
     BouncerListResponse,
     BouncerResponse,

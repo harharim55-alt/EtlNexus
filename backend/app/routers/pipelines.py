@@ -3,15 +3,15 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from app.auth import get_current_user, require_team_membership, require_team_membership_or_editor_grant
+from app.config import settings
 from app.dependencies import (
     get_airflow_sync_service,
-    get_pipeline_repo,
     get_pipeline_service,
     get_revision_repo,
     get_visibility_grant_repo,
 )
 from app.models.user import User
-from app.repositories.pipeline_repo import PipelineRepository
+from app.rate_limit import limiter
 from app.repositories.revision_repo import RevisionRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.schemas.date_range import DateRangeParams
@@ -35,7 +35,7 @@ router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
 async def list_pipelines(
     q: str | None = None,
     skip: int = Query(0, ge=0),
-    limit: int = Query(200, ge=1, le=500),
+    limit: int = Query(settings.default_page_limit, ge=1, le=500),
     dates: DateRangeParams = Depends(),
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
@@ -112,7 +112,9 @@ async def update_pipeline(
     response_model=SyncResponse,
     dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
+@limiter.limit("30/minute")
 async def sync_pipeline(
+    request: Request,
     pipeline_id: uuid.UUID,
     user: User = Depends(get_current_user),
     service: AirflowSyncService = Depends(get_airflow_sync_service),
@@ -171,22 +173,16 @@ async def get_join_suggestions(
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
     grant_repo: VisibilityGrantRepository = Depends(get_visibility_grant_repo),
-    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
 ):
-    if user.role != "admin":
-        pipeline = await pipeline_repo.get_by_id(pipeline_id)
-        if not pipeline:
-            raise HTTPException(status_code=404, detail="Pipeline not found")
-        user_team_ids = {ut.team_id for ut in (user.team_memberships or [])}
-        can_see = await grant_repo.user_can_see_pipeline(
-            pipeline_id=pipeline_id,
-            pipeline_team_id=pipeline.team_id,
-            user_id=user.id,
-            user_team_ids=user_team_ids,
-        )
-        if not can_see:
-            raise HTTPException(status_code=404, detail="Pipeline not found")
-    result = await service.get_join_suggestions(pipeline_id)
+    is_admin = user.role == "admin"
+    user_team_ids = {ut.team_id for ut in (user.team_memberships or [])}
+    result = await service.get_join_suggestions(
+        pipeline_id=pipeline_id,
+        user_id=user.id,
+        user_team_ids=user_team_ids,
+        is_admin=is_admin,
+        grant_repo=grant_repo,
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     return result

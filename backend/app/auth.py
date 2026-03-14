@@ -125,6 +125,35 @@ def require_role(*roles: str):
     return _check
 
 
+async def _resolve_pipeline_team(
+    request: Request,
+    pipeline_id_param: str,
+    session: AsyncSession,
+) -> tuple[uuid.UUID | None, object | None]:
+    """Parse the pipeline UUID from path params and load the pipeline record.
+
+    Args:
+        request: FastAPI Request with path parameters.
+        pipeline_id_param: Name of the path parameter holding the pipeline UUID.
+        session: Async DB session.
+
+    Returns:
+        A 2-tuple of ``(pipeline_uuid, pipeline)``; both ``None`` when the
+        parameter is missing or the UUID is invalid.
+    """
+    raw_pipeline_id: str | None = request.path_params.get(pipeline_id_param)
+    if not raw_pipeline_id:
+        return None, None
+    try:
+        pipeline_uuid = uuid.UUID(raw_pipeline_id)
+    except ValueError:
+        return None, None
+    from app.repositories.pipeline_repo import PipelineRepository
+
+    pipeline = await PipelineRepository(session).get_by_id(pipeline_uuid)
+    return pipeline_uuid, pipeline
+
+
 def require_team_membership(pipeline_id_param: str = "pipeline_id"):
     """Return a dependency that checks the caller belongs to the pipeline's team.
 
@@ -149,18 +178,9 @@ def require_team_membership(pipeline_id_param: str = "pipeline_id"):
         if user.role == "admin":
             return user
 
-        raw_pipeline_id: str | None = request.path_params.get(pipeline_id_param)
-        if not raw_pipeline_id:
+        pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
+        if pipeline_uuid is None:
             return user
-
-        try:
-            pipeline_uuid = uuid.UUID(raw_pipeline_id)
-        except ValueError:
-            return user
-
-        from app.repositories.pipeline_repo import PipelineRepository
-
-        pipeline = await PipelineRepository(session).get_by_id(pipeline_uuid)
 
         # Unassigned pipeline — everyone may edit
         if not pipeline or not pipeline.team_id:
@@ -189,23 +209,12 @@ def require_team_membership_or_editor_grant(pipeline_id_param: str = "pipeline_i
         if user.role == "admin":
             return user
 
-        raw_pipeline_id: str | None = request.path_params.get(pipeline_id_param)
-        if not raw_pipeline_id:
-            return user
-
-        try:
-            pipeline_uuid = uuid.UUID(raw_pipeline_id)
-        except ValueError:
-            return user
-
-        from app.repositories.pipeline_repo import PipelineRepository
-
-        pipeline = await PipelineRepository(session).get_by_id(pipeline_uuid)
+        pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
 
         # Store loaded pipeline to avoid re-fetching in downstream handler
         request.state.pipeline = pipeline
 
-        if not pipeline or not pipeline.team_id:
+        if pipeline_uuid is None or not pipeline or not pipeline.team_id:
             return user
 
         user_team_ids = {ut.team_id for ut in user.team_memberships}

@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Radio } from "lucide-react";
 import { getStatusStyle } from "@/lib/status-config";
 import type { TopologyTask, TopologyBouncer } from "@/types/topology";
@@ -12,7 +13,7 @@ export function StatusDot({ status }: { status: string }) {
   );
 }
 
-export function TaskNode({
+export const TaskNode = memo(function TaskNode({
   task,
   isCurrent,
   onClick,
@@ -58,7 +59,7 @@ export function TaskNode({
       </span>
     </button>
   );
-}
+});
 
 export function FlowArrow() {
   return (
@@ -89,7 +90,7 @@ export function FlowArrow() {
   );
 }
 
-export function BouncerNode({
+export const BouncerNode = memo(function BouncerNode({
   bouncer,
   onClick,
 }: {
@@ -120,7 +121,7 @@ export function BouncerNode({
       />
     </button>
   );
-}
+});
 
 export function SectionLabel({
   label,

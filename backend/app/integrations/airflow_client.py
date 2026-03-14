@@ -37,7 +37,7 @@ class AirflowClient:
         self.auth = (settings.airflow_username, settings.airflow_password)
         self.timeout = httpx.Timeout(10.0)
         self._connected = False
-        self._cache = TTLCache(ttl=300)
+        self._cache = TTLCache(ttl=settings.cache_ttl_airflow)
         # Persistent client with connection pool — reuses TCP connections
         self._client = httpx.AsyncClient(
             timeout=self.timeout,

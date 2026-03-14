@@ -1,8 +1,9 @@
-import { useEffect, useRef, useCallback, useMemo, useState } from "react";
+import { useEffect, useCallback, useMemo, useState } from "react";
 import { X, GitFork, Lock, Sparkles, Radio, Loader2 } from "lucide-react";
 import { useUpstreamTopology } from "@/hooks/use-upstream-topology";
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { getStatusStyle, STATUS_CONFIG } from "@/lib/status-config";
+import { useEdgeDrawing } from "./hooks/useEdgeDrawing";
 import type { UpstreamNode, UpstreamEdge } from "@/types/topology";
 
 /* ── Props ─────────────────────────────────────────────────────────── */
@@ -12,6 +13,19 @@ interface UpstreamTopologyModalProps {
   onClose: () => void;
   pipelineId: string;
 }
+
+/* ── Module-level constants ────────────────────────────────────────── */
+
+const DOT_GRID_STYLE: React.CSSProperties = {
+  backgroundImage: "radial-gradient(rgba(148,163,184,0.07) 1px, transparent 1px)",
+  backgroundSize: "24px 24px",
+};
+
+const SVG_OVERLAY_STYLE: React.CSSProperties = {
+  width: "100%",
+  height: "100%",
+  overflow: "visible",
+};
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
 
@@ -34,17 +48,13 @@ function getNodeEdgeType(node: UpstreamNode, edges: UpstreamEdge[]): "needs" | "
   return "prefers";
 }
 
-/* ── Edge path type for rendering ──────────────────────────────────── */
-
-interface EdgePath {
-  d: string;
-  type: string;
-  sourceId: string;
-  targetId: string;
-  sx: number;
-  sy: number;
-  tx: number;
-  ty: number;
+/** Check if a node is connected to the hovered node */
+function isConnectedToHovered(nodeTaskId: string, hoveredNode: string | null, edges: UpstreamEdge[]): boolean {
+  if (hoveredNode === null) return false;
+  return hoveredNode === nodeTaskId || edges.some((e) =>
+    (e.source_task_id === hoveredNode && e.target_task_id === nodeTaskId) ||
+    (e.target_task_id === hoveredNode && e.source_task_id === nodeTaskId)
+  );
 }
 
 /* ── Main Modal ────────────────────────────────────────────────────── */
@@ -56,9 +66,7 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
   const { data, isLoading } = useUpstreamTopology(pipelineId, activeDagId, open);
   const setSelectedPipelineId = usePipelineStore((s) => s.setSelectedPipelineId);
 
-  const containerRef = useRef<HTMLDivElement>(null);
-  const nodeRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const [edgePaths, setEdgePaths] = useState<EdgePath[]>([]);
+  const { containerRef, edgePaths, setNodeRef } = useEdgeDrawing(open, data?.edges);
 
   // The resolved DAG from the response (backend defaults to first DAG when activeDagId is null)
   const displayDagId = activeDagId ?? data?.dag_id ?? null;
@@ -68,7 +76,6 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
     if (!open) {
       setActiveDagId(null);
       setHoveredNode(null);
-      setEdgePaths([]);
     }
   }, [open]);
 
@@ -89,6 +96,14 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
     [setSelectedPipelineId, onClose],
   );
 
+  const handleMouseEnter = useCallback((taskId: string) => {
+    setHoveredNode(taskId);
+  }, []);
+
+  const handleMouseLeave = useCallback(() => {
+    setHoveredNode(null);
+  }, []);
+
   // Group nodes by depth (reversed: max_depth on left, 0 on right)
   const { columns, maxDepth } = useMemo(() => {
     if (!data) return { columns: [] as UpstreamNode[][], maxDepth: 0 };
@@ -103,66 +118,30 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
     return { columns: cols, maxDepth: md };
   }, [data]);
 
-  // Draw edges after layout
-  const drawEdges = useCallback(() => {
-    if (!data || !containerRef.current) return;
-    const containerRect = containerRef.current.getBoundingClientRect();
-    const scrollLeft = containerRef.current.scrollLeft;
-    const scrollTop = containerRef.current.scrollTop;
-    const paths: EdgePath[] = [];
-
-    for (const edge of data.edges) {
-      const sourceEl = nodeRefs.current.get(edge.source_task_id);
-      const targetEl = nodeRefs.current.get(edge.target_task_id);
-      if (!sourceEl || !targetEl) continue;
-
-      const sr = sourceEl.getBoundingClientRect();
-      const tr = targetEl.getBoundingClientRect();
-
-      const sx = sr.right - containerRect.left + scrollLeft;
-      const sy = sr.top + sr.height / 2 - containerRect.top + scrollTop;
-      const tx = tr.left - containerRect.left + scrollLeft;
-      const ty = tr.top + tr.height / 2 - containerRect.top + scrollTop;
-
-      const dx = Math.max((tx - sx) * 0.4, 20);
-      const d = `M${sx},${sy} C${sx + dx},${sy} ${tx - dx},${ty} ${tx},${ty}`;
-      paths.push({ d, type: edge.edge_type, sourceId: edge.source_task_id, targetId: edge.target_task_id, sx, sy, tx, ty });
-    }
-
-    setEdgePaths(paths);
+  // Derived node lists and summary
+  const { dagIds, etlNodes, bouncerNodes, summary } = useMemo(() => {
+    const dIds = data?.dag_ids ?? [];
+    const etls = data ? data.nodes.filter((n) => !n.is_bouncer) : [];
+    const bouncers = data ? data.nodes.filter((n) => n.is_bouncer) : [];
+    const sum = data ? statusSummary(etls) : {};
+    return { dagIds: dIds, etlNodes: etls, bouncerNodes: bouncers, summary: sum };
   }, [data]);
 
-  useEffect(() => {
-    if (!open || !data) return;
-    const raf = requestAnimationFrame(() => { requestAnimationFrame(drawEdges); });
-    return () => cancelAnimationFrame(raf);
-  }, [open, data, drawEdges]);
-
-  useEffect(() => {
-    if (!open) return;
-    window.addEventListener("resize", drawEdges);
-    return () => window.removeEventListener("resize", drawEdges);
-  }, [open, drawEdges]);
-
-  // Also redraw on scroll
-  useEffect(() => {
-    if (!open || !containerRef.current) return;
-    const el = containerRef.current;
-    el.addEventListener("scroll", drawEdges);
-    return () => el.removeEventListener("scroll", drawEdges);
-  }, [open, drawEdges]);
-
-  const setNodeRef = useCallback((taskId: string, el: HTMLDivElement | null) => {
-    if (el) nodeRefs.current.set(taskId, el);
-    else nodeRefs.current.delete(taskId);
-  }, []);
+  // Pre-compute highlight/dim state per node
+  const nodeRenderState = useMemo(() => {
+    if (!data) return new Map<string, { isHighlighted: boolean; isDimmed: boolean }>();
+    const map = new Map<string, { isHighlighted: boolean; isDimmed: boolean }>();
+    for (const node of data.nodes) {
+      const connected = isConnectedToHovered(node.task_id, hoveredNode, data.edges);
+      map.set(node.task_id, {
+        isHighlighted: hoveredNode !== null && connected,
+        isDimmed: hoveredNode !== null && !connected,
+      });
+    }
+    return map;
+  }, [data, hoveredNode]);
 
   if (!open) return null;
-
-  const dagIds = data?.dag_ids ?? [];
-  const etlNodes = data ? data.nodes.filter((n) => !n.is_bouncer) : [];
-  const bouncerNodes = data ? data.nodes.filter((n) => n.is_bouncer) : [];
-  const summary = data ? statusSummary(etlNodes) : {};
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5">
@@ -253,10 +232,7 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
         <div
           ref={containerRef}
           className="flex-1 overflow-auto custom-scrollbar relative"
-          style={{
-            backgroundImage: "radial-gradient(rgba(148,163,184,0.07) 1px, transparent 1px)",
-            backgroundSize: "24px 24px",
-          }}
+          style={DOT_GRID_STYLE}
         >
           {isLoading ? (
             <div className="flex items-center justify-center h-full">
@@ -275,7 +251,7 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
           ) : (
             <div className="relative inline-flex items-stretch min-w-full min-h-full p-8">
               {/* SVG edge overlay */}
-              <svg className="absolute inset-0 pointer-events-none" style={{ width: "100%", height: "100%", overflow: "visible" }}>
+              <svg className="absolute inset-0 pointer-events-none" style={SVG_OVERLAY_STYLE}>
                 <defs>
                   <filter id="edgeGlow">
                     <feGaussianBlur stdDeviation="2" result="blur" />
@@ -307,7 +283,7 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
                 })}
               </svg>
 
-              {/* Columns: deepest first → current last (bouncers are at max depth) */}
+              {/* Columns: deepest first -> current last (bouncers are at max depth) */}
               {[...columns].reverse().map((col, colIdx) => {
                 const depth = maxDepth - colIdx;
                 if (col.length === 0) return null;
@@ -338,48 +314,33 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
                         </span>
                       </div>
                       <div className="flex flex-col gap-2">
-                        {col.map((node) => (
-                          <div
-                            key={node.task_id}
-                            ref={(el) => setNodeRef(node.task_id, el)}
-                            onMouseEnter={() => setHoveredNode(node.task_id)}
-                            onMouseLeave={() => setHoveredNode(null)}
-                          >
-                            {node.is_bouncer ? (
-                              <BouncerNodeCard
-                                node={node}
-                                isHighlighted={hoveredNode !== null && (
-                                  hoveredNode === node.task_id ||
-                                  data.edges.some((e) =>
-                                    (e.source_task_id === hoveredNode && e.target_task_id === node.task_id) ||
-                                    (e.target_task_id === hoveredNode && e.source_task_id === node.task_id)
-                                  )
-                                )}
-                                isDimmed={hoveredNode !== null && hoveredNode !== node.task_id && !data.edges.some((e) =>
-                                  (e.source_task_id === hoveredNode && e.target_task_id === node.task_id) ||
-                                  (e.target_task_id === hoveredNode && e.source_task_id === node.task_id)
-                                )}
-                              />
-                            ) : (
-                              <NodeCard
-                                node={node}
-                                edgeType={getNodeEdgeType(node, data.edges)}
-                                isHighlighted={hoveredNode !== null && (
-                                  hoveredNode === node.task_id ||
-                                  data.edges.some((e) =>
-                                    (e.source_task_id === hoveredNode && e.target_task_id === node.task_id) ||
-                                    (e.target_task_id === hoveredNode && e.source_task_id === node.task_id)
-                                  )
-                                )}
-                                isDimmed={hoveredNode !== null && hoveredNode !== node.task_id && !data.edges.some((e) =>
-                                  (e.source_task_id === hoveredNode && e.target_task_id === node.task_id) ||
-                                  (e.target_task_id === hoveredNode && e.source_task_id === node.task_id)
-                                )}
-                                onClick={() => handleNodeClick(node)}
-                              />
-                            )}
-                          </div>
-                        ))}
+                        {col.map((node) => {
+                          const rs = nodeRenderState.get(node.task_id) ?? { isHighlighted: false, isDimmed: false };
+                          return (
+                            <div
+                              key={node.task_id}
+                              ref={(el) => setNodeRef(node.task_id, el)}
+                              onMouseEnter={() => handleMouseEnter(node.task_id)}
+                              onMouseLeave={handleMouseLeave}
+                            >
+                              {node.is_bouncer ? (
+                                <BouncerNodeCard
+                                  node={node}
+                                  isHighlighted={rs.isHighlighted}
+                                  isDimmed={rs.isDimmed}
+                                />
+                              ) : (
+                                <NodeCard
+                                  node={node}
+                                  edgeType={getNodeEdgeType(node, data.edges)}
+                                  isHighlighted={rs.isHighlighted}
+                                  isDimmed={rs.isDimmed}
+                                  onClick={() => handleNodeClick(node)}
+                                />
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   </div>

@@ -23,11 +23,11 @@ from app.parsers.log_parser import (
     parse_writes,
 )
 from app.repositories.airflow_repo import AirflowRepository
+from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
-from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.team_repo import TeamRepository
 from app.services.airflow_service import _STATUS_PRIORITY, KNOWN_AIRFLOW_STATES
 from app.services.sync.task_classifier import (
