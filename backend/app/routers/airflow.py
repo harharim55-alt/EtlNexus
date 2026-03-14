@@ -4,8 +4,8 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.auth import get_current_user
 from app.dependencies import get_airflow_repo
-from app.models.user import User
 from app.integrations.airflow_client import airflow_client
+from app.models.user import User
 from app.repositories.airflow_repo import AirflowRepository
 from app.schemas.airflow import AirflowStatusesResponse, AirflowStatusSchema
 

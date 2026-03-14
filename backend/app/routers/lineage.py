@@ -7,7 +7,7 @@ from app.dependencies import get_lineage_repo, get_pipeline_repo
 from app.models.user import User
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
-from app.schemas.lineage import LineageGraphSchema, LineageNode, LineageEdgeSchema
+from app.schemas.lineage import LineageEdgeSchema, LineageGraphSchema, LineageNode
 
 router = APIRouter(prefix="/api/pipelines", tags=["lineage"])
 

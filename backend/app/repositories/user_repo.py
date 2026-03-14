@@ -1,7 +1,7 @@
 """User repository — async SQLAlchemy data access for users."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
@@ -52,7 +52,7 @@ class UserRepository:
         Uses PostgreSQL ``INSERT ... ON CONFLICT DO UPDATE`` to handle
         concurrent first-login requests atomically.
         """
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         stmt = (
             pg_insert(User)
             .values(

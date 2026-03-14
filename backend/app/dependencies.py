@@ -7,12 +7,12 @@ from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.field_frequency_repo import FieldFrequencyRepository
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
-from app.repositories.revision_repo import RevisionRepository
-from app.repositories.usage_repo import UsageRepository
-from app.repositories.user_repo import UserRepository
 from app.repositories.resource_repo import ResourceRepository
+from app.repositories.revision_repo import RevisionRepository
 from app.repositories.sensor_repo import BouncerRepository
 from app.repositories.team_repo import TeamRepository
+from app.repositories.usage_repo import UsageRepository
+from app.repositories.user_repo import UserRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.ai_service import AIService
 from app.services.airflow_sync_service import AirflowSyncService

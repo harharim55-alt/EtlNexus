@@ -12,7 +12,6 @@ from fastapi import HTTPException
 
 from tests.conftest import make_pipeline, make_team, make_user, make_user_team
 
-
 # ---------------------------------------------------------------------------
 # get_current_user
 # ---------------------------------------------------------------------------

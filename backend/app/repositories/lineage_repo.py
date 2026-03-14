@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.lineage import LineageEdge
+from app.repositories.base import apply_updates
 
 
 class LineageRepository:
@@ -53,9 +54,7 @@ class LineageRepository:
         edge = result.scalar_one_or_none()
 
         if edge:
-            for key, value in data.items():
-                if hasattr(edge, key):
-                    setattr(edge, key, value)
+            apply_updates(edge, data)
         else:
             edge = LineageEdge(**data)
             self.session.add(edge)

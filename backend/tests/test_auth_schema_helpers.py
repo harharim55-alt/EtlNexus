@@ -1,11 +1,7 @@
 """Tests for auth schema helper functions (user_to_response)."""
 
-import uuid
 from unittest.mock import MagicMock
 
-import pytest
-
-from app.models.user_team import UserTeam
 from app.schemas.auth import user_to_response
 from tests.conftest import make_team, make_user, make_user_team
 

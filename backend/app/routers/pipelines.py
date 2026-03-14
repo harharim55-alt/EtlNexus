@@ -121,7 +121,7 @@ async def sync_pipeline(
         result = await service.sync_single_pipeline(pipeline_id)
         return result
     except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e))
+        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.get("/{pipeline_id}/revisions", response_model=RevisionListResponse)

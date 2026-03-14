@@ -77,6 +77,6 @@ class PipelineField(Base):
 # Avoid circular import issues — these are imported at module level by __init__.py
 from app.models.airflow_status import AirflowRunStatus  # noqa: E402, F401
 from app.models.lineage import LineageEdge  # noqa: E402, F401
+from app.models.pipeline_revision import PipelineRevision  # noqa: E402, F401
 from app.models.resource_config import PipelineResourceConfig  # noqa: E402, F401
 from app.models.run_history import PipelineRunHistory  # noqa: E402, F401
-from app.models.pipeline_revision import PipelineRevision  # noqa: E402, F401

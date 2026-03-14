@@ -1,5 +1,5 @@
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import case, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,6 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.models.pipeline import Pipeline, PipelineField
 from app.models.run_history import PipelineRunHistory
 from app.models.visibility_grant import VisibilityGrant
+from app.repositories.base import apply_updates
 
 
 def _escape_like(value: str) -> str:
@@ -79,12 +80,10 @@ class PipelineRepository:
             pipeline = result2.scalar_one_or_none()
 
         if pipeline:
-            for key, value in data.items():
-                if key != "name" and hasattr(pipeline, key):
-                    # Don't overwrite user-edited descriptions during Airflow sync
-                    if key == "description" and pipeline.description_edited_by_user:
-                        continue
-                    setattr(pipeline, key, value)
+            def _skip_user_edited(m, k, v):
+                return not (k == "description" and m.description_edited_by_user)
+
+            apply_updates(pipeline, data, exclude_keys={"name"}, condition_fn=_skip_user_edited)
         else:
             pipeline = Pipeline(**data)
             self.session.add(pipeline)
@@ -101,7 +100,7 @@ class PipelineRepository:
         """Compute success rate for a batch of pipelines (date range or default 30d)."""
         if not pipeline_ids:
             return {}
-        cutoff = date_from or (datetime.now(timezone.utc) - timedelta(days=30))
+        cutoff = date_from or (datetime.now(UTC) - timedelta(days=30))
         conditions = [
             PipelineRunHistory.pipeline_id.in_(pipeline_ids),
             PipelineRunHistory.duration_seconds.isnot(None),
@@ -155,7 +154,7 @@ class PipelineRepository:
         if documentation is not None:
             pipeline.documentation = documentation
         pipeline.last_updated_by = updated_by
-        pipeline.last_updated_at = datetime.now(timezone.utc)
+        pipeline.last_updated_at = datetime.now(UTC)
         await self.session.flush()
         return pipeline
 

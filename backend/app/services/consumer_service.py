@@ -5,7 +5,7 @@ import re
 
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
-from app.schemas.consumer import PipelineConsumersResponse, PipelineConsumerSchema
+from app.schemas.consumer import PipelineConsumerSchema, PipelineConsumersResponse
 
 logger = logging.getLogger(__name__)
 

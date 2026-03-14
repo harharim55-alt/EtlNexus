@@ -1,7 +1,7 @@
 """Tests for PipelineService — business logic with visibility and caching."""
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 

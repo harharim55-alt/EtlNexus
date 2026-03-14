@@ -25,6 +25,11 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["http://localhost:5173"]
     debug: bool = False
 
+    # Tuning
+    airflow_semaphore_limit: int = 6
+    airflow_startup_max_attempts: int = 20
+    airflow_startup_retry_seconds: int = 15
+
     # Spark Cluster Capacity (for resource utilization display)
     spark_max_driver_memory_gb: int = 16
     spark_max_executor_memory_gb: int = 64

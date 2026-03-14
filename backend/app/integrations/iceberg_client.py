@@ -63,7 +63,7 @@ class IcebergClient:
             self._spark.sparkContext.setLogLevel("WARN")
             self._connected = True
             logger.info("SparkSession created for Iceberg catalog at %s", self.catalog_uri)
-        except Exception as e:
+        except (ImportError, RuntimeError, OSError) as e:
             logger.warning("Failed to create SparkSession: %s", e)
             self._connected = False
             self._spark = None
@@ -160,7 +160,7 @@ class IcebergClient:
             try:
                 self._spark.stop()
             except Exception:
-                pass
+                logger.debug("SparkSession stop error", exc_info=True)
             self._spark = None
             self._connected = False
 

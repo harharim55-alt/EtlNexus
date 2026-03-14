@@ -2,7 +2,7 @@
 
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import func, select
 
@@ -95,7 +95,7 @@ async def seed_usage_data() -> None:
                         usage_type=u["usage_type"],
                         description=u["description"],
                         access_count=u["access_count"],
-                        last_accessed_at=datetime.now(timezone.utc) - timedelta(days=u["days_ago"]),
+                        last_accessed_at=datetime.now(UTC) - timedelta(days=u["days_ago"]),
                     )
                     session.add(usage)
                     total += 1

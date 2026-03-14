@@ -1,7 +1,5 @@
 """Tests for app.cache — TTLCache in-memory caching."""
 
-import time
-from unittest.mock import patch
 
 from app.cache import TTLCache, clear_all
 
@@ -76,20 +74,21 @@ class TestClearAll:
     def test_clear_all_resets_every_module_cache(self):
         """Verify clear_all() touches all module-level cache singletons."""
         from app.cache import (
+            bouncer_cache,
+            bouncer_topology_cache,
             dag_summary_cache,
             grant_level_cache,
+            join_suggestions_cache,
             pipeline_list_cache,
             schema_matrix_cache,
-            sensor_cache,
-            sensor_topology_cache,
             topology_cache,
         )
 
         # Seed each cache
         caches = [
             pipeline_list_cache, schema_matrix_cache, topology_cache,
-            dag_summary_cache, sensor_cache, sensor_topology_cache,
-            grant_level_cache,
+            dag_summary_cache, bouncer_cache, bouncer_topology_cache,
+            grant_level_cache, join_suggestions_cache,
         ]
         for c in caches:
             c.set("test_key", "test_value")

@@ -2,10 +2,11 @@
 
 import uuid
 
-from sqlalchemy import select, distinct
+from sqlalchemy import distinct, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.sensor import Bouncer
+from app.repositories.base import apply_updates
 
 
 class BouncerRepository:
@@ -28,7 +29,6 @@ class BouncerRepository:
             .where(Bouncer.team == team)
             .order_by(Bouncer.display_name)
         )
-        stmt = self._apply_date_filter(stmt, date_from, date_to)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -59,9 +59,7 @@ class BouncerRepository:
         sensor_name = data["sensor_name"]
         existing = await self.get_by_name(sensor_name)
         if existing:
-            for key, value in data.items():
-                if key != "sensor_name" and hasattr(existing, key):
-                    setattr(existing, key, value)
+            apply_updates(existing, data, exclude_keys={"sensor_name"})
             await self.session.flush()
             return existing
         else:

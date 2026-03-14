@@ -1,7 +1,7 @@
 """Shared test fixtures for the EtlNexus backend test suite."""
 
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -11,7 +11,6 @@ from app.models.team import Team
 from app.models.user import User
 from app.models.user_team import UserTeam
 from app.models.visibility_grant import VisibilityGrant
-
 
 # ---------------------------------------------------------------------------
 # Factory helpers
@@ -34,7 +33,7 @@ def make_user(
     user.display_name = display_name or user.sub
     user.role = role
     user.is_active = True
-    user.last_login = datetime.now(timezone.utc)
+    user.last_login = datetime.now(UTC)
     user.team_memberships = team_memberships or []
     return user
 
@@ -82,8 +81,8 @@ def make_pipeline(
     pipeline.documentation = None
     pipeline.last_updated_by = None
     pipeline.last_updated_at = None
-    pipeline.created_at = datetime.now(timezone.utc)
-    pipeline.updated_at = datetime.now(timezone.utc)
+    pipeline.created_at = datetime.now(UTC)
+    pipeline.updated_at = datetime.now(UTC)
     pipeline.team = team
     pipeline.team_id = team_id
     pipeline.fields = []
@@ -109,7 +108,7 @@ def make_grant(
     grant.source_team_id = source_team_id
     grant.grant_level = grant_level
     grant.granted_by = granted_by
-    grant.created_at = datetime.now(timezone.utc)
+    grant.created_at = datetime.now(UTC)
     grant.grantee_team = None
     grant.grantee_user = None
     grant.source_team = None

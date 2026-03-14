@@ -1,16 +1,15 @@
 """Tests for UserAuthService — JIT provisioning, team sync, and caching."""
 
 import uuid
-from collections import OrderedDict
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.services.user_auth_service import (
-    UserAuthService,
     _CACHE_MAX_SIZE,
     _CACHE_TTL_SECONDS,
     _PROVISION_CACHE,
+    UserAuthService,
     _claims_cache_key,
     _evict_stale_entries,
 )

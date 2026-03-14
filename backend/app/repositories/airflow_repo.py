@@ -4,6 +4,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.airflow_status import AirflowRunStatus
+from app.repositories.base import apply_updates
 
 
 class AirflowRepository:
@@ -31,9 +32,7 @@ class AirflowRepository:
         status = result.scalar_one_or_none()
 
         if status:
-            for key, value in data.items():
-                if hasattr(status, key):
-                    setattr(status, key, value)
+            apply_updates(status, data)
         else:
             status = AirflowRunStatus(**data)
             self.session.add(status)
