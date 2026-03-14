@@ -16,9 +16,10 @@ import { DependencySection } from "./lineage/DependencySection";
 
 interface LineageTopologyProps {
   pipelineId: string;
+  fullWidth?: boolean;
 }
 
-export function LineageTopology({ pipelineId }: LineageTopologyProps) {
+export function LineageTopology({ pipelineId, fullWidth }: LineageTopologyProps) {
   const [upstreamOpen, setUpstreamOpen] = useState(false);
   const selectedDagId = usePipelineStore((s) => s.selectedDagId);
   const setSelectedDagId = usePipelineStore((s) => s.setSelectedDagId);
@@ -42,9 +43,11 @@ export function LineageTopology({ pipelineId }: LineageTopologyProps) {
 
   const isLoading = topoLoading || lineageLoading;
 
+  const colSpan = fullWidth ? "col-span-12" : "col-span-12 lg:col-span-8";
+
   if (isLoading) {
     return (
-      <div className="col-span-12 lg:col-span-8 bg-[#18181b] border border-white/5 rounded-2xl p-6">
+      <div className={`${colSpan} bg-[#18181b] border border-white/5 rounded-2xl p-6`}>
         <Skeleton className="h-5 w-40 mb-6 bg-white/5" />
         <Skeleton className="h-32 bg-white/5 rounded-xl" />
       </div>
@@ -74,7 +77,7 @@ export function LineageTopology({ pipelineId }: LineageTopologyProps) {
     (topology?.upstream_prefers.length ?? 0) > 0;
 
   return (
-    <div className="col-span-12 lg:col-span-8 bg-[#18181b] border border-white/5 rounded-2xl p-6 relative overflow-hidden group">
+    <div className={`${colSpan} bg-[#18181b] border border-white/5 rounded-2xl p-6 relative overflow-hidden group`}>
       <div className="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-indigo-500/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
 
       <div className="flex items-center justify-between mb-5">
