@@ -7,7 +7,6 @@ import { useNavigationStore } from "@/stores/navigation-store";
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { useBouncerStore } from "@/stores/bouncer-store";
 import { isAdmin } from "@/lib/permissions";
-import { isApiPipeline } from "@/lib/utils";
 import { getOnboardingSteps } from "./onboarding-steps";
 import type { PanelPosition } from "./onboarding-steps";
 import type { PipelineListItem } from "@/types/pipeline";
@@ -95,9 +94,9 @@ export function OnboardingOverlay() {
           ? allPipelines.find((p) => p.id === selectedPipelineId)
           : null;
         // Force non-API selection if nothing selected or current is API
-        if (!currentPipeline || isApiPipeline(currentPipeline.category)) {
+        if (!currentPipeline || currentPipeline.pipeline_type === "api") {
           const etlPipeline = allPipelines.find(
-            (p) => !isApiPipeline(p.category),
+            (p) => p.pipeline_type !== "api",
           );
           // Fallback to first pipeline if all are API
           const target = etlPipeline ?? allPipelines[0];
