@@ -71,10 +71,12 @@ export function BentoWorkspace() {
       <div className="grid grid-cols-12 gap-6 mt-6">
         {/* Row 1: Lineage + Metrics */}
         <LineageTopology pipelineId={pipeline.id} />
-        <MetricsCards
-          rowsPerDay={pipeline.rows_per_day}
-          schedule={pipeline.schedule}
-        />
+        {!isApiPipeline(pipeline.pipeline_type) && (
+          <MetricsCards
+            rowsPerDay={pipeline.rows_per_day}
+            schedule={pipeline.schedule}
+          />
+        )}
 
         {/* Row 2: Resource & Performance */}
         {!isApiPipeline(pipeline.pipeline_type) && (
@@ -88,7 +90,9 @@ export function BentoWorkspace() {
 
         {/* Row 3: Schema + Usage (left) | Join Intelligence + Consume (right) */}
         <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
-          <SchemaViewer fields={pipeline.fields} />
+          {!isApiPipeline(pipeline.pipeline_type) && (
+            <SchemaViewer fields={pipeline.fields} />
+          )}
           <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
         </div>
         <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">

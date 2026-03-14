@@ -85,9 +85,11 @@ export function OnboardingOverlay() {
 
     // Auto-select first non-API pipeline for catalog/workspace steps
     if ((step.id === "catalog" || step.id === "workspace")) {
-      const cached = queryClient.getQueryData<{
+      // Use partial key match — the full key is ["pipelines", searchQuery, dateParams]
+      const queries = queryClient.getQueriesData<{
         pages: Array<{ items: PipelineListItem[]; total: number }>;
-      }>(["pipelines", ""]);
+      }>({ queryKey: ["pipelines"] });
+      const cached = queries.find(([, data]) => data?.pages?.length)?.[1];
       if (cached?.pages) {
         const allPipelines = cached.pages.flatMap((p) => p.items);
         const currentPipeline = selectedPipelineId
