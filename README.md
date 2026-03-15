@@ -100,10 +100,6 @@ Teams (Dagger, Vault, Prism, Relay, Oasis) own pipelines and control visibility.
 - **Volume and schedule metrics** — rows/day (from bouncer volume seed) and native DAG schedule
 - **Consume snippets** — copy-paste Python code for both ETL import and Catalog import patterns:
   ```python
-  # ETL Import
-  from etls import BgpRouteSync
-  BgpRouteSync("2026-03-15").consume()
-
   # Catalog Import
   from etls import Catalog, Engine
   Catalog(Engine.Spark).iceberg.dagger.bgp_route_sync("date").consume().as_pyspark()
