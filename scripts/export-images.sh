@@ -17,6 +17,7 @@ mkdir -p "$OUT_DIR"
 echo "=== Building images ==="
 docker compose build
 
+# Generate offline compose file (strip build/develop sections)
 if [ "$MODE" = "prod" ]; then
   echo "=== Exporting PROD images ==="
   IMAGES=(
@@ -24,7 +25,7 @@ if [ "$MODE" = "prod" ]; then
     "etlnexus-backend"
     "etlnexus-frontend"
   )
-  cp docker-compose.prod.yml "$OUT_DIR/docker-compose.yml"
+  python3 "$SCRIPT_DIR/strip_compose_build.py" docker-compose.prod.yml "$OUT_DIR/docker-compose.yml"
 else
   echo "=== Exporting DEV images (full stack) ==="
   IMAGES=(
@@ -40,7 +41,14 @@ else
     "python:3.12-slim"
     "alpine:latest"
   )
-  cp docker-compose.yml "$OUT_DIR/docker-compose.yml"
+  python3 "$SCRIPT_DIR/strip_compose_build.py" docker-compose.yml "$OUT_DIR/docker-compose.yml"
+
+  # Bundle runtime files needed by volume mounts (DAGs, seeds, Keycloak realm)
+  echo "=== Bundling dev runtime files ==="
+  mkdir -p "$OUT_DIR/dev"
+  cp -r dev/dags "$OUT_DIR/dev/dags"
+  cp -r dev/seeds "$OUT_DIR/dev/seeds"
+  cp -r dev/keycloak "$OUT_DIR/dev/keycloak"
 fi
 
 for img in "${IMAGES[@]}"; do

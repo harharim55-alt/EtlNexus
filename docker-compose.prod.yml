@@ -24,6 +24,7 @@ services:
         max-file: "5"
 
   backend:
+    image: etlnexus-backend
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -51,6 +52,7 @@ services:
         max-file: "5"
 
   frontend:
+    image: etlnexus-frontend
     build:
       context: ./frontend
       dockerfile: Dockerfile
