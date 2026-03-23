@@ -179,3 +179,44 @@ export function parseSortKeys(
       return { column: part.replace(/\s*ASC.*/, ""), direction: "ASC" as const };
     });
 }
+
+export function parseWindowDetail(detail: string): {
+  partitionBy: string[];
+  orderBy: { column: string; direction: "ASC" | "DESC" }[];
+  functions: string[];
+} {
+  // Detail format from backend: "partition by col1, col2 | order by col3 DESC | func1, func2"
+  const sections = detail.split("|").map((s) => s.trim());
+
+  let partitionBy: string[] = [];
+  let orderBy: { column: string; direction: "ASC" | "DESC" }[] = [];
+  let functions: string[] = [];
+
+  for (const section of sections) {
+    if (section.startsWith("partition by ")) {
+      partitionBy = section
+        .replace(/^partition by\s+/, "")
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    } else if (section.startsWith("order by ")) {
+      const raw = section.replace(/^order by\s+/, "");
+      orderBy = raw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((part) => {
+          if (part.includes("DESC"))
+            return { column: part.replace(/\s*DESC.*/, ""), direction: "DESC" as const };
+          return { column: part.replace(/\s*ASC.*/, ""), direction: "ASC" as const };
+        });
+    } else if (section) {
+      functions = section
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
+  }
+
+  return { partitionBy, orderBy, functions };
+}

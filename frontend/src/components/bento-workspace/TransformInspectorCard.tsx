@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitMerge } from "lucide-react";
+import { GitMerge, Maximize2 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useExecutionPlan } from "@/hooks/use-execution-plan";
 import { formatDuration } from "@/lib/format";
@@ -7,6 +7,8 @@ import type { ExecutionPlanNode } from "@/types/execution-plan";
 import { NodeDetailModal } from "./execution-plan/PlanFormatters";
 import { TreeNode, treeStyles } from "./execution-plan/PlanTree";
 import { RunPicker } from "./execution-plan/PlanRunSelector";
+import { usePannable } from "./execution-plan/usePannable";
+import { ExecutionPlanModal } from "./ExecutionPlanModal";
 
 interface TransformInspectorCardProps {
   pipelineId: string;
@@ -20,6 +22,8 @@ export function TransformInspectorCard({
   const [expandedNode, setExpandedNode] = useState<ExecutionPlanNode | null>(
     null,
   );
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
+  const panRef = usePannable<HTMLDivElement>();
 
   if (isLoading) {
     return (
@@ -64,11 +68,19 @@ export function TransformInspectorCard({
             currentRunId={data.dag_run_id}
             onSelect={setSelectedRunId}
           />
+          <button
+            type="button"
+            onClick={() => setFullscreenOpen(true)}
+            className="text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer text-slate-500 bg-white/[0.03] border-white/5 hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-1.5"
+          >
+            <Maximize2 className="w-3 h-3" />
+            Full Plan
+          </button>
         </div>
       </div>
 
       {/* Canvas body */}
-      <div className="relative overflow-x-auto" style={{ maxHeight: 500 }}>
+      <div ref={panRef} className="relative overflow-auto custom-scrollbar" style={{ maxHeight: 500 }}>
         <div
           className="absolute inset-0 opacity-[0.08] pointer-events-none"
           style={{
@@ -96,6 +108,13 @@ export function TransformInspectorCard({
           onClose={() => setExpandedNode(null)}
         />
       )}
+
+      {/* Fullscreen modal */}
+      <ExecutionPlanModal
+        open={fullscreenOpen}
+        onClose={() => setFullscreenOpen(false)}
+        data={data}
+      />
     </div>
   );
 }

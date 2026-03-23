@@ -566,6 +566,8 @@ def _extract_full_detail(node_name: str, simple_str: str) -> str:
             return _parse_aggregate_full(clean)
         if "scan" in lower or "datasource" in lower:
             return _parse_scan_full(clean)
+        if lower == "window":
+            return _parse_window_full(clean)
         if "sort" in lower and "merge" not in lower:
             return _parse_sort_full(clean)
         if "exchange" in lower:
@@ -594,6 +596,8 @@ def _extract_detail(node_name: str, simple_str: str) -> str:
             return _parse_aggregate_detail(clean)
         if "scan" in lower or "datasource" in lower:
             return _parse_scan_detail(clean)
+        if lower == "window":
+            return _parse_window_detail(clean)
         if "sort" in lower and "merge" not in lower:
             return _parse_sort_detail(clean)
         if "exchange" in lower:
@@ -712,6 +716,98 @@ def _parse_exchange_detail(s: str) -> str:
     if m:
         return m.group(1).lower()
     return ""
+
+
+def _parse_window_detail(s: str) -> str:
+    """Extract window partition, order, and function names.
+
+    Spark Window simpleString pattern:
+      Window [func1 windowspecdefinition(...), func2 ...], [partition_cols], [order_cols]
+    The three top-level bracket groups are: functions, partition-by, order-by.
+    """
+    brackets = _extract_top_brackets(s)
+    parts = []
+    # Partition by (second bracket)
+    if len(brackets) >= 2 and brackets[1].strip():
+        cols = [c.strip() for c in brackets[1].split(",")]
+        parts.append("partition by " + ", ".join(cols[:3]) + ("..." if len(cols) > 3 else ""))
+    # Order by (third bracket)
+    if len(brackets) >= 3 and brackets[2].strip():
+        order = brackets[2]
+        order = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", order)
+        cols = [c.strip() for c in order.split(",")]
+        parts.append("order by " + ", ".join(cols[:3]) + ("..." if len(cols) > 3 else ""))
+    # Functions (first bracket — extract names)
+    if len(brackets) >= 1 and brackets[0].strip():
+        funcs = re.findall(r"(\w+)\(", brackets[0])
+        seen = set()
+        unique = []
+        for f in funcs:
+            if f not in seen and f not in ("windowspecdefinition", "specifiedwindowframe",
+                                            "cast", "coalesce", "RowFrame", "RangeFrame",
+                                            "unboundedpreceding", "unboundedfollowing",
+                                            "currentrow", "knownfloatingpointnormalized"):
+                seen.add(f)
+                unique.append(f)
+        if unique:
+            parts.append(", ".join(unique[:4]) + ("..." if len(unique) > 4 else ""))
+    return " | ".join(parts) if parts else ""
+
+
+def _parse_window_full(s: str) -> str:
+    """Full window detail with all partition/order/function info."""
+    brackets = _extract_top_brackets(s)
+    parts = []
+    if len(brackets) >= 2 and brackets[1].strip():
+        cols = [c.strip() for c in brackets[1].split(",")]
+        parts.append("partition by " + ", ".join(cols))
+    if len(brackets) >= 3 and brackets[2].strip():
+        order = brackets[2]
+        order = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", order)
+        parts.append("order by " + order)
+    if len(brackets) >= 1 and brackets[0].strip():
+        funcs = re.findall(r"(\w+)\(", brackets[0])
+        seen = set()
+        unique = []
+        for f in funcs:
+            if f not in seen and f not in ("windowspecdefinition", "specifiedwindowframe",
+                                            "cast", "coalesce", "RowFrame", "RangeFrame",
+                                            "unboundedpreceding", "unboundedfollowing",
+                                            "currentrow", "knownfloatingpointnormalized"):
+                seen.add(f)
+                unique.append(f)
+        if unique:
+            parts.append(", ".join(unique))
+    return " | ".join(parts) if parts else ""
+
+
+def _extract_top_brackets(s: str) -> list[str]:
+    """Extract contents of top-level bracket groups from a string.
+
+    For ``Window [a, b], [c], [d]`` returns ``['a, b', 'c', 'd']``.
+    """
+    result = []
+    depth = 0
+    current: list[str] = []
+    in_bracket = False
+    for ch in s:
+        if ch == "[" and depth == 0:
+            in_bracket = True
+            depth = 1
+            current = []
+        elif ch == "[":
+            depth += 1
+            current.append(ch)
+        elif ch == "]" and depth == 1:
+            depth = 0
+            in_bracket = False
+            result.append("".join(current))
+        elif ch == "]":
+            depth -= 1
+            current.append(ch)
+        elif in_bracket:
+            current.append(ch)
+    return result
 
 
 def _parse_project_detail(s: str) -> str:

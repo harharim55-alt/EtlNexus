@@ -6,6 +6,7 @@ export { ProjectFormatter } from "./ProjectFormatter";
 export { AggregateFormatter } from "./AggregateFormatter";
 export { SortFormatter } from "./SortFormatter";
 export { ExchangeFormatter } from "./ExchangeFormatter";
+export { WindowFormatter } from "./WindowFormatter";
 export { FallbackFormatter } from "./FallbackFormatter";
 export { FormattedDetail } from "./FormattedDetail";
 export { RawDetail } from "./RawDetail";

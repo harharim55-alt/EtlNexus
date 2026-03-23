@@ -5,6 +5,7 @@ import { ProjectFormatter } from "./ProjectFormatter";
 import { AggregateFormatter } from "./AggregateFormatter";
 import { SortFormatter } from "./SortFormatter";
 import { ExchangeFormatter } from "./ExchangeFormatter";
+import { WindowFormatter } from "./WindowFormatter";
 import { FallbackFormatter } from "./FallbackFormatter";
 import type { ExecutionPlanNode } from "@/types/execution-plan";
 
@@ -26,6 +27,9 @@ export function FormattedDetail({ node }: { node: ExecutionPlanNode }) {
   }
   if (lower.includes("aggregate") || lower.includes("hashaggregate")) {
     return <AggregateFormatter node={node} />;
+  }
+  if (lower === "window") {
+    return <WindowFormatter node={node} />;
   }
   if (lower.includes("sort") && !lower.includes("merge")) {
     return <SortFormatter node={node} />;
