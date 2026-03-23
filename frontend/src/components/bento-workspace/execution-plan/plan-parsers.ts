@@ -2,16 +2,46 @@
 
 export function parseScanDetail(detail: string): {
   table: string;
+  namespace: string;
   columns: string[];
+  filters: string[];
 } {
-  const m = detail.match(/^(\S+)\s*\[(.+)\]$/);
+  // Full detail may be multi-line:
+  //   TableName [col1, col2, ...]
+  //   namespace: vault
+  //   filters: date IS NOT NULL, date >= 20535
+  const lines = detail.split("\n").map((l) => l.trim());
+
+  let table = "";
+  let namespace = "";
+  let columns: string[] = [];
+  let filters: string[] = [];
+
+  // First line: table [columns]
+  const first = lines[0] || detail;
+  const m = first.match(/^(\S+)\s*\[(.+)\]$/);
   if (m) {
-    return {
-      table: m[1],
-      columns: splitTopLevel(m[2]),
-    };
+    table = m[1];
+    columns = splitTopLevel(m[2]);
+  } else {
+    table = first;
   }
-  return { table: detail, columns: [] };
+
+  for (const line of lines.slice(1)) {
+    if (line.startsWith("namespace:")) {
+      namespace = line.replace("namespace:", "").trim();
+    } else if (line.startsWith("filters:")) {
+      const raw = line.replace("filters:", "").trim();
+      if (raw) {
+        filters = raw
+          .split(",")
+          .map((f) => f.trim())
+          .filter(Boolean);
+      }
+    }
+  }
+
+  return { table, namespace, columns, filters };
 }
 
 export function parseJoinDetail(

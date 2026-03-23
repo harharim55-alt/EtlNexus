@@ -50,6 +50,7 @@ for img in "${IMAGES[@]}"; do
 done
 
 cp .env.example "$OUT_DIR/.env.example"
+cp "$SCRIPT_DIR/import-images.sh" "$OUT_DIR/import-images.sh"
 
 echo ""
 echo "=== Export complete ==="

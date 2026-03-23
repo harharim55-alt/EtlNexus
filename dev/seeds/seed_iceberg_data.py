@@ -170,10 +170,10 @@ def create_spark_session():
     return spark
 
 
-def seed_table(spark, table_name, schema, rows):
+def seed_table(spark, namespace, table_name, schema, rows):
     df = spark.createDataFrame(rows, schema)
-    df.writeTo(f"iceberg.dagger.{table_name}").using("iceberg").createOrReplace()
-    print(f"  Seeded {table_name}: {len(rows)} rows")
+    df.writeTo(f"iceberg.{namespace}.{table_name}").using("iceberg").createOrReplace()
+    print(f"  Seeded {namespace}.{table_name}: {len(rows)} rows")
 
 
 # ---------------------------------------------------------------------------
@@ -1088,35 +1088,43 @@ def gen_unified_network_assessment():
 # Main
 # ---------------------------------------------------------------------------
 
-TABLE_GENERATORS = {
-    "BgpRouteSync": gen_bgp_route_sync,
-    "SyslogEventStream": gen_syslog_event_stream,
-    "BandwidthBillingAggregator": gen_bandwidth_billing_aggregator,
-    "NetflowCapture": gen_netflow_capture,
-    "DnsRecordSync": gen_dns_record_sync,
-    "SwitchPortCollector": gen_switch_port_collector,
-    "DeviceFingerprintEnrichment": gen_device_fingerprint_enrichment,
-    "BandwidthCostReconciliation": gen_bandwidth_cost_reconciliation,
-    "LinkFailurePrediction": gen_link_failure_prediction,
-    "IncidentAnalyticsRollup": gen_incident_analytics_rollup,
-    "NocDashboardSnapshot": gen_noc_dashboard_snapshot,
-    "PacketInspectionEnrichment": gen_packet_inspection_enrichment,
-    "ProtocolAdoptionTracker": gen_protocol_adoption_tracker,
-    "HandshakeCompletionAnalysis": gen_handshake_completion_analysis,
-    "AbRoutingExperimentEngine": gen_ab_routing_experiment_engine,
-    "EndpointActivityScoring": gen_endpoint_activity_scoring,
-    "DeviceOnboardingMonitor": gen_device_onboarding_monitor,
-    "TrafficClassSegments": gen_traffic_class_segments,
-    "DhcpLeaseSync": gen_dhcp_lease_sync,
-    "HttpAccessLogIngest": gen_http_access_log_ingest,
-    "TrafficAttributionModel": gen_traffic_attribution_model,
-    "ThreatScoringPipeline": gen_threat_scoring_pipeline,
-    "PeeringRoiCalculator": gen_peering_roi_calculator,
-    "CapacityPlanningForecast": gen_capacity_planning_forecast,
-    "MacAddressEnrichment": gen_mac_address_enrichment,
-    "CdnCostReconciler": gen_cdn_cost_reconciler,
-    "WeeklyNetworkDigest": gen_weekly_network_digest,
-    "UnifiedNetworkAssessment": gen_unified_network_assessment,
+NAMESPACE_TABLES = {
+    "dagger": {
+        "PortScanCollector": gen_switch_port_collector,
+        "RouteTableRecon": gen_bgp_route_sync,
+        "FlowInterceptor": gen_netflow_capture,
+        "DeviceFingerprinter": gen_device_fingerprint_enrichment,
+        "BandwidthAnalyzer": gen_bandwidth_billing_aggregator,
+        "LinkAnomalyDetector": gen_link_failure_prediction,
+        "BandwidthAuditReconciler": gen_bandwidth_cost_reconciliation,
+        "NocThreatSnapshot": gen_noc_dashboard_snapshot,
+        "NetworkThreatAssessment": gen_unified_network_assessment,
+    },
+    "prism": {
+        "DeepPacketInspector": gen_packet_inspection_enrichment,
+        "ProtocolAnalyzer": gen_protocol_adoption_tracker,
+        "HandshakeAnalyzer": gen_handshake_completion_analysis,
+        "RoutingExperimentEngine": gen_ab_routing_experiment_engine,
+        "EndpointRiskScorer": gen_endpoint_activity_scoring,
+        "ProvisioningAuditor": gen_device_onboarding_monitor,
+        "TrafficClassifier": gen_traffic_class_segments,
+    },
+    "vault": {
+        "DhcpLeaseRecon": gen_dhcp_lease_sync,
+        "AccessLogCollector": gen_http_access_log_ingest,
+        "TrafficAttributionAnalyzer": gen_traffic_attribution_model,
+        "ThreatHunterScorer": gen_threat_scoring_pipeline,
+        "MacIntelEnrichment": gen_mac_address_enrichment,
+        "CdnAuditReconciler": gen_cdn_cost_reconciler,
+        "PeeringIntelCalculator": gen_peering_roi_calculator,
+        "CapacityThreatForecast": gen_capacity_planning_forecast,
+        "WeeklyThreatDigest": gen_weekly_network_digest,
+    },
+    "oasis": {
+        "DnsIntelSync": gen_dns_record_sync,
+        "SyslogCollector": gen_syslog_event_stream,
+        "IncidentForensicsRollup": gen_incident_analytics_rollup,
+    },
 }
 
 
@@ -1126,18 +1134,21 @@ def main():
 
     spark = create_spark_session()
 
-    print(f"Seeding {len(TABLE_GENERATORS)} Iceberg tables with sample data...")
+    total_tables = sum(len(tables) for tables in NAMESPACE_TABLES.values())
+    print(f"Seeding {total_tables} Iceberg tables across {len(NAMESPACE_TABLES)} namespaces...")
     total_rows = 0
-    for table_name, gen_fn in TABLE_GENERATORS.items():
-        try:
-            schema, rows = gen_fn()
-            seed_table(spark, table_name, schema, rows)
-            total_rows += len(rows)
-        except Exception as e:
-            print(f"  ERROR seeding {table_name}: {e}")
-            raise
+    for namespace, tables in NAMESPACE_TABLES.items():
+        print(f"\nNamespace: {namespace} ({len(tables)} tables)")
+        for table_name, gen_fn in tables.items():
+            try:
+                schema, rows = gen_fn()
+                seed_table(spark, namespace, table_name, schema, rows)
+                total_rows += len(rows)
+            except Exception as e:
+                print(f"  ERROR seeding {namespace}.{table_name}: {e}")
+                raise
 
-    print(f"Data seeding complete! Total rows: {total_rows}")
+    print(f"\nData seeding complete! Total rows: {total_rows}")
     spark.stop()
     sys.exit(0)
 

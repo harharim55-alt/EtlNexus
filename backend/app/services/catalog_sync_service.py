@@ -22,14 +22,14 @@ class CatalogSyncService:
         Uses spark.table("catalog.db.table").schema to read Iceberg schemas.
         Returns the number of pipelines synced.
         """
-        schemas = iceberg_client.get_all_dagger_schemas()
+        schemas = iceberg_client.get_all_schemas()
         if not schemas:
             logger.info("No table schemas discovered from Iceberg catalog")
             return 0
 
         synced = 0
         for table_schema in schemas:
-            task_id = table_schema.table_name  # PascalCase, e.g. "SwitchPortCollector"
+            task_id = table_schema.table_name  # PascalCase, e.g. "PortScanCollector"
 
             # Find existing pipeline by task_id (PascalCase match)
             stmt = (

@@ -17,7 +17,7 @@ from tests.conftest import make_pipeline
 
 def make_resource_config(
     *,
-    dag_id: str = "backbone_core",
+    dag_id: str = "network_recon",
     spark_driver_memory: str = "4g",
     spark_executor_memory: str = "8g",
     spark_executor_cores: int = 4,
@@ -36,7 +36,7 @@ def make_resource_config(
 
 def make_run(
     *,
-    dag_id: str = "backbone_core",
+    dag_id: str = "network_recon",
     dag_run_id: str = "run_20240101",
     status: str = "success",
     duration_seconds: float | None = 120.5,
@@ -95,7 +95,7 @@ class TestGetResourceMetrics:
     async def test_returns_metrics_with_configs_and_runs(
         self, service, pipeline_repo, resource_repo
     ):
-        pipeline = make_pipeline(task_id="SwitchPortCollector")
+        pipeline = make_pipeline(task_id="PortScanCollector")
         pipeline_repo.get_by_id.return_value = pipeline
 
         config = make_resource_config()
@@ -130,7 +130,7 @@ class TestGetResourceMetrics:
         assert result.run_count == 5
         assert result.success_rate == 80.0
         assert len(result.resource_configs) == 1
-        assert result.resource_configs[0].dag_id == "backbone_core"
+        assert result.resource_configs[0].dag_id == "network_recon"
 
     async def test_empty_configs_returns_empty_resource_configs(
         self, service, pipeline_repo, resource_repo
@@ -324,7 +324,7 @@ class TestGetExecutionPlan:
     async def test_returns_plan_dict_when_valid_json(
         self, service, pipeline_repo, resource_repo
     ):
-        pipeline = make_pipeline(task_id="SwitchPortCollector")
+        pipeline = make_pipeline(task_id="PortScanCollector")
         pipeline_repo.get_by_id.return_value = pipeline
 
         plan_data = {"type": "Scan", "children": []}
@@ -334,7 +334,7 @@ class TestGetExecutionPlan:
         result = await service.get_execution_plan(pipeline.id)
 
         assert result is not None
-        assert result["task_id"] == "SwitchPortCollector"
+        assert result["task_id"] == "PortScanCollector"
         assert result["execution_plan"] == plan_data
         assert result["dag_id"] == run.dag_id
         assert result["status"] == run.status

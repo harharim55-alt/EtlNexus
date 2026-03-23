@@ -15,7 +15,7 @@ from app.services.dag_summary_service import DagSummaryService, _period_label
 
 def make_airflow_dag_info(
     *,
-    dag_id: str = "backbone_core",
+    dag_id: str = "network_recon",
     is_paused: bool = False,
     description: str | None = None,
     schedule_interval: str | None = "0 6 * * *",
@@ -35,7 +35,7 @@ def make_run_history(
     start_date: datetime | None = None,
     end_date: datetime | None = None,
     status: str = "success",
-    dag_id: str = "backbone_core",
+    dag_id: str = "network_recon",
 ):
     r = MagicMock()
     r.pipeline_id = pipeline_id
@@ -49,11 +49,11 @@ def make_run_history(
 
 def make_dag_task_with_pipeline(
     *,
-    task_id: str = "SwitchPortCollector",
-    dag_id: str = "backbone_core",
+    task_id: str = "PortScanCollector",
+    dag_id: str = "network_recon",
     pipeline_id: str | None = None,
     task_group_id: str | None = "DaggerCollection",
-    pipeline_name: str = "Switch Port Collector",
+    pipeline_name: str = "Port Scan Collector",
 ):
     dt = MagicMock()
     dt.task_id = task_id
@@ -170,9 +170,9 @@ class TestGetDagSummaries:
     async def test_returns_per_dag_stats(
         self, service, dag_task_repo, resource_repo, airflow_repo
     ):
-        dag_task_repo.get_all_dag_ids.return_value = ["backbone_core"]
-        dag_task_repo.count_tasks_per_dag.return_value = {"backbone_core": 5}
-        dag_task_repo.count_pipelines_per_dag.return_value = {"backbone_core": 4}
+        dag_task_repo.get_all_dag_ids.return_value = ["network_recon"]
+        dag_task_repo.count_tasks_per_dag.return_value = {"network_recon": 5}
+        dag_task_repo.count_pipelines_per_dag.return_value = {"network_recon": 4}
 
         task = make_dag_task_with_pipeline()
         dag_task_repo.get_tasks_for_dag_with_pipeline.return_value = [task]
@@ -191,7 +191,7 @@ class TestGetDagSummaries:
         with patch(
             "app.services.dag_summary_service.airflow_client.get_all_dags",
             new_callable=AsyncMock,
-            return_value=[make_airflow_dag_info(dag_id="backbone_core")],
+            return_value=[make_airflow_dag_info(dag_id="network_recon")],
         ):
             result = await service.get_dag_summaries()
 
@@ -199,7 +199,7 @@ class TestGetDagSummaries:
         assert result.aggregate.total_pipelines == 4
         assert len(result.dags) == 1
         dag = result.dags[0]
-        assert dag.dag_id == "backbone_core"
+        assert dag.dag_id == "network_recon"
         assert dag.task_count == 5
         assert dag.pipeline_count == 4
         assert dag.total_runs_30d == 10

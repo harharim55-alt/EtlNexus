@@ -20,7 +20,7 @@ class TestIsBouncer:
         assert is_bouncer("MyBouncerTask") is True
 
     def test_not_bouncer(self):
-        assert is_bouncer("SwitchPortCollector") is False
+        assert is_bouncer("PortScanCollector") is False
 
     def test_case_sensitive(self):
         assert is_bouncer("switchbouncer") is False
@@ -30,13 +30,13 @@ class TestIsBouncer:
 
 class TestIsApi:
     def test_api_pascal(self):
-        assert is_api("NetworkInsightsApiDummy") is True
+        assert is_api("NetworkIntelApiDummy") is True
 
     def test_api_upper(self):
         assert is_api("SomeAPIDummy") is True
 
     def test_not_api(self):
-        assert is_api("SwitchPortCollector") is False
+        assert is_api("PortScanCollector") is False
 
     def test_case_matters(self):
         assert is_api("apiEndpoint") is False
@@ -44,13 +44,13 @@ class TestIsApi:
 
 class TestTaskIdToDisplayName:
     def test_pascal_case(self):
-        assert task_id_to_display_name("SwitchPortCollector") == "Switch Port Collector"
+        assert task_id_to_display_name("PortScanCollector") == "Port Scan Collector"
 
     def test_snake_case(self):
-        assert task_id_to_display_name("switch_port_collector") == "Switch Port Collector"
+        assert task_id_to_display_name("port_scan_collector") == "Port Scan Collector"
 
     def test_kebab_case(self):
-        assert task_id_to_display_name("switch-port-collector") == "Switch Port Collector"
+        assert task_id_to_display_name("port-scan-collector") == "Port Scan Collector"
 
     def test_single_word(self):
         assert task_id_to_display_name("Collector") == "Collector"

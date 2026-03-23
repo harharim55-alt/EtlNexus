@@ -6,8 +6,20 @@ import { AggregateFormatter } from "./AggregateFormatter";
 import { SortFormatter } from "./SortFormatter";
 import { ExchangeFormatter } from "./ExchangeFormatter";
 import { WindowFormatter } from "./WindowFormatter";
+import { LightFormatter } from "./LightFormatter";
 import { FallbackFormatter } from "./FallbackFormatter";
 import type { ExecutionPlanNode } from "@/types/execution-plan";
+
+const LIGHT_NODES = new Set([
+  "union",
+  "expand",
+  "generate",
+  "coalesce",
+  "globallimit",
+  "locallimit",
+  "collectlimit",
+  "takeorderedandproject",
+]);
 
 export function FormattedDetail({ node }: { node: ExecutionPlanNode }) {
   const lower = node.name.toLowerCase();
@@ -36,6 +48,9 @@ export function FormattedDetail({ node }: { node: ExecutionPlanNode }) {
   }
   if (lower.includes("exchange")) {
     return <ExchangeFormatter node={node} />;
+  }
+  if (LIGHT_NODES.has(lower) || lower.includes("limit")) {
+    return <LightFormatter node={node} />;
   }
   return <FallbackFormatter node={node} />;
 }

@@ -15,7 +15,7 @@ vi.mock("@/components/ui/tooltip", () => ({
 
 function makeDag(overrides: Partial<DagSummary> = {}): DagSummary {
   return {
-    dag_id: "backbone_core",
+    dag_id: "network_recon",
     description: null,
     schedule_interval: "@daily",
     is_paused: false,
@@ -39,13 +39,13 @@ function makeDag(overrides: Partial<DagSummary> = {}): DagSummary {
 
 describe("DagCard — DAG name formatting", () => {
   it("renders dag_id with underscores converted to title case words", () => {
-    render(<DagCard dag={makeDag({ dag_id: "backbone_core" })} />);
+    render(<DagCard dag={makeDag({ dag_id: "network_recon" })} />);
     expect(screen.getByText("Backbone Core")).toBeInTheDocument();
   });
 
   it("renders multi-word dag_id with each word capitalized", () => {
-    render(<DagCard dag={makeDag({ dag_id: "application_mesh" })} />);
-    expect(screen.getByText("Application Mesh")).toBeInTheDocument();
+    render(<DagCard dag={makeDag({ dag_id: "traffic_analysis" })} />);
+    expect(screen.getByText("Traffic Analysis")).toBeInTheDocument();
   });
 
   it("renders single word dag_id", () => {
@@ -158,7 +158,7 @@ describe("DagCard — failed tasks button", () => {
       tasks: [
         {
           task_id: "FailTask1",
-          pipeline_name: "SwitchPortCollector",
+          pipeline_name: "PortScanCollector",
           pipeline_id: "pid-1",
           status: "failed",
           latest_duration_seconds: 30,
@@ -171,7 +171,7 @@ describe("DagCard — failed tasks button", () => {
     render(<DagCard dag={dag} />);
     fireEvent.click(screen.getByRole("button"));
     // pipeline_name appears in the panel row (may also appear in Tooltip content)
-    const matches = screen.getAllByText("SwitchPortCollector");
+    const matches = screen.getAllByText("PortScanCollector");
     expect(matches.length).toBeGreaterThan(0);
   });
 });

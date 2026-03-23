@@ -31,9 +31,8 @@ class IcebergClient:
         self.catalog_name = _validate_identifier(
             settings.iceberg_catalog_name, "iceberg_catalog_name"
         )
-        self.namespace_prefix = _validate_identifier(
-            settings.iceberg_namespace_prefix, "iceberg_namespace_prefix"
-        )
+        # Store raw comma-separated prefixes; each is validated individually at query time
+        self.namespace_prefix = settings.iceberg_namespace_prefix
         self._spark = None
         self._connected = False
 
@@ -103,7 +102,7 @@ class IcebergClient:
         """Read schema from an Iceberg table using spark.table().schema.
 
         Args:
-            full_table_name: Fully qualified name e.g. "iceberg.catalog.iceberg.dagger.my_table"
+            full_table_name: Fully qualified name e.g. "iceberg.dagger.PortScanCollector"
         """
         spark = self._get_spark()
         if not spark:
@@ -134,26 +133,29 @@ class IcebergClient:
             logger.warning("Failed to read schema for %s: %s", full_table_name, e)
             return None
 
-    def get_all_dagger_schemas(self) -> list[IcebergTableSchema]:
-        """Discover all tables under the configured namespace prefix and read their schemas."""
+    def get_all_schemas(self) -> list[IcebergTableSchema]:
+        """Discover all tables under the configured team namespace prefixes and read their schemas."""
         spark = self._get_spark()
         if not spark:
             return []
 
         schemas = []
-        try:
-            # List tables under the dagger namespace
-            tables = self.list_tables_in_namespace(self.namespace_prefix)
-            for table_name in tables:
-                _validate_identifier(table_name, "table_name")
-                full_name = f"{self.catalog_name}.{self.namespace_prefix}.{table_name}"
-                schema = self.get_table_schema(full_name)
-                if schema:
-                    schemas.append(schema)
-        except Exception as e:
-            logger.warning("Failed to discover dagger schemas: %s", e)
+        prefixes = [p.strip() for p in self.namespace_prefix.split(",")]
+        for prefix in prefixes:
+            try:
+                _validate_identifier(prefix, "namespace_prefix")
+                # List tables under each configured team namespace
+                tables = self.list_tables_in_namespace(prefix)
+                for table_name in tables:
+                    _validate_identifier(table_name, "table_name")
+                    full_name = f"{self.catalog_name}.{prefix}.{table_name}"
+                    schema = self.get_table_schema(full_name)
+                    if schema:
+                        schemas.append(schema)
+            except Exception as e:
+                logger.warning("Failed to discover schemas for namespace '%s': %s", prefix, e)
 
-        logger.info("Discovered %d table schemas from Iceberg catalog", len(schemas))
+        logger.info("Discovered %d table schemas from configured team namespaces", len(schemas))
         return schemas
 
     def stop(self):

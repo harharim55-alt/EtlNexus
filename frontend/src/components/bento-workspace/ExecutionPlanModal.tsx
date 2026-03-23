@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { X, GitMerge } from "lucide-react";
+import { X, GitMerge, ScanEye } from "lucide-react";
 import { formatDuration } from "@/lib/format";
 import { NODE_STYLES } from "./execution-plan/plan-constants";
 import { TreeNode, treeStyles } from "./execution-plan/PlanTree";
 import { NodeDetailModal } from "./execution-plan/PlanFormatters";
 import { usePannable } from "./execution-plan/usePannable";
+import { useOverview } from "./execution-plan/useOverview";
 import type {
   ExecutionPlanResponse,
   ExecutionPlanNode,
@@ -56,6 +57,8 @@ export function ExecutionPlanModal({
     null,
   );
   const panRef = usePannable<HTMLDivElement>();
+  const { containerRef, treeRef, isOverview, toggleOverview, scale } =
+    useOverview();
 
   // Reset when modal closes
   useEffect(() => {
@@ -119,6 +122,20 @@ export function ExecutionPlanModal({
 
           <div className="flex-1" />
 
+          {/* Overview toggle */}
+          <button
+            type="button"
+            onClick={toggleOverview}
+            className={`text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
+              isOverview
+                ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/30"
+                : "text-slate-500 bg-white/[0.03] border-white/5 hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10"
+            }`}
+          >
+            <ScanEye className="w-3 h-3" />
+            Overview
+          </button>
+
           {/* Node count stats */}
           <div className="flex items-center gap-2 shrink-0">
             <span className="text-[9px] font-mono text-slate-600">
@@ -155,8 +172,27 @@ export function ExecutionPlanModal({
         </div>
 
         {/* ── Body (scrollable tree canvas) ───────────────────────── */}
-        <div ref={panRef} className="flex-1 overflow-auto custom-scrollbar relative" style={DOT_GRID_STYLE}>
-          <div className="relative min-w-max flex justify-center p-10">
+        <div
+          ref={(node) => {
+            panRef(node);
+            containerRef(node);
+          }}
+          className="flex-1 overflow-auto custom-scrollbar relative"
+          style={DOT_GRID_STYLE}
+        >
+          <div
+            ref={treeRef}
+            className="relative min-w-max flex justify-center p-10"
+            style={
+              isOverview
+                ? {
+                    transform: `scale(${scale})`,
+                    transformOrigin: "center top",
+                    minWidth: "unset",
+                  }
+                : undefined
+            }
+          >
             <div className="tree-container">
               <ul>
                 <TreeNode

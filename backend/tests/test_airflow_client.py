@@ -10,13 +10,13 @@ from app.integrations.airflow_client import AirflowClient, strip_group_prefix
 
 class TestStripGroupPrefix:
     def test_strips_single_prefix(self):
-        assert strip_group_prefix("Dagger.SwitchPortCollector") == "SwitchPortCollector"
+        assert strip_group_prefix("Dagger.PortScanCollector") == "PortScanCollector"
 
     def test_strips_compound_prefix(self):
-        assert strip_group_prefix("Dagger - Collection.SwitchPortCollector") == "SwitchPortCollector"
+        assert strip_group_prefix("Dagger - Collection.PortScanCollector") == "PortScanCollector"
 
     def test_no_prefix_passthrough(self):
-        assert strip_group_prefix("SwitchPortCollector") == "SwitchPortCollector"
+        assert strip_group_prefix("PortScanCollector") == "PortScanCollector"
 
     def test_multiple_dots_takes_last(self):
         assert strip_group_prefix("A.B.C") == "C"
@@ -112,7 +112,7 @@ class TestGetDagRuns:
             })
         )
 
-        result = await client.get_dag_runs("backbone_core", limit=2)
+        result = await client.get_dag_runs("network_recon", limit=2)
         assert len(result) == 2
         assert result[0]["dag_run_id"] == "run1"
 
@@ -120,7 +120,7 @@ class TestGetDagRuns:
         client._client.request = AsyncMock(
             side_effect=httpx.ConnectError("refused")
         )
-        result = await client.get_dag_runs("backbone_core")
+        result = await client.get_dag_runs("network_recon")
         assert result == []
 
 

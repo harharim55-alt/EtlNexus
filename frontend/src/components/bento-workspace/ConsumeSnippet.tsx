@@ -5,9 +5,10 @@ import { isApiPipeline } from "@/lib/utils";
 interface ConsumeSnippetProps {
   pipelineName: string;
   pipelineType?: string;
+  team?: string | null;
 }
 
-export function ConsumeSnippet({ pipelineName, pipelineType }: ConsumeSnippetProps) {
+export function ConsumeSnippet({ pipelineName, pipelineType, team }: ConsumeSnippetProps) {
   const importName = pipelineName.toLowerCase().replace(/ /g, "_");
   const isApi = isApiPipeline(pipelineType);
 
@@ -39,7 +40,7 @@ export function ConsumeSnippet({ pipelineName, pipelineType }: ConsumeSnippetPro
     );
   }
 
-  const catalogCode = `from etls import Catalog, Engine\n\nCatalog(Engine.Spark).iceberg.dagger.${importName}("date").consume().as_pyspark()`;
+  const catalogCode = `from etls import Catalog, Engine\n\nCatalog(Engine.Spark).iceberg.${team?.toLowerCase() ?? "dagger"}.${importName}("date").consume().as_pyspark()`;
 
   return (
     <div className="bg-[#18181b] border border-white/5 rounded-2xl p-5 shrink-0">
@@ -58,7 +59,7 @@ export function ConsumeSnippet({ pipelineName, pipelineType }: ConsumeSnippetPro
           <br />
           <br />
           <span className="text-indigo-400">Catalog</span>(
-          <span className="text-emerald-400">Engine</span>.Spark).iceberg.dagger.
+          <span className="text-emerald-400">Engine</span>.Spark).iceberg.{team?.toLowerCase() ?? "dagger"}.
           <span className="text-indigo-400">{importName}</span>(
           <span className="text-amber-400">"date"</span>).consume().as_pyspark()
         </code>

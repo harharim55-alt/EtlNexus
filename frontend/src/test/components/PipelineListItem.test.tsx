@@ -6,7 +6,7 @@ import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline"
 function makePipeline(overrides: Partial<PipelineListItemType> = {}): PipelineListItemType {
   return {
     id: "pipeline-1",
-    name: "SwitchPortCollector",
+    name: "PortScanCollector",
     description: "Collects switch port data",
     category: "Network Infrastructure",
     pipeline_type: "etl",
@@ -28,7 +28,7 @@ describe("PipelineListItem — rendering pipeline name", () => {
         onClick={vi.fn()}
       />,
     );
-    expect(screen.getByText("SwitchPortCollector")).toBeInTheDocument();
+    expect(screen.getByText("PortScanCollector")).toBeInTheDocument();
   });
 
   it("shows ETL type label for etl pipeline_type", () => {
@@ -160,7 +160,7 @@ describe("PipelineListItem — click interaction", () => {
         onClick={onClick}
       />,
     );
-    fireEvent.click(screen.getByText("SwitchPortCollector"));
+    fireEvent.click(screen.getByText("PortScanCollector"));
     expect(onClick).toHaveBeenCalledTimes(1);
   });
 });
@@ -198,7 +198,7 @@ describe("PipelineListItem — active state styles", () => {
         onClick={vi.fn()}
       />,
     );
-    const nameEl = screen.getByText("SwitchPortCollector");
+    const nameEl = screen.getByText("PortScanCollector");
     expect(nameEl.className).toContain("text-indigo-400");
   });
 
@@ -210,7 +210,7 @@ describe("PipelineListItem — active state styles", () => {
         onClick={vi.fn()}
       />,
     );
-    const nameEl = screen.getByText("SwitchPortCollector");
+    const nameEl = screen.getByText("PortScanCollector");
     expect(nameEl.className).toContain("text-slate-200");
   });
 });

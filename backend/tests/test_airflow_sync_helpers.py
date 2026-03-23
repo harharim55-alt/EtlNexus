@@ -42,8 +42,8 @@ class TestParseWrites:
 
     def test_no_markers_falls_back_to_task_id(self):
         log = "just some regular log output"
-        result = parse_writes(log, "SwitchPortCollector")
-        assert result == ["SwitchPortCollector"]
+        result = parse_writes(log, "PortScanCollector")
+        assert result == ["PortScanCollector"]
 
     def test_empty_log_falls_back_to_task_id(self):
         result = parse_writes("", "MyTask")
@@ -68,13 +68,13 @@ class TestParseWrites:
 class TestParseDescription:
     def test_extracts_description(self):
         log = "INFO ETL_DESCRIPTION: Collects switch port data from network devices"
-        result = parse_description(log, "Switch Port Collector")
+        result = parse_description(log, "Port Scan Collector")
         assert result == "Collects switch port data from network devices"
 
     def test_no_description_falls_back_to_display_name(self):
         log = "just regular log"
-        result = parse_description(log, "Switch Port Collector")
-        assert result == "Switch Port Collector"
+        result = parse_description(log, "Port Scan Collector")
+        assert result == "Port Scan Collector"
 
     def test_empty_log_falls_back(self):
         result = parse_description("", "Dhcp Lease Sync")
@@ -82,16 +82,16 @@ class TestParseDescription:
 
     def test_empty_description_value_falls_back(self):
         log = "ETL_DESCRIPTION:   "
-        result = parse_description(log, "Switch Port Collector")
-        assert result == "Switch Port Collector"
+        result = parse_description(log, "Port Scan Collector")
+        assert result == "Port Scan Collector"
 
 
 class TestTaskIdToDisplayName:
     def test_pascal_case(self):
-        assert task_id_to_display_name("SwitchPortCollector") == "Switch Port Collector"
+        assert task_id_to_display_name("PortScanCollector") == "Port Scan Collector"
 
     def test_snake_case(self):
-        assert task_id_to_display_name("switch_port_collector") == "Switch Port Collector"
+        assert task_id_to_display_name("port_scan_collector") == "Port Scan Collector"
 
     def test_single_word(self):
         assert task_id_to_display_name("Collector") == "Collector"
@@ -101,7 +101,7 @@ class TestTaskIdToDisplayName:
         assert result == "Bgp4 Route Analyzer"
 
     def test_kebab_case(self):
-        assert task_id_to_display_name("switch-port-collector") == "Switch Port Collector"
+        assert task_id_to_display_name("port-scan-collector") == "Port Scan Collector"
 
     def test_all_uppercase_acronym(self):
         result = task_id_to_display_name("DHCPLeaseSync")
@@ -164,11 +164,11 @@ class TestParseDatetime:
 class TestUnwrapParams:
     def test_unwraps_airflow_param_objects(self):
         raw = {
-            "etl_name": {"__class": "airflow.models.param.Param", "value": "SwitchPortCollector"},
+            "etl_name": {"__class": "airflow.models.param.Param", "value": "PortScanCollector"},
             "needs": {"__class": "airflow.models.param.Param", "value": ["other"]},
         }
         result = unwrap_params(raw)
-        assert result["etl_name"] == "SwitchPortCollector"
+        assert result["etl_name"] == "PortScanCollector"
         assert result["needs"] == ["other"]
 
     def test_passes_through_plain_values(self):
@@ -224,21 +224,21 @@ class TestIsBouncer:
         assert is_bouncer("SwitchTelemetryBouncer") is True
 
     def test_etl_name(self):
-        assert is_bouncer("SwitchPortCollector") is False
+        assert is_bouncer("PortScanCollector") is False
 
     def test_api_name(self):
-        assert is_bouncer("NetworkInsightsApiDummy") is False
+        assert is_bouncer("NetworkIntelApiDummy") is False
 
 
 class TestIsApi:
     def test_api_pascal(self):
-        assert is_api("NetworkInsightsApiDummy") is True
+        assert is_api("NetworkIntelApiDummy") is True
 
     def test_api_upper(self):
         assert is_api("SomeAPIDummy") is True
 
     def test_non_api(self):
-        assert is_api("SwitchPortCollector") is False
+        assert is_api("PortScanCollector") is False
 
 
 class TestExtractCategoryFromTaskGroup:

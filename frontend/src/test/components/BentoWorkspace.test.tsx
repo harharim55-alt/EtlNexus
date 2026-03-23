@@ -90,8 +90,8 @@ function makeStoreSelector(selectedPipelineId: string | null) {
 function makePipelineDetail(overrides: Partial<PipelineDetail> = {}): PipelineDetail {
   return {
     id: "pipeline-1",
-    name: "SwitchPortCollector",
-    task_id: "SwitchPortCollector",
+    name: "PortScanCollector",
+    task_id: "PortScanCollector",
     description: "Collects switch port data",
     category: "Network Infrastructure",
     pipeline_type: "etl",
@@ -203,7 +203,7 @@ describe("BentoWorkspace — pipeline loaded", () => {
   it("renders BentoHeader with pipeline name when data is loaded", () => {
     render(<BentoWorkspace />);
     expect(screen.getByTestId("bento-header")).toBeInTheDocument();
-    expect(screen.getByText("SwitchPortCollector")).toBeInTheDocument();
+    expect(screen.getByText("PortScanCollector")).toBeInTheDocument();
   });
 
   it("renders schema viewer for loaded pipeline", () => {

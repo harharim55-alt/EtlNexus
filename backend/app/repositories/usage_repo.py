@@ -38,7 +38,7 @@ class UsageRepository:
         """Return usage records keyed by consumer_name for enrichment lookup.
 
         Keys are stored as-is (consumer_name matches the task_id format used
-        in dag_tasks, e.g. PascalCase like 'BgpRouteSync').
+        in dag_tasks, e.g. PascalCase like 'RouteTableRecon').
         """
         usages = await self.get_by_etl_name(etl_name, date_from=date_from, date_to=date_to)
         return {u.consumer_name: u for u in usages}

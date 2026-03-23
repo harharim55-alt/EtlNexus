@@ -12,7 +12,7 @@ def make_iceberg_schema(table_name: str, fields: list[dict] | None = None):
     """Create a mock IcebergTableSchema."""
     schema = MagicMock()
     schema.table_name = table_name
-    schema.namespace = "dagger"
+    schema.namespace = "network_recon"
     schema.fields = fields or []
     return schema
 
@@ -35,13 +35,13 @@ def service(mock_session):
 class TestSyncFromCatalog:
     @patch("app.services.catalog_sync_service.iceberg_client")
     async def test_returns_zero_when_no_schemas(self, mock_iceberg, service):
-        mock_iceberg.get_all_dagger_schemas.return_value = []
+        mock_iceberg.get_all_schemas.return_value = []
         result = await service.sync_from_catalog()
         assert result == 0
 
     @patch("app.services.catalog_sync_service.iceberg_client")
     async def test_skips_pipelines_not_in_db(self, mock_iceberg, service, mock_session):
-        mock_iceberg.get_all_dagger_schemas.return_value = [
+        mock_iceberg.get_all_schemas.return_value = [
             make_iceberg_schema("UnknownPipeline", [{"name": "col1", "type": "STRING"}]),
         ]
         # Pipeline lookup returns None
@@ -58,8 +58,8 @@ class TestSyncFromCatalog:
         pipeline.id = uuid.uuid4()
         pipeline.fields = []
 
-        mock_iceberg.get_all_dagger_schemas.return_value = [
-            make_iceberg_schema("SwitchPortCollector", [
+        mock_iceberg.get_all_schemas.return_value = [
+            make_iceberg_schema("PortScanCollector", [
                 {"name": "port_id", "type": "STRING"},
                 {"name": "speed_mbps", "type": "INT"},
             ]),

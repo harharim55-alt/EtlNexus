@@ -137,7 +137,7 @@ class TestLineageEndpoint:
     ):
         from app.dependencies import get_lineage_repo, get_pipeline_repo
 
-        pipeline = make_pipeline(name="Switch Port Collector")
+        pipeline = make_pipeline(name="Port Scan Collector")
 
         source_edge = MagicMock()
         source_edge.source_table = "raw_switch_data"
@@ -523,7 +523,7 @@ class TestUsageEndpoints:
 
         app.dependency_overrides[get_usage_service] = lambda: mock_service
 
-        response = await admin_client.get("/api/usage/SwitchPortCollector")
+        response = await admin_client.get("/api/usage/PortScanCollector")
 
         app.dependency_overrides.pop(get_usage_service, None)
 
@@ -542,7 +542,7 @@ class TestUsageEndpoints:
 
         app.dependency_overrides[get_consumer_service] = lambda: mock_service
 
-        response = await admin_client.get("/api/consumers/SwitchPortCollector")
+        response = await admin_client.get("/api/consumers/PortScanCollector")
 
         app.dependency_overrides.pop(get_consumer_service, None)
 

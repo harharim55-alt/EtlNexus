@@ -104,7 +104,7 @@ Three-layer pattern: **Router** (HTTP) -> **Service** (business logic) -> **Repo
 - **Visibility:** Non-admin users see: own team's pipelines + unassigned pipelines + pipelines/teams granted via `visibility_grants`
 - **Grants:** Two types — per-pipeline or per-source-team, with `viewer` or `editor` level. Admin-only management via `/api/visibility/grants`
 - **Default user:** When SSO disabled, a stable `default-admin` user is returned (no credential check)
-- **5 Teams:** Dagger, Vault, Prism, Relay, Oasis — each owning specific DAGs
+- **5 Teams:** Dagger, Vault, Prism, Relay, Oasis — each owning specific DAGs and Iceberg namespaces
 
 ## Frontend Architecture
 

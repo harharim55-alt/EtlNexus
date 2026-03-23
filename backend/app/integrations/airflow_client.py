@@ -20,9 +20,9 @@ def strip_group_prefix(task_id: str) -> str:
     """Strip TaskGroup prefix from Airflow task_id.
 
     With prefix_group_id=True, Airflow prepends '{group_id}.' to task_ids.
-    E.g., 'Dagger - Collection.SwitchPortCollector' -> 'SwitchPortCollector'
-         'Relay.BgpRouteSync' -> 'BgpRouteSync'
-         'SwitchPortCollector' -> 'SwitchPortCollector'  (no-op)
+    E.g., 'Dagger - Collection.PortScanCollector' -> 'PortScanCollector'
+         'Relay.RouteTableRecon' -> 'RouteTableRecon'
+         'PortScanCollector' -> 'PortScanCollector'  (no-op)
     """
     if "." in task_id:
         return task_id.rsplit(".", 1)[1]

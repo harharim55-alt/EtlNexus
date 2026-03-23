@@ -13,7 +13,7 @@ from tests.conftest import make_pipeline
 # ---------------------------------------------------------------------------
 
 
-def make_pipeline_with_fields(*, name: str = "Switch Port Collector", task_id: str = "SwitchPortCollector", fields: list[str] | None = None):
+def make_pipeline_with_fields(*, name: str = "Port Scan Collector", task_id: str = "PortScanCollector", fields: list[str] | None = None):
     pipeline = make_pipeline(name=name, task_id=task_id)
     mock_fields = []
     for fname in (fields or []):
@@ -94,10 +94,10 @@ class TestChat:
     async def test_system_prompt_includes_catalog_context(
         self, service, pipeline_repo
     ):
-        pipeline = make_pipeline_with_fields(name="Switch Port Collector", task_id="SwitchPortCollector")
+        pipeline = make_pipeline_with_fields(name="Port Scan Collector", task_id="PortScanCollector")
         pipeline.category = "Network Infrastructure"
-        pipeline.description = "Collects switch port data."
-        pipeline_repo.get_task_id_map.return_value = {"SwitchPortCollector": pipeline}
+        pipeline.description = "Collects port scan data."
+        pipeline_repo.get_task_id_map.return_value = {"PortScanCollector": pipeline}
 
         with patch(
             "app.services.ai_service.llm_client.chat",
@@ -108,7 +108,7 @@ class TestChat:
 
         call_kwargs = mock_chat.call_args.kwargs
         system_prompt = call_kwargs.get("system_prompt", "")
-        assert "Switch Port Collector" in system_prompt
+        assert "Port Scan Collector" in system_prompt
 
     async def test_empty_history_is_allowed(
         self, service, pipeline_repo
@@ -188,7 +188,7 @@ class TestGetJoinInsight:
         self, service, pipeline_repo
     ):
         pipeline = make_pipeline_with_fields(
-            name="Switch Port Collector",
+            name="Port Scan Collector",
             fields=["ip_address", "mac_address", "port_id"],
         )
         pipeline_repo.get_by_id.return_value = pipeline
@@ -212,7 +212,7 @@ class TestGetJoinInsight:
         self, service, pipeline_repo
     ):
         pipeline = make_pipeline_with_fields(
-            name="Switch Port Collector",
+            name="Port Scan Collector",
             fields=["ip_address", "vlan_id"],
         )
         pipeline_repo.get_by_id.return_value = pipeline
@@ -229,7 +229,7 @@ class TestGetJoinInsight:
         call_args = mock_client.chat.call_args
         prompt_messages = call_args.args[0]
         prompt_text = prompt_messages[0]["content"]
-        assert "Switch Port Collector" in prompt_text
+        assert "Port Scan Collector" in prompt_text
         assert "ip_address" in prompt_text
         assert "VLAN Sync" in prompt_text
 

@@ -22,8 +22,8 @@ def task_id_to_display_name(task_id: str) -> str:
     """Convert task_id to display name.
 
     Handles both PascalCase and snake_case:
-      'SwitchPortCollector' -> 'Switch Port Collector'
-      'switch_port_collector' -> 'Switch Port Collector'
+      'PortScanCollector' -> 'Port Scan Collector'
+      'port_scan_collector' -> 'Port Scan Collector'
     """
     spaced = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", task_id)
     return spaced.replace("_", " ").replace("-", " ").strip().title()

@@ -11,8 +11,8 @@ from tests.conftest import make_pipeline
 
 def make_dag_task(
     *,
-    dag_id: str = "backbone_core",
-    task_id: str = "SwitchPortCollector",
+    dag_id: str = "network_recon",
+    task_id: str = "PortScanCollector",
     downstream_task_ids: list | None = None,
     needs: list | None = None,
     prefers: list | None = None,
@@ -92,16 +92,16 @@ class TestBuildPipelineTopology:
 
         # Pipeline has one DAG entry
         dag_entry = make_dag_task(
-            dag_id="backbone_core",
+            dag_id="network_recon",
             task_id="CollectorA",
             needs=["SourceB"],
             downstream_task_ids=["ConsumerC"],
         )
 
         # DAG contains all three tasks
-        source_dt = make_dag_task(dag_id="backbone_core", task_id="SourceB",
+        source_dt = make_dag_task(dag_id="network_recon", task_id="SourceB",
                                   downstream_task_ids=["CollectorA"])
-        consumer_dt = make_dag_task(dag_id="backbone_core", task_id="ConsumerC")
+        consumer_dt = make_dag_task(dag_id="network_recon", task_id="ConsumerC")
 
         service.pipeline_repo.get_by_id.return_value = pipeline
         service.dag_task_repo.get_dags_for_task.return_value = [dag_entry]
@@ -124,13 +124,13 @@ class TestBuildPipelineTopology:
     async def test_discovers_upstream_bouncers_via_bfs(self, service):
         pipeline = make_pipeline(task_id="CollectorA")
         bouncer_dt = make_dag_task(
-            dag_id="backbone_core",
+            dag_id="network_recon",
             task_id="SwitchBouncer",
             bouncer_name="SwitchBouncer",
             downstream_task_ids=["CollectorA"],
         )
         collector_dt = make_dag_task(
-            dag_id="backbone_core",
+            dag_id="network_recon",
             task_id="CollectorA",
         )
 

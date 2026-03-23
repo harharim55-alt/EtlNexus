@@ -1,4 +1,4 @@
-"""BaseETL — abstract base for all ETL classes in the Dagger pipeline system.
+"""BaseETL — abstract base for all ETL classes in the cyber network analysis pipeline system.
 
 All ETLs inherit from this class and implement extract(), transform(), load().
 The SparkSession is shared or created with Iceberg catalog configuration.

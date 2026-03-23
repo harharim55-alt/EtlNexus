@@ -19,6 +19,18 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+ETL_CODE_ROOT = Path("/data/etl-code")
+
+
+def _find_etl_file(etl_name: str) -> Path:
+    """Search team subdirectories for an ETL code file."""
+    for team_dir in sorted(ETL_CODE_ROOT.iterdir()):
+        if team_dir.is_dir() and not team_dir.name.startswith((".", "__")):
+            candidate = team_dir / f"{etl_name}.py"
+            if candidate.exists():
+                return candidate
+    return ETL_CODE_ROOT / f"dagger/{etl_name}.py"  # fallback
+
 
 def run_etl(etl_name, spark_callable=None, **kwargs):
     """Execute an ETL task with real Spark metrics or simulated metrics.
@@ -35,8 +47,8 @@ def run_etl(etl_name, spark_callable=None, **kwargs):
     # Module name = etl_name (PascalCase matches file names)
     module_name = etl_name
 
-    # Parse ETL code file for metadata
-    etl_path = Path(f"/data/etl-code/dagger/{etl_name}.py")
+    # Parse ETL code file for metadata — search team subdirectories
+    etl_path = _find_etl_file(etl_name)
     suffixes = []
     if etl_path.exists():
         tree = ast.parse(etl_path.read_text())
@@ -264,7 +276,7 @@ def _make_etl_callable(etl_name: str, module_name: str, ti=None):
 
     Args:
         etl_name: PascalCase ETL name (for logging).
-        module_name: PascalCase module name (matches file name in dagger/).
+        module_name: PascalCase module name (matches file name in team directory).
     """
     from datetime import datetime, timedelta
 
@@ -278,10 +290,17 @@ def _make_etl_callable(etl_name: str, module_name: str, ti=None):
     if etl_code_path not in sys.path:
         sys.path.insert(0, etl_code_path)
 
-    try:
-        mod = importlib.import_module(f"dagger.{module_name}")
-    except ImportError:
-        logger.warning("Could not import ETL module dagger.%s", module_name)
+    # Search team subdirectories for the ETL module
+    mod = None
+    for team_dir in sorted(ETL_CODE_ROOT.iterdir()):
+        if team_dir.is_dir() and not team_dir.name.startswith((".", "__")):
+            try:
+                mod = importlib.import_module(f"{team_dir.name}.{module_name}")
+                break
+            except ImportError:
+                continue
+    if mod is None:
+        logger.warning("Could not import ETL module %s from any team directory", module_name)
         return None
 
     # Find the ETL class (has extract/transform/load methods)
@@ -298,7 +317,7 @@ def _make_etl_callable(etl_name: str, module_name: str, ti=None):
             break
 
     if etl_class is None:
-        logger.warning("No ETL class found in dagger.%s", module_name)
+        logger.warning("No ETL class found for %s", module_name)
         return None
 
     def callable(spark, **kwargs):
@@ -329,6 +348,10 @@ def _get_graph_metrics(spark) -> dict:
     The key is the first line of the node description with column IDs stripped,
     which allows matching against the result DataFrame's plan nodes regardless
     of different accumulator/column ID assignments.
+
+    Scans ALL executions in the status store (not just the last one) so that
+    metrics from complex ETLs with multiple read/transform/write executions
+    are captured correctly.
     """
     try:
         store = spark._jsparkSession.sharedState().statusStore()
@@ -336,45 +359,48 @@ def _get_graph_metrics(spark) -> dict:
         if exec_list.isEmpty():
             return {}
 
-        last_exec = exec_list.last()
-        exec_id = last_exec.executionId()
-
-        # Get all accumulator values: Scala Map[Long, String]
-        metric_values = store.executionMetrics(exec_id)
-        acc_map = {}
-        it = metric_values.iterator()
-        while it.hasNext():
-            pair = it.next()
-            acc_map[int(pair._1())] = str(pair._2())
-
-        if not acc_map:
-            return {}
-
-        # Get plan graph nodes — each has a desc and metric accumulator IDs
-        graph = store.planGraph(exec_id)
-        nodes = graph.allNodes()
         result = {}
-        for i in range(nodes.size()):
-            n = nodes.apply(i)
-            desc = str(n.desc())
-            # Key by first line with column IDs stripped (matches plan node toString)
-            key = _strip_col_ids(desc.split("\n")[0].strip())[:120]
-            metrics = {}
-            metric_seq = n.metrics()
-            for j in range(metric_seq.size()):
-                m = metric_seq.apply(j)
-                name = str(m.name())
-                if name in _METRIC_SKIP:
-                    continue
-                acc_id = int(m.accumulatorId())
-                if acc_id in acc_map:
-                    val = _clean_metric_value(acc_map[acc_id])
-                    if not val or _is_zero_metric(val):
+        size = exec_list.size()
+        for idx in range(size):
+            exec_data = exec_list.apply(idx)
+            exec_id = exec_data.executionId()
+
+            # Get all accumulator values: Scala Map[Long, String]
+            metric_values = store.executionMetrics(exec_id)
+            acc_map = {}
+            it = metric_values.iterator()
+            while it.hasNext():
+                pair = it.next()
+                acc_map[int(pair._1())] = str(pair._2())
+
+            if not acc_map:
+                continue
+
+            # Get plan graph nodes — each has a desc and metric accumulator IDs
+            graph = store.planGraph(exec_id)
+            nodes = graph.allNodes()
+            for i in range(nodes.size()):
+                n = nodes.apply(i)
+                desc = str(n.desc())
+                key = _strip_col_ids(desc.split("\n")[0].strip())[:120]
+                if key in result:
+                    continue  # keep first match
+                metrics = {}
+                metric_seq = n.metrics()
+                for j in range(metric_seq.size()):
+                    m = metric_seq.apply(j)
+                    name = str(m.name())
+                    if name in _METRIC_SKIP:
                         continue
-                    display_key = _METRIC_DISPLAY.get(name, name)
-                    metrics[display_key] = _format_metric_value(name, val)
-            if metrics:
-                result[key] = metrics
+                    acc_id = int(m.accumulatorId())
+                    if acc_id in acc_map:
+                        val = _clean_metric_value(acc_map[acc_id])
+                        if not val or _is_zero_metric(val):
+                            continue
+                        display_key = _METRIC_DISPLAY.get(name, name)
+                        metrics[display_key] = _format_metric_value(name, val)
+                if metrics:
+                    result[key] = metrics
 
         return result
 
@@ -574,6 +600,10 @@ def _extract_full_detail(node_name: str, simple_str: str) -> str:
             return _parse_exchange_detail(clean)
         if node_name == "Project":
             return _parse_project_full(clean)
+        if "limit" in lower or lower == "takeorderedandproject":
+            return _parse_limit_detail(clean)
+        if lower in ("union", "expand", "generate", "coalesce"):
+            return _parse_simple_node_detail(node_name, clean)
     except Exception:
         pass
 
@@ -604,6 +634,10 @@ def _extract_detail(node_name: str, simple_str: str) -> str:
             return _parse_exchange_detail(clean)
         if node_name == "Project":
             return _parse_project_detail(clean)
+        if "limit" in lower or lower == "takeorderedandproject":
+            return _parse_limit_detail(clean)
+        if lower in ("union", "expand", "generate", "coalesce"):
+            return _parse_simple_node_detail(node_name, clean)
     except Exception:
         pass
 
@@ -670,8 +704,17 @@ def _parse_aggregate_detail(s: str) -> str:
 
 def _parse_scan_detail(s: str) -> str:
     """Extract table name and selected columns from scan."""
-    # Pattern: BatchScan iceberg.dagger.table_name[col1, col2, ...]
-    m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.dagger\.)?(\w+)\[([^\]]*)\]", s)
+    # Pattern: BatchScan iceberg.{namespace}.{table}[col1, col2, ...]
+    m = re.search(r"(?:Scan|BatchScan)\s+iceberg\.(\w+)\.(\w+)\[([^\]]*)\]", s)
+    if m:
+        table = m.group(2)
+        cols = [c.strip() for c in m.group(3).split(",")]
+        col_str = ", ".join(cols[:4])
+        if len(cols) > 4:
+            col_str += f" +{len(cols) - 4}"
+        return f"{table} [{col_str}]"
+    # Legacy pattern without namespace: BatchScan table[cols]
+    m = re.search(r"(?:Scan|BatchScan)\s+(\w+)\[([^\]]*)\]", s)
     if m:
         table = m.group(1)
         cols = [c.strip() for c in m.group(2).split(",")]
@@ -680,7 +723,7 @@ def _parse_scan_detail(s: str) -> str:
             col_str += f" +{len(cols) - 4}"
         return f"{table} [{col_str}]"
     # Just table name without columns
-    m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.dagger\.)?(\w+)", s)
+    m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.\w+\.)?(\w+)", s)
     if m:
         return m.group(1)
     return s[:80] if len(s) > 80 else s
@@ -810,6 +853,50 @@ def _extract_top_brackets(s: str) -> list[str]:
     return result
 
 
+def _parse_limit_detail(s: str) -> str:
+    """Extract limit value and optional sort keys from Limit / TakeOrderedAndProject."""
+    # TakeOrderedAndProject pattern: TakeOrderedAndProject(limit=5, [col ASC], [output_cols])
+    m = re.search(r"limit[=\s]+(\d+)", s, re.IGNORECASE)
+    limit_val = m.group(1) if m else ""
+    # Also extract sort keys if present
+    sm = re.search(r"\[([^\]]*(?:ASC|DESC)[^\]]*)\]", s)
+    sort_part = ""
+    if sm:
+        keys = sm.group(1)
+        keys = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", keys)
+        sort_part = keys
+    parts = []
+    if limit_val:
+        parts.append(f"limit {limit_val}")
+    if sort_part:
+        parts.append(f"order by {sort_part}")
+    return " | ".join(parts) if parts else ""
+
+
+def _parse_simple_node_detail(node_name: str, s: str) -> str:
+    """Extract detail for simple nodes: Union, Expand, Generate, Coalesce."""
+    lower = node_name.lower()
+    if lower == "union":
+        return "union"
+    if lower == "coalesce":
+        m = re.search(r"Coalesce\s+(\d+)", s)
+        if m:
+            return f"{m.group(1)} partitions"
+    if lower == "expand":
+        m = re.search(r"\[([^\]]+)\]", s)
+        if m:
+            items = [x.strip() for x in m.group(1).split(",")]
+            return ", ".join(items[:5]) + ("..." if len(items) > 5 else "")
+    if lower == "generate":
+        m = re.search(r"Generator\s+(\w+)", s) or re.search(r"Generate\s+(\w+)", s)
+        if m:
+            return m.group(1)
+    clean = s.replace(node_name, "").strip()
+    if clean and len(clean) > 3:
+        return clean[:80] + ("..." if len(clean) > 80 else "")
+    return ""
+
+
 def _parse_project_detail(s: str) -> str:
     """Extract output columns from Project."""
     m = re.search(r"Project\s*\[(.+)\]", s)
@@ -870,16 +957,39 @@ def _parse_aggregate_full(s: str) -> str:
 
 
 def _parse_scan_full(s: str) -> str:
-    """Full scan detail with all columns."""
-    m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.dagger\.)?(\w+)\[([^\]]*)\]", s)
+    """Full scan detail with namespace, all columns, and filters."""
+    parts = []
+
+    # Extract table + namespace + columns
+    m = re.search(r"(?:Scan|BatchScan)\s+iceberg\.(\w+)\.(\w+)\[([^\]]*)\]", s)
     if m:
-        table = m.group(1)
-        cols = [c.strip() for c in m.group(2).split(",")]
-        return f"{table} [{', '.join(cols)}]"
-    m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.dagger\.)?(\w+)", s)
-    if m:
-        return m.group(1)
-    return s
+        namespace, table, cols_str = m.group(1), m.group(2), m.group(3)
+        cols = [c.strip() for c in cols_str.split(",")]
+        parts.append(f"{table} [{', '.join(cols)}]")
+        parts.append(f"namespace: {namespace}")
+    else:
+        # Legacy pattern without namespace
+        m = re.search(r"(?:Scan|BatchScan)\s+(\w+)\[([^\]]*)\]", s)
+        if m:
+            cols = [c.strip() for c in m.group(2).split(",")]
+            parts.append(f"{m.group(1)} [{', '.join(cols)}]")
+        else:
+            m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.\w+\.)?(\w+)", s)
+            if m:
+                parts.append(m.group(1))
+            else:
+                return s
+
+    # Extract filters
+    fm = re.search(r"\[filters=([^\]]*)\]", s)
+    if fm:
+        raw_filters = fm.group(1).strip()
+        # Remove trailing ", groupedBy=" and other noise
+        raw_filters = re.sub(r",?\s*groupedBy=\s*$", "", raw_filters).strip()
+        if raw_filters:
+            parts.append(f"filters: {raw_filters}")
+
+    return "\n".join(parts) if parts else s
 
 
 def _parse_sort_full(s: str) -> str:

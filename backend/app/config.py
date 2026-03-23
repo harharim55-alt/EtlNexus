@@ -18,7 +18,7 @@ class Settings(BaseSettings):
     # Iceberg Catalog
     iceberg_catalog_uri: str = "http://iceberg-rest:8181"
     iceberg_catalog_name: str = "iceberg"
-    iceberg_namespace_prefix: str = "dagger"
+    iceberg_namespace_prefix: str = "dagger,prism,vault,oasis"
 
     # AI / LLM
     llm_api_base_url: str = ""

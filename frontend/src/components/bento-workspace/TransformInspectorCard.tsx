@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { GitMerge, Maximize2 } from "lucide-react";
+import { GitMerge, Maximize2, ScanEye } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useExecutionPlan } from "@/hooks/use-execution-plan";
 import { formatDuration } from "@/lib/format";
@@ -8,6 +8,7 @@ import { NodeDetailModal } from "./execution-plan/PlanFormatters";
 import { TreeNode, treeStyles } from "./execution-plan/PlanTree";
 import { RunPicker } from "./execution-plan/PlanRunSelector";
 import { usePannable } from "./execution-plan/usePannable";
+import { useOverview } from "./execution-plan/useOverview";
 import { ExecutionPlanModal } from "./ExecutionPlanModal";
 
 interface TransformInspectorCardProps {
@@ -24,6 +25,8 @@ export function TransformInspectorCard({
   );
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
   const panRef = usePannable<HTMLDivElement>();
+  const { containerRef, treeRef, isOverview, toggleOverview, scale } =
+    useOverview();
 
   if (isLoading) {
     return (
@@ -70,6 +73,18 @@ export function TransformInspectorCard({
           />
           <button
             type="button"
+            onClick={toggleOverview}
+            className={`text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
+              isOverview
+                ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/30"
+                : "text-slate-500 bg-white/[0.03] border-white/5 hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10"
+            }`}
+          >
+            <ScanEye className="w-3 h-3" />
+            Overview
+          </button>
+          <button
+            type="button"
             onClick={() => setFullscreenOpen(true)}
             className="text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer text-slate-500 bg-white/[0.03] border-white/5 hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-1.5"
           >
@@ -80,7 +95,15 @@ export function TransformInspectorCard({
       </div>
 
       {/* Canvas body */}
-      <div ref={panRef} className="relative overflow-auto custom-scrollbar" style={{ maxHeight: 500 }}>
+      <div
+        ref={(node) => {
+          // Merge panRef (callback) and containerRef (callback)
+          panRef(node);
+          containerRef(node);
+        }}
+        className="relative overflow-auto custom-scrollbar"
+        style={{ maxHeight: 500 }}
+      >
         <div
           className="absolute inset-0 opacity-[0.08] pointer-events-none"
           style={{
@@ -89,7 +112,19 @@ export function TransformInspectorCard({
             backgroundSize: "24px 24px",
           }}
         />
-        <div className="relative min-w-max flex justify-center p-10">
+        <div
+          ref={treeRef}
+          className="relative min-w-max flex justify-center p-10"
+          style={
+            isOverview
+              ? {
+                  transform: `scale(${scale})`,
+                  transformOrigin: "center top",
+                  minWidth: "unset",
+                }
+              : undefined
+          }
+        >
           <div className="tree-container">
             <ul>
               <TreeNode

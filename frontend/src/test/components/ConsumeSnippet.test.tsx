@@ -12,12 +12,12 @@ beforeEach(() => {
 
 describe("ConsumeSnippet — ETL (non-API) snippet", () => {
   it("renders Import & Consume header", () => {
-    render(<ConsumeSnippet pipelineName="SwitchPortCollector" pipelineType="etl" />);
+    render(<ConsumeSnippet pipelineName="PortScanCollector" pipelineType="etl" team="Dagger" />);
     expect(screen.getByText(/Import & Consume/i)).toBeInTheDocument();
   });
 
   it("shows Catalog import from etls for a non-API pipeline", () => {
-    const { container } = render(<ConsumeSnippet pipelineName="SwitchPortCollector" pipelineType="etl" />);
+    const { container } = render(<ConsumeSnippet pipelineName="PortScanCollector" pipelineType="etl" team="Dagger" />);
     const codeEl = container.querySelector("code");
     expect(codeEl).not.toBeNull();
     expect(codeEl!.textContent).toContain("from");
@@ -25,61 +25,61 @@ describe("ConsumeSnippet — ETL (non-API) snippet", () => {
   });
 
   it("renders the lowercase pipeline name derived from the ETL name", () => {
-    render(<ConsumeSnippet pipelineName="SwitchPortCollector" pipelineType="etl" />);
-    const elements = screen.getAllByText("switchportcollector");
+    render(<ConsumeSnippet pipelineName="PortScanCollector" pipelineType="etl" team="Dagger" />);
+    const elements = screen.getAllByText("portscancollector");
     expect(elements.length).toBeGreaterThan(0);
   });
 
   it("renders consume().as_pyspark() call in the snippet", () => {
-    render(<ConsumeSnippet pipelineName="SwitchPortCollector" />);
+    render(<ConsumeSnippet pipelineName="PortScanCollector" team="Dagger" />);
     expect(screen.getByText(/consume\(\)\.as_pyspark\(\)/)).toBeInTheDocument();
   });
 
   it("contains a copy button", () => {
-    render(<ConsumeSnippet pipelineName="SwitchPortCollector" />);
+    render(<ConsumeSnippet pipelineName="PortScanCollector" team="Dagger" />);
     const buttons = screen.getAllByRole("button");
     expect(buttons.length).toBeGreaterThan(0);
   });
 
   it("renders without pipelineType prop (defaults to ETL snippet)", () => {
-    render(<ConsumeSnippet pipelineName="DnsQueryCollector" />);
+    render(<ConsumeSnippet pipelineName="DnsQueryCollector" team="Oasis" />);
     expect(screen.getByText(/consume\(\)\.as_pyspark\(\)/)).toBeInTheDocument();
   });
 });
 
 describe("ConsumeSnippet — API snippet", () => {
   it("renders 'from' keyword for API pipeline", () => {
-    render(<ConsumeSnippet pipelineName="NetworkInsightsApi" pipelineType="api" />);
+    render(<ConsumeSnippet pipelineName="NetworkIntelApiDummy" pipelineType="api" team="Dagger" />);
     expect(screen.getByText("from")).toBeInTheDocument();
   });
 
   it("renders 'path' in the API snippet", () => {
-    const { container } = render(<ConsumeSnippet pipelineName="NetworkInsightsApi" pipelineType="api" />);
+    const { container } = render(<ConsumeSnippet pipelineName="NetworkIntelApiDummy" pipelineType="api" team="Dagger" />);
     const codeEl = container.querySelector("code");
     expect(codeEl).not.toBeNull();
     expect(codeEl!.textContent).toContain("path");
   });
 
   it("renders 'api' import text for API pipeline", () => {
-    const { container } = render(<ConsumeSnippet pipelineName="NetworkInsightsApi" pipelineType="api" />);
+    const { container } = render(<ConsumeSnippet pipelineName="NetworkIntelApiDummy" pipelineType="api" team="Dagger" />);
     const codeEl = container.querySelector("code");
     expect(codeEl).not.toBeNull();
     expect(codeEl!.textContent).toContain("api");
   });
 
   it("does NOT render iceberg/catalog snippet for API pipeline", () => {
-    render(<ConsumeSnippet pipelineName="NetworkInsightsApi" pipelineType="api" />);
+    render(<ConsumeSnippet pipelineName="NetworkIntelApiDummy" pipelineType="api" team="Dagger" />);
     expect(screen.queryByText(/iceberg/)).not.toBeInTheDocument();
   });
 
   it("renders lowercase pipeline name in the API snippet", () => {
-    render(<ConsumeSnippet pipelineName="NetworkInsightsApi" pipelineType="api" />);
-    const elements = screen.getAllByText("networkinsightsapi");
+    render(<ConsumeSnippet pipelineName="NetworkIntelApiDummy" pipelineType="api" team="Dagger" />);
+    const elements = screen.getAllByText("networkintelapidummy");
     expect(elements.length).toBeGreaterThan(0);
   });
 
   it("contains a copy button for API snippet", () => {
-    render(<ConsumeSnippet pipelineName="NetworkInsightsApi" pipelineType="api" />);
+    render(<ConsumeSnippet pipelineName="NetworkIntelApiDummy" pipelineType="api" team="Dagger" />);
     const buttons = screen.getAllByRole("button");
     expect(buttons.length).toBeGreaterThan(0);
   });

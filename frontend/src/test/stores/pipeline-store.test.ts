@@ -102,8 +102,8 @@ describe("usePipelineStore — toggleFilter", () => {
   });
 
   it("adds a dag filter value", () => {
-    usePipelineStore.getState().toggleFilter("dag", "backbone_core");
-    expect(usePipelineStore.getState().dagFilters.has("backbone_core")).toBe(true);
+    usePipelineStore.getState().toggleFilter("dag", "network_recon");
+    expect(usePipelineStore.getState().dagFilters.has("network_recon")).toBe(true);
   });
 
   it("adds a status filter value", () => {
@@ -123,7 +123,7 @@ describe("usePipelineStore — toggleFilter", () => {
 describe("usePipelineStore — clearAllFilters", () => {
   it("resets all filter sets", () => {
     usePipelineStore.getState().toggleFilter("team", "Dagger");
-    usePipelineStore.getState().toggleFilter("dag", "backbone_core");
+    usePipelineStore.getState().toggleFilter("dag", "network_recon");
     usePipelineStore.getState().toggleFilter("status", "failed");
 
     usePipelineStore.getState().clearAllFilters();

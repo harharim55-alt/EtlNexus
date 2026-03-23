@@ -31,14 +31,14 @@ def make_bouncer_orm(
     b.team = team
     b.volume_per_day = volume_per_day
     b.status = status
-    b.dag_ids = dag_ids or ["backbone_core"]
+    b.dag_ids = dag_ids or ["network_recon"]
     return b
 
 
 def make_dag_task(
     *,
-    dag_id: str = "backbone_core",
-    task_id: str = "SwitchPortCollector",
+    dag_id: str = "network_recon",
+    task_id: str = "PortScanCollector",
     downstream_task_ids: list[str] | None = None,
     bouncer_name: str | None = None,
     pipeline_id: uuid.UUID | None = None,
@@ -163,7 +163,7 @@ class TestGetAllBouncers:
             team="Relay",
             volume_per_day=50000,
             status="failed",
-            dag_ids=["transit_exchange"],
+            dag_ids=["peering_audit"],
             description="Collects traffic data",
         )
         bouncer_repo.get_all.return_value = [b]
@@ -177,7 +177,7 @@ class TestGetAllBouncers:
         assert item.team == "Relay"
         assert item.volume_per_day == 50000
         assert item.status == "failed"
-        assert item.dag_ids == ["transit_exchange"]
+        assert item.dag_ids == ["peering_audit"]
         assert item.description == "Collects traffic data"
 
 

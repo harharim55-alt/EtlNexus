@@ -7,6 +7,7 @@ export { AggregateFormatter } from "./AggregateFormatter";
 export { SortFormatter } from "./SortFormatter";
 export { ExchangeFormatter } from "./ExchangeFormatter";
 export { WindowFormatter } from "./WindowFormatter";
+export { LightFormatter } from "./LightFormatter";
 export { FallbackFormatter } from "./FallbackFormatter";
 export { FormattedDetail } from "./FormattedDetail";
 export { RawDetail } from "./RawDetail";

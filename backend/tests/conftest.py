@@ -63,8 +63,8 @@ def make_user_team(user: User, team: Team, role_in_team: str = "member") -> User
 
 def make_pipeline(
     *,
-    name: str = "Switch Port Collector",
-    task_id: str = "SwitchPortCollector",
+    name: str = "Port Scan Collector",
+    task_id: str = "PortScanCollector",
     team: str | None = None,
     team_id: uuid.UUID | None = None,
     category: str = "Network Infrastructure",
