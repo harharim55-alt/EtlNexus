@@ -43,10 +43,7 @@ class BaseETL:
             SparkSession.builder
             .appName("EtlNexus-ETL")
             .master("local[*]")
-            .config(
-                "spark.jars.packages",
-                "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.7.1",
-            )
+            .config("spark.jars", "/opt/airflow/jars/iceberg-spark-runtime.jar")
             .config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog")
             .config("spark.sql.catalog.iceberg.type", "rest")
             .config("spark.sql.catalog.iceberg.uri", "http://iceberg-rest:8181")

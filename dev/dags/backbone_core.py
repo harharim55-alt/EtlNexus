@@ -25,6 +25,7 @@ from daily.task_configs import (
     NocDashboardSnapshot_task_config,
     NetworkInsightsApiDummy_task_config,
     BandwidthReportsApiDummy_task_config,
+    UnifiedNetworkAssessment_task_config,
 )
 from hourly.task_configs import NetflowCapture_task_config
 from daily.resources import (
@@ -38,6 +39,7 @@ from daily.resources import (
     NocDashboardSnapshot_resources,
     NetworkInsightsApiDummy_resources,
     BandwidthReportsApiDummy_resources,
+    UnifiedNetworkAssessment_resources,
 )
 from hourly.resources import NetflowCapture_resources
 
@@ -206,6 +208,21 @@ with DAG(
             },
         )
 
+    # --- Assessment group (depth 3-4) — comprehensive analysis ---
+    with TaskGroup("Dagger-Assessment", prefix_group_id=True) as assessment:
+        UnifiedNetworkAssessment = PythonOperator(
+            task_id="UnifiedNetworkAssessment",
+            python_callable=run_etl,
+            params={
+                "needs": UnifiedNetworkAssessment_task_config.needs,
+                "prefers": UnifiedNetworkAssessment_task_config.prefers,
+            },
+            op_kwargs={
+                "etl_name": "UnifiedNetworkAssessment",
+                "resources": UnifiedNetworkAssessment_resources.resources,
+            },
+        )
+
     # --- Delivery group (depth 4) — leaf nodes ---
     with TaskGroup("Dagger-Delivery", prefix_group_id=True) as delivery:
         NocDashboardSnapshot = PythonOperator(
@@ -266,6 +283,7 @@ with DAG(
         "NocDashboardSnapshot": NocDashboardSnapshot,
         "NetworkInsightsApiDummy": NetworkInsightsApiDummy,
         "BandwidthReportsApiDummy": BandwidthReportsApiDummy,
+        "UnifiedNetworkAssessment": UnifiedNetworkAssessment,
     }
     task_cfgs = {
         "SwitchPortCollector": SwitchPortCollector_task_config,
@@ -279,6 +297,7 @@ with DAG(
         "NocDashboardSnapshot": NocDashboardSnapshot_task_config,
         "NetworkInsightsApiDummy": NetworkInsightsApiDummy_task_config,
         "BandwidthReportsApiDummy": BandwidthReportsApiDummy_task_config,
+        "UnifiedNetworkAssessment": UnifiedNetworkAssessment_task_config,
     }
     for task_id, op in etl_ops.items():
         tc = task_cfgs[task_id]

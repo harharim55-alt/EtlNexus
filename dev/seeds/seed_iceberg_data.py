@@ -155,8 +155,7 @@ def create_spark_session():
         SparkSession.builder
         .appName("EtlNexus-DataSeed")
         .master("local[1]")
-        .config("spark.jars.packages",
-                "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.7.1")
+        .config("spark.jars", "/opt/airflow/jars/iceberg-spark-runtime.jar")
         .config("spark.sql.catalog.iceberg",
                 "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.iceberg.type", "rest")
@@ -1012,6 +1011,79 @@ def gen_weekly_network_digest():
     return schema, rows
 
 
+def gen_unified_network_assessment():
+    schema = StructType([
+        StructField("ip_address", StringType()),
+        StructField("hostname", StringType()),
+        StructField("mac_address", StringType()),
+        StructField("network_zone", StringType()),
+        StructField("total_flows", LongType()),
+        StructField("total_bytes", LongType()),
+        StructField("avg_bytes_per_flow", DoubleType()),
+        StructField("unique_destinations", LongType()),
+        StructField("protocol_count", LongType()),
+        StructField("protocols_csv", StringType()),
+        StructField("threat_score", DoubleType()),
+        StructField("risk_bucket", StringType()),
+        StructField("anomaly_score", DoubleType()),
+        StructField("reputation_score", DoubleType()),
+        StructField("is_blocked", BooleanType()),
+        StructField("critical_event_count", LongType()),
+        StructField("affected_facilities", LongType()),
+        StructField("syslog_severity_score", DoubleType()),
+        StructField("composite_health_score", DoubleType()),
+        StructField("assessment_tier", StringType()),
+        StructField("requires_action", BooleanType()),
+        StructField("rank_in_risk_bucket", IntegerType()),
+        StructField("global_percentile", DoubleType()),
+        StructField("traffic_quartile", IntegerType()),
+        StructField("activity_score", DoubleType()),
+        StructField("activity_tier", StringType()),
+        StructField("assessed_at", TimestampType()),
+        StructField("date", DateType()),
+    ])
+    tiers = ["healthy", "moderate", "degraded", "critical", "severe"]
+    activity_tiers = ["platinum", "gold", "silver", "bronze", "unknown"]
+    rows = []
+    for d in DATES:
+        for _ in range(150):
+            health = round(random.uniform(0.0, 100.0), 2)
+            tier_idx = min(int((100 - health) / 20), 4)
+            threat = round(random.uniform(0.0, 100.0), 2)
+            protos = random.sample(PROTOCOLS, random.randint(1, 4))
+            rows.append((
+                rand_ip(),
+                random.choice(HOSTNAMES),
+                rand_mac(),
+                random.choice(POOL_NAMES),
+                random.randint(1, 10000),
+                random.randint(1000, 1500000000),
+                round(random.uniform(100.0, 500000.0), 2),
+                random.randint(1, 200),
+                len(protos),
+                ",".join(protos),
+                threat,
+                random.choice(RISK_BUCKETS),
+                round(random.uniform(0.0, 100.0), 2),
+                round(random.uniform(0.0, 1.0), 4),
+                threat > 80,
+                random.randint(0, 50),
+                random.randint(0, 8),
+                round(random.uniform(0.0, 200.0), 2),
+                health,
+                tiers[tier_idx],
+                health < 30 or threat > 80,
+                random.randint(1, 100),
+                round(random.uniform(0.0, 1.0), 4),
+                random.randint(1, 4),
+                round(random.uniform(0.0, 100.0), 2),
+                random.choice(activity_tiers),
+                rand_ts(d),
+                d,
+            ))
+    return schema, rows
+
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1044,6 +1116,7 @@ TABLE_GENERATORS = {
     "MacAddressEnrichment": gen_mac_address_enrichment,
     "CdnCostReconciler": gen_cdn_cost_reconciler,
     "WeeklyNetworkDigest": gen_weekly_network_digest,
+    "UnifiedNetworkAssessment": gen_unified_network_assessment,
 }
 
 

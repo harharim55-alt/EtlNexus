@@ -53,6 +53,17 @@ class UserRepository:
         concurrent first-login requests atomically.
         """
         now = datetime.now(UTC)
+        # If the SSO provider regenerated the user's subject ID (e.g. Keycloak
+        # realm re-import), a stale row with the same email but a different sub
+        # may exist.  Remove it so the upsert-by-sub can proceed.
+        stale = await self.session.execute(
+            select(User).where(User.email == email, User.sub != sub)
+        )
+        stale_user = stale.scalar_one_or_none()
+        if stale_user:
+            await self.session.delete(stale_user)
+            await self.session.flush()
+
         stmt = (
             pg_insert(User)
             .values(

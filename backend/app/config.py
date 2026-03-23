@@ -4,6 +4,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     # Database
     database_url: str = "postgresql+asyncpg://etlnexus:etlnexus@db:5432/etlnexus"
+    db_pool_size: int = 20
+    db_max_overflow: int = 10
+    db_pool_recycle: int = 3600
+    db_echo: bool = False
 
     # Airflow Integration
     airflow_base_url: str = "http://airflow-webserver:8080/api/v1"
@@ -13,6 +17,7 @@ class Settings(BaseSettings):
 
     # Iceberg Catalog
     iceberg_catalog_uri: str = "http://iceberg-rest:8181"
+    iceberg_catalog_name: str = "iceberg"
     iceberg_namespace_prefix: str = "dagger"
 
     # AI / LLM

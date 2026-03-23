@@ -145,11 +145,11 @@ def _create_spark_session(etl_name: str, config: dict):
     if config.get("spark_num_executors"):
         builder = builder.config("spark.executor.instances", str(config["spark_num_executors"]))
 
-    # Iceberg catalog + sparkMeasure JARs
+    # Iceberg catalog + sparkMeasure JARs (pre-downloaded in Docker image)
     builder = builder.config(
-        "spark.jars.packages",
-        "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.7.1,"
-        "ch.cern.sparkmeasure:spark-measure_2.12:0.24",
+        "spark.jars",
+        "/opt/airflow/jars/iceberg-spark-runtime.jar,"
+        "/opt/airflow/jars/spark-measure.jar",
     )
     builder = builder.config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog")
     builder = builder.config("spark.sql.catalog.iceberg.type", "rest")

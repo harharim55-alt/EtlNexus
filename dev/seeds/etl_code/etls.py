@@ -108,3 +108,6 @@ def rpt_traffic_class(s, e):
 
 def rpt_capacity_metrics(s, e):
     return TableReader("CapacityMetricsApiDummy", s, e)
+
+def rpt_unified_network_assessment(s, e):
+    return TableReader("UnifiedNetworkAssessment", s, e)

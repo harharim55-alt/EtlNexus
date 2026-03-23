@@ -28,6 +28,9 @@ def _validate_identifier(value: str, label: str) -> str:
 class IcebergClient:
     def __init__(self):
         self.catalog_uri = settings.iceberg_catalog_uri
+        self.catalog_name = _validate_identifier(
+            settings.iceberg_catalog_name, "iceberg_catalog_name"
+        )
         self.namespace_prefix = _validate_identifier(
             settings.iceberg_namespace_prefix, "iceberg_namespace_prefix"
         )
@@ -49,11 +52,10 @@ class IcebergClient:
                 SparkSession.builder
                 .appName("EtlNexus-CatalogSync")
                 .master("local[1]")
-                .config("spark.jars.packages",
-                        "org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.7.1")
-                .config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog")
-                .config("spark.sql.catalog.iceberg.type", "rest")
-                .config("spark.sql.catalog.iceberg.uri", self.catalog_uri)
+                .config("spark.jars", "/app/jars/iceberg-spark-runtime.jar")
+                .config(f"spark.sql.catalog.{self.catalog_name}", "org.apache.iceberg.spark.SparkCatalog")
+                .config(f"spark.sql.catalog.{self.catalog_name}.type", "rest")
+                .config(f"spark.sql.catalog.{self.catalog_name}.uri", self.catalog_uri)
                 .config("spark.sql.extensions",
                         "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
                 .config("spark.driver.memory", "512m")
@@ -76,7 +78,7 @@ class IcebergClient:
             if spark is None:
                 return False
             # Try listing namespaces
-            spark.sql("SHOW NAMESPACES IN iceberg").collect()
+            spark.sql(f"SHOW NAMESPACES IN {self.catalog_name}").collect()
             self._connected = True
             return True
         except Exception as e:
@@ -91,7 +93,7 @@ class IcebergClient:
         if not spark:
             return []
         try:
-            rows = spark.sql(f"SHOW TABLES IN iceberg.{namespace}").collect()
+            rows = spark.sql(f"SHOW TABLES IN {self.catalog_name}.{namespace}").collect()
             return [row["tableName"] for row in rows]
         except Exception as e:
             logger.warning("Failed to list tables in %s: %s", namespace, e)
@@ -144,7 +146,7 @@ class IcebergClient:
             tables = self.list_tables_in_namespace(self.namespace_prefix)
             for table_name in tables:
                 _validate_identifier(table_name, "table_name")
-                full_name = f"iceberg.{self.namespace_prefix}.{table_name}"
+                full_name = f"{self.catalog_name}.{self.namespace_prefix}.{table_name}"
                 schema = self.get_table_schema(full_name)
                 if schema:
                     schemas.append(schema)
