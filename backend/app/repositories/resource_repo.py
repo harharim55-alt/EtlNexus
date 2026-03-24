@@ -223,6 +223,38 @@ class ResourceRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none() is not None
 
+    async def get_resource_history(
+        self,
+        pipeline_id: uuid.UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> tuple[list[PipelineRunHistory], int]:
+        """Get per-run resource records for time-series charting (chronological order)."""
+        cutoff = date_from or (datetime.now(UTC) - timedelta(days=30))
+        conditions = [
+            PipelineRunHistory.pipeline_id == pipeline_id,
+            PipelineRunHistory.duration_seconds.isnot(None),
+            PipelineRunHistory.start_date >= cutoff,
+        ]
+        if date_to:
+            conditions.append(PipelineRunHistory.start_date <= date_to)
+
+        count_stmt = (
+            select(func.count())
+            .select_from(PipelineRunHistory)
+            .where(*conditions)
+        )
+        count_result = await self.session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        stmt = (
+            select(PipelineRunHistory)
+            .where(*conditions)
+            .order_by(PipelineRunHistory.start_date.asc().nullslast())
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all()), total
+
     async def get_recent_runs(
         self,
         pipeline_id: uuid.UUID,
@@ -293,6 +325,18 @@ class ResourceRepository:
                 func.avg(PipelineRunHistory.memory_bytes_spilled).label("avg_mem_spilled"),
                 func.avg(PipelineRunHistory.disk_bytes_spilled).label("avg_disk_spilled"),
                 func.avg(PipelineRunHistory.peak_execution_memory).label("avg_peak_exec_mem"),
+                # Peak (max) values for capacity bars
+                func.max(PipelineRunHistory.driver_memory_used_mb).label("peak_driver_mem"),
+                func.max(PipelineRunHistory.executor_memory_peak_mb).label("peak_executor_mem"),
+                func.max(PipelineRunHistory.cpu_utilization_pct).label("peak_cpu"),
+                func.max(
+                    case(
+                        (PipelineRunHistory.executors_active.isnot(None),
+                         PipelineRunHistory.executors_active.cast(Float)),
+                        else_=None,
+                    )
+                ).label("peak_executors"),
+                func.max(PipelineRunHistory.peak_execution_memory).label("peak_exec_mem"),
             )
             .where(*conditions)
         )
@@ -323,6 +367,12 @@ class ResourceRepository:
             "avg_memory_bytes_spilled": round(row.avg_mem_spilled) if row.avg_mem_spilled else None,
             "avg_disk_bytes_spilled": round(row.avg_disk_spilled) if row.avg_disk_spilled else None,
             "avg_peak_execution_memory": round(row.avg_peak_exec_mem) if row.avg_peak_exec_mem else None,
+            # Peak (max) values for capacity bars
+            "peak_driver_mem_used_mb": round(row.peak_driver_mem) if row.peak_driver_mem else None,
+            "peak_executor_mem_mb": round(row.peak_executor_mem) if row.peak_executor_mem else None,
+            "peak_cpu_pct": round(row.peak_cpu, 1) if row.peak_cpu else None,
+            "peak_executors_active": round(row.peak_executors) if row.peak_executors else None,
+            "peak_execution_memory": round(row.peak_exec_mem) if row.peak_exec_mem else None,
         }
 
     # --- DAG-level aggregations ---

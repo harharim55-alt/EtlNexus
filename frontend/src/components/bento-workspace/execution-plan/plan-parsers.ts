@@ -33,10 +33,8 @@ export function parseScanDetail(detail: string): {
     } else if (line.startsWith("filters:")) {
       const raw = line.replace("filters:", "").trim();
       if (raw) {
-        filters = raw
-          .split(",")
-          .map((f) => f.trim())
-          .filter(Boolean);
+        // Use splitTopLevel to avoid splitting inside IN (...) clauses
+        filters = splitTopLevel(raw);
       }
     }
   }

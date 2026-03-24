@@ -1,6 +1,7 @@
 import { Code } from "lucide-react";
 import { CopyButton } from "@/components/shared/CopyButton";
 import { isApiPipeline } from "@/lib/utils";
+import { stripDummy } from "@/lib/format";
 
 interface ConsumeSnippetProps {
   pipelineName: string;
@@ -9,7 +10,7 @@ interface ConsumeSnippetProps {
 }
 
 export function ConsumeSnippet({ pipelineName, pipelineType, team }: ConsumeSnippetProps) {
-  const importName = pipelineName.toLowerCase().replace(/ /g, "_");
+  const importName = stripDummy(pipelineName).toLowerCase().replace(/ /g, "_");
   const isApi = isApiPipeline(pipelineType);
 
   if (isApi) {

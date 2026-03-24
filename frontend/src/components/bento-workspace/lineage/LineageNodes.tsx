@@ -1,6 +1,7 @@
 import { memo } from "react";
 import { Radio } from "lucide-react";
 import { getStatusStyle } from "@/lib/status-config";
+import { stripDummy } from "@/lib/format";
 import type { TopologyTask, TopologyBouncer } from "@/types/topology";
 
 export function StatusDot({ status }: { status: string }) {
@@ -22,7 +23,7 @@ export const TaskNode = memo(function TaskNode({
   isCurrent?: boolean;
   onClick?: () => void;
 }) {
-  const displayName = task.pipeline_name ?? task.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+  const displayName = stripDummy(task.pipeline_name ?? task.task_id).replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const isClickable = !isCurrent && !!task.pipeline_id;
   const cfg = getStatusStyle(task.status);
 

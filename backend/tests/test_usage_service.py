@@ -1,11 +1,12 @@
-"""Tests for UsageService — downstream consumer discovery with usage enrichment."""
+"""Tests for UsageService — downstream consumer discovery with oasis_prod metrics."""
 
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.integrations.oasis_prod_client import ConsumerMetric, UsageMetrics
 from app.services.usage_service import UsageService
 
 # ---------------------------------------------------------------------------
@@ -32,7 +33,7 @@ def make_pipeline_summary(
     name: str = "Pipeline",
     status: str = "success",
     category: str = "Network Infrastructure",
-    execution_date: datetime | None = None,
+    team: str = "dagger",
 ):
     p = MagicMock()
     p.id = uuid.uuid4()
@@ -40,27 +41,14 @@ def make_pipeline_summary(
     p.name = name
     p.status = status
     p.category = category
+    p.team = team
     p.description = f"Description of {name}"
-    p.execution_date = execution_date
     return p
-
-
-def make_usage_enrichment(*, access_count: int = 5, description: str = "desc"):
-    e = MagicMock()
-    e.access_count = access_count
-    e.description = description
-    e.last_accessed_at = datetime(2024, 1, 15, tzinfo=UTC)
-    return e
 
 
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
-
-
-@pytest.fixture
-def usage_repo():
-    return AsyncMock()
 
 
 @pytest.fixture
@@ -74,8 +62,16 @@ def dag_task_repo():
 
 
 @pytest.fixture
-def service(usage_repo, pipeline_repo, dag_task_repo):
-    return UsageService(usage_repo, pipeline_repo, dag_task_repo)
+def mock_oasis_client():
+    with patch("app.services.usage_service.oasis_prod_client") as mock:
+        mock.get_usage_metrics = AsyncMock(return_value=None)
+        mock.get_batch_usage_metrics = AsyncMock(return_value={})
+        yield mock
+
+
+@pytest.fixture
+def service(pipeline_repo, dag_task_repo, mock_oasis_client):
+    return UsageService(pipeline_repo, dag_task_repo)
 
 
 # ---------------------------------------------------------------------------
@@ -94,7 +90,7 @@ class TestGetPipelineUsage:
         assert result.usages == []
 
     async def test_current_pipeline_is_first_entry_with_is_current_true(
-        self, service, dag_task_repo, pipeline_repo, usage_repo
+        self, service, dag_task_repo, pipeline_repo
     ):
         dag_entry = make_dag_entry(
             task_id="PortScanCollector",
@@ -109,8 +105,6 @@ class TestGetPipelineUsage:
             "RoutingAnalyzer": downstream_pipeline,
         }
 
-        usage_repo.get_enrichment_map.return_value = {}
-
         result = await service.get_pipeline_usage("PortScanCollector")
 
         assert len(result.usages) == 2
@@ -119,7 +113,7 @@ class TestGetPipelineUsage:
         assert first.consumer_name == "Port Scan Collector"
 
     async def test_downstream_consumers_follow_current_pipeline(
-        self, service, dag_task_repo, pipeline_repo, usage_repo
+        self, service, dag_task_repo, pipeline_repo
     ):
         dag_entry = make_dag_entry(
             task_id="PortScanCollector",
@@ -135,7 +129,6 @@ class TestGetPipelineUsage:
             "RoutingAnalyzer": down1,
             "BandwidthTracker": down2,
         }
-        usage_repo.get_enrichment_map.return_value = {}
 
         result = await service.get_pipeline_usage("PortScanCollector")
 
@@ -145,24 +138,62 @@ class TestGetPipelineUsage:
         assert "Routing Analyzer" in consumer_names
         assert "Bandwidth Tracker" in consumer_names
 
-    async def test_enrichment_applied_to_current_pipeline(
-        self, service, dag_task_repo, pipeline_repo, usage_repo
+    async def test_live_metrics_applied_to_current_pipeline(
+        self, service, dag_task_repo, pipeline_repo, mock_oasis_client
     ):
         dag_entry = make_dag_entry(task_id="PortScanCollector")
         dag_task_repo.get_dags_for_task.return_value = [dag_entry]
 
-        current = make_pipeline_summary(task_id="PortScanCollector")
+        current = make_pipeline_summary(task_id="PortScanCollector", team="dagger")
         pipeline_repo.get_task_id_map.return_value = {"PortScanCollector": current}
 
-        enrichment = make_usage_enrichment(access_count=42)
-        usage_repo.get_enrichment_map.return_value = {"PortScanCollector": enrichment}
+        mock_oasis_client.get_usage_metrics.return_value = UsageMetrics(
+            unique_reads=5,
+            total_reads=42,
+            consumers=[
+                ConsumerMetric(principal="user1", total_reads=30, last_accessed_at=datetime(2024, 1, 15, tzinfo=UTC)),
+                ConsumerMetric(principal="user2", total_reads=12, last_accessed_at=datetime(2024, 1, 10, tzinfo=UTC)),
+            ],
+        )
 
         result = await service.get_pipeline_usage("PortScanCollector")
 
-        assert result.usages[0].access_count == 42
+        assert result.usages[0].unique_reads == 5
+        assert result.usages[0].total_reads == 42
+
+    async def test_batch_metrics_applied_to_downstream_consumers(
+        self, service, dag_task_repo, pipeline_repo, mock_oasis_client
+    ):
+        dag_entry = make_dag_entry(
+            task_id="PortScanCollector",
+            downstream_task_ids=["RoutingAnalyzer", "BandwidthTracker"],
+        )
+        dag_task_repo.get_dags_for_task.return_value = [dag_entry]
+
+        current = make_pipeline_summary(task_id="PortScanCollector", team="dagger")
+        down1 = make_pipeline_summary(task_id="RoutingAnalyzer", name="Routing Analyzer", team="dagger")
+        down2 = make_pipeline_summary(task_id="BandwidthTracker", name="Bandwidth Tracker", team="dagger")
+        pipeline_repo.get_task_id_map.return_value = {
+            "PortScanCollector": current,
+            "RoutingAnalyzer": down1,
+            "BandwidthTracker": down2,
+        }
+
+        mock_oasis_client.get_batch_usage_metrics.return_value = {
+            "dagger.RoutingAnalyzer": UsageMetrics(unique_reads=3, total_reads=210, consumers=[]),
+            "dagger.BandwidthTracker": UsageMetrics(unique_reads=2, total_reads=140, consumers=[]),
+        }
+
+        result = await service.get_pipeline_usage("PortScanCollector")
+
+        consumers = {u.consumer_name: u for u in result.usages[1:]}
+        assert consumers["Routing Analyzer"].unique_reads == 3
+        assert consumers["Routing Analyzer"].total_reads == 210
+        assert consumers["Bandwidth Tracker"].unique_reads == 2
+        assert consumers["Bandwidth Tracker"].total_reads == 140
 
     async def test_api_category_usage_type(
-        self, service, dag_task_repo, pipeline_repo, usage_repo
+        self, service, dag_task_repo, pipeline_repo
     ):
         dag_entry = make_dag_entry(
             task_id="NetworkInsightsApi",
@@ -184,36 +215,43 @@ class TestGetPipelineUsage:
             "NetworkInsightsApi": current,
             "DownstreamApi": downstream,
         }
-        usage_repo.get_enrichment_map.return_value = {}
 
         result = await service.get_pipeline_usage("NetworkInsightsApi")
 
         assert result.usages[0].usage_type == "api"
         assert result.usages[1].usage_type == "api"
 
-    async def test_date_range_passed_to_usage_repo(
-        self, service, dag_task_repo, pipeline_repo, usage_repo
+    async def test_network_filter_limits_downstream_consumers(
+        self, service, dag_task_repo, pipeline_repo
     ):
-        dag_entry = make_dag_entry(task_id="PortScanCollector")
-        dag_task_repo.get_dags_for_task.return_value = [dag_entry]
+        dag1 = make_dag_entry(
+            dag_id="dag_alpha",
+            task_id="PortScanCollector",
+            downstream_task_ids=["RoutingAnalyzer"],
+        )
+        dag2 = make_dag_entry(
+            dag_id="dag_beta",
+            task_id="PortScanCollector",
+            downstream_task_ids=["BandwidthTracker"],
+        )
+        dag_task_repo.get_dags_for_task.return_value = [dag1, dag2]
 
         current = make_pipeline_summary(task_id="PortScanCollector")
-        pipeline_repo.get_task_id_map.return_value = {"PortScanCollector": current}
-        usage_repo.get_enrichment_map.return_value = {}
+        down1 = make_pipeline_summary(task_id="RoutingAnalyzer", name="Routing Analyzer")
+        down2 = make_pipeline_summary(task_id="BandwidthTracker", name="Bandwidth Tracker")
+        pipeline_repo.get_task_id_map.return_value = {
+            "PortScanCollector": current,
+            "RoutingAnalyzer": down1,
+            "BandwidthTracker": down2,
+        }
 
-        date_from = datetime(2024, 1, 1, tzinfo=UTC)
-        date_to = datetime(2024, 1, 31, tzinfo=UTC)
+        result = await service.get_pipeline_usage("PortScanCollector", network="dag_alpha")
 
-        await service.get_pipeline_usage(
-            "PortScanCollector", date_from=date_from, date_to=date_to
-        )
-
-        usage_repo.get_enrichment_map.assert_awaited_once_with(
-            "PortScanCollector", date_from=date_from, date_to=date_to,
-        )
+        assert len(result.usages) == 2
+        assert result.usages[1].consumer_name == "Routing Analyzer"
 
     async def test_task_not_in_pipeline_map_uses_formatted_name(
-        self, service, dag_task_repo, pipeline_repo, usage_repo
+        self, service, dag_task_repo, pipeline_repo
     ):
         dag_entry = make_dag_entry(
             task_id="PortScanCollector",
@@ -222,21 +260,17 @@ class TestGetPipelineUsage:
         dag_task_repo.get_dags_for_task.return_value = [dag_entry]
 
         current = make_pipeline_summary(task_id="PortScanCollector")
-        # UnknownEtlTask is not in the pipeline map
         pipeline_repo.get_task_id_map.return_value = {"PortScanCollector": current}
-        usage_repo.get_enrichment_map.return_value = {}
 
         result = await service.get_pipeline_usage("PortScanCollector")
 
         assert len(result.usages) == 2
-        # The unknown task should still appear with a formatted name
         consumer = result.usages[1]
         assert "Unknown Etl Task" in consumer.consumer_name
 
     async def test_deduplicates_downstream_across_multiple_dags(
-        self, service, dag_task_repo, pipeline_repo, usage_repo
+        self, service, dag_task_repo, pipeline_repo
     ):
-        # Same downstream task_id appears in two DAG entries
         dag1 = make_dag_entry(
             dag_id="dag1",
             task_id="PortScanCollector",
@@ -255,23 +289,19 @@ class TestGetPipelineUsage:
             "PortScanCollector": current,
             "RoutingAnalyzer": downstream,
         }
-        usage_repo.get_enrichment_map.return_value = {}
 
         result = await service.get_pipeline_usage("PortScanCollector")
 
-        # Should be deduplicated: 1 current + 1 downstream
         assert len(result.usages) == 2
 
     async def test_current_pipeline_not_in_map_uses_task_id_as_fallback(
-        self, service, dag_task_repo, pipeline_repo, usage_repo
+        self, service, dag_task_repo, pipeline_repo
     ):
         dag_entry = make_dag_entry(task_id="OrphanedTask")
         dag_task_repo.get_dags_for_task.return_value = [dag_entry]
         pipeline_repo.get_task_id_map.return_value = {}
-        usage_repo.get_enrichment_map.return_value = {}
 
         result = await service.get_pipeline_usage("OrphanedTask")
 
-        # Even without pipeline data, current entry should be included
         assert len(result.usages) >= 1
         assert result.usages[0].is_current is True

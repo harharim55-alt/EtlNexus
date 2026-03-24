@@ -11,7 +11,6 @@ from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
 from app.repositories.revision_repo import RevisionRepository
 from app.repositories.team_repo import TeamRepository
-from app.repositories.usage_repo import UsageRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.ai_service import AIService
@@ -44,10 +43,6 @@ def get_field_frequency_repo(session: AsyncSession = Depends(get_db_session)) ->
     return FieldFrequencyRepository(session)
 
 
-def get_usage_repo(session: AsyncSession = Depends(get_db_session)) -> UsageRepository:
-    return UsageRepository(session)
-
-
 def get_revision_repo(session: AsyncSession = Depends(get_db_session)) -> RevisionRepository:
     return RevisionRepository(session)
 
@@ -71,11 +66,10 @@ def get_dag_task_repo(session: AsyncSession = Depends(get_db_session)) -> DagTas
 
 
 def get_usage_service(
-    usage_repo: UsageRepository = Depends(get_usage_repo),
     pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
     dag_task_repo: DagTaskRepository = Depends(get_dag_task_repo),
 ) -> UsageService:
-    return UsageService(usage_repo, pipeline_repo, dag_task_repo)
+    return UsageService(pipeline_repo, dag_task_repo)
 
 
 def get_consumer_service(

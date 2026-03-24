@@ -37,7 +37,7 @@ class PipelineRepository:
         """Return a lightweight {task_id: summary} map without eager-loading relationships.
 
         Each value is a SimpleNamespace with .id, .name, .task_id, .status,
-        .execution_date, .category, .description — sufficient for topology,
+        .execution_date, .category, .description, .team — sufficient for topology,
         consumer, usage, bouncer, and AI catalog context lookups.
 
         Results are cached via task_id_map_cache (short TTL, cleared on sync).
@@ -56,6 +56,7 @@ class PipelineRepository:
                 Pipeline.task_id,
                 Pipeline.category,
                 Pipeline.description,
+                Pipeline.team,
                 AirflowRunStatus.status,
                 AirflowRunStatus.execution_date,
             )
@@ -72,6 +73,7 @@ class PipelineRepository:
                 execution_date=row.execution_date,
                 category=row.category,
                 description=row.description,
+                team=row.team,
             )
             for row in result.all()
         }

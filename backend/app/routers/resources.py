@@ -9,7 +9,7 @@ from app.dependencies import get_resource_service
 from app.models.user import User
 from app.schemas.date_range import DateRangeParams
 from app.schemas.execution_plan import ExecutionPlanResponse, ExecutionPlanRunsResponse
-from app.schemas.resources import ResourceMetricsResponse
+from app.schemas.resources import ResourceHistoryResponse, ResourceMetricsResponse
 from app.services.resource_service import ResourceService
 
 router = APIRouter(prefix="/api/pipelines", tags=["resources"])
@@ -23,6 +23,21 @@ async def get_pipeline_resources(
     service: ResourceService = Depends(get_resource_service),
 ):
     result = await service.get_resource_metrics(
+        pipeline_id, date_from=dates.date_from, date_to=dates.date_to,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return result
+
+
+@router.get("/{pipeline_id}/resources/history", response_model=ResourceHistoryResponse)
+async def get_resource_history(
+    pipeline_id: uuid.UUID,
+    dates: DateRangeParams = Depends(),
+    user: User = Depends(get_current_user),
+    service: ResourceService = Depends(get_resource_service),
+):
+    result = await service.get_resource_history(
         pipeline_id, date_from=dates.date_from, date_to=dates.date_to,
     )
     if result is None:

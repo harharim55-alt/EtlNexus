@@ -7,6 +7,7 @@ import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { GRANT_LEVEL_STYLES } from "@/lib/admin-styles";
+import { stripDummy } from "@/lib/format";
 
 type GrantType = "pipeline" | "team";
 type GranteeType = "team" | "user";
@@ -205,7 +206,7 @@ export function GrantsPanel() {
                 <option value="">Select pipeline...</option>
                 {(pipelinesData?.items ?? []).map((p) => (
                   <option key={p.id} value={p.id}>
-                    {p.name}
+                    {stripDummy(p.name)}
                   </option>
                 ))}
               </select>

@@ -56,8 +56,8 @@ with DAG(
     default_args=default_args,
     description="Network reconnaissance — device fingerprinting, link anomaly detection, bandwidth forensics",
     schedule="0 1 * * *",
-    start_date=datetime(2026, 1, 1),
-    catchup=False,
+    start_date=datetime(2026, 3, 8),
+    catchup=True,
 ) as dag:
 
     # --- Bouncers group (data ingestion) ---

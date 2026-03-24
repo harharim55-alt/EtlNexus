@@ -12,9 +12,15 @@ if ! ls "$IMG_DIR"/*.tar &>/dev/null; then
   exit 1
 fi
 
-echo "=== Loading Docker images ==="
-for tarball in "$IMG_DIR"/*.tar; do
-  echo "  Loading $(basename "$tarball")..."
+TARBALLS=("$IMG_DIR"/*.tar)
+TOTAL=${#TARBALLS[@]}
+
+echo "=== Loading $TOTAL Docker images ==="
+COUNT=0
+for tarball in "${TARBALLS[@]}"; do
+  COUNT=$((COUNT + 1))
+  SIZE=$(du -h "$tarball" | cut -f1)
+  echo "  [$COUNT/$TOTAL] Loading $(basename "$tarball") ($SIZE)..."
   docker load -i "$tarball"
 done
 

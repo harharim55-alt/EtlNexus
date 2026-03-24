@@ -4,6 +4,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { getStatusStyle } from "@/lib/status-config";
+import { stripDummy } from "@/lib/format";
 import type { DagTaskSummary } from "@/types/dag-summary";
 
 interface TaskStatusDotsProps {
@@ -29,7 +30,7 @@ export function TaskStatusDots({ tasks }: TaskStatusDotsProps) {
               <span className="text-slate-400">{task.task_id}</span>
               {task.pipeline_name && (
                 <span className="text-indigo-400 ml-1.5">
-                  {task.pipeline_name}
+                  {stripDummy(task.pipeline_name)}
                 </span>
               )}
               <span className={`ml-1.5 ${cfg.text}`}>

@@ -2,7 +2,7 @@ import { useState, memo } from "react";
 import { Clock, Layers, Timer, Workflow, CheckCircle, Pause, CalendarClock, AlertTriangle, ChevronDown } from "lucide-react";
 import { TaskStatusDots } from "./TaskStatusDots";
 import { getStatusStyle, STATUS_SEVERITY_ORDER } from "@/lib/status-config";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, stripDummy } from "@/lib/format";
 import type { DagSummary, DagTaskSummary } from "@/types/dag-summary";
 
 function formatDagName(dagId: string): string {
@@ -150,7 +150,7 @@ export const DagCard = memo(function DagCard({ dag }: DagCardProps) {
                   className="flex items-center gap-3 py-1 px-2 rounded-md hover:bg-white/[0.02]"
                 >
                   <span className="text-[11px] font-mono text-slate-300 truncate flex-1 min-w-0">
-                    {task.pipeline_name || task.task_id}
+                    {stripDummy(task.pipeline_name || task.task_id)}
                   </span>
                   <span
                     className={`text-[8px] font-mono uppercase tracking-widest px-1.5 py-px rounded border ${statusBadgeColor(task.status)}`}

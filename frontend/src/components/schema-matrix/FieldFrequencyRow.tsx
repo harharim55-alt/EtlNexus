@@ -1,4 +1,5 @@
 import type { FieldFrequencyRow as FieldFrequencyRowType } from "@/types/schema-matrix";
+import { stripDummy } from "@/lib/format";
 
 interface FieldFrequencyRowProps {
   row: FieldFrequencyRowType;
@@ -34,7 +35,7 @@ export function FieldFrequencyRow({ row }: FieldFrequencyRowProps) {
             key={p.pipeline_id}
             className="text-[10px] font-mono px-2 py-1 rounded bg-white/5 text-slate-400 border border-white/5 hover:text-slate-200 hover:border-white/10 transition-colors"
           >
-            {p.pipeline_name}
+            {stripDummy(p.pipeline_name)}
           </span>
         ))}
       </div>

@@ -34,6 +34,10 @@ ENV JAVA_HOME=/usr/lib/jvm/default-java
 # Install uv (needed for running commands)
 COPY --from=ghcr.io/astral-sh/uv:0.6 /uv /usr/local/bin/uv
 
+# Skip auto-sync so uv run doesn't try to download packages (air-gapped support)
+ENV UV_NO_SYNC=1
+ENV PYTHONPATH=/app
+
 # Create non-root user
 RUN useradd -m -u 1000 appuser
 

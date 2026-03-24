@@ -120,12 +120,14 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
     );
   }
 
-  // Expand
+  // Expand — detail format: "N groups | col1, col2, col3 +N"
   if (lower === "expand") {
-    const items = detail
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const sections = detail.split("|").map((s) => s.trim());
+    const groupsPart = sections.find((s) => s.includes("groups"));
+    const colsPart = sections.find((s) => !s.includes("groups"));
+    const columns = colsPart
+      ? colsPart.split(",").map((s) => s.trim()).filter(Boolean)
+      : [];
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2.5">
@@ -133,17 +135,27 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
           <span className="text-sm font-semibold text-purple-300 font-mono">
             Expand
           </span>
+          {groupsPart && (
+            <span className="text-[10px] font-mono text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded-md px-2 py-0.5">
+              {groupsPart}
+            </span>
+          )}
         </div>
-        {items.length > 0 && (
-          <div className="flex flex-wrap gap-1.5">
-            {items.map((item, i) => (
-              <span
-                key={i}
-                className="text-[11px] font-mono text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded-md px-2 py-0.5"
-              >
-                {item}
-              </span>
-            ))}
+        {columns.length > 0 && (
+          <div>
+            <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+              Output Columns
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {columns.map((col, i) => (
+                <span
+                  key={i}
+                  className="text-[11px] font-mono text-purple-300 bg-purple-500/10 border border-purple-500/20 rounded-md px-2 py-0.5"
+                >
+                  {col}
+                </span>
+              ))}
+            </div>
           </div>
         )}
         <MetricsBar metrics={node.metrics} />

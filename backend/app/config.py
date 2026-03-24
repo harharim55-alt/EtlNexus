@@ -51,6 +51,13 @@ class Settings(BaseSettings):
     default_page_limit: int = 200
     default_page_limit_small: int = 20
 
+    # Oasis Prod (external usage metrics database)
+    oasis_prod_database_url: str = ""  # Empty = disabled, falls back to seed data
+    oasis_prod_username: str = ""
+    oasis_prod_password: str = ""
+    oasis_prod_pool_size: int = 5
+    oasis_prod_max_overflow: int = 3
+
     # SSO / OIDC
     sso_enabled: bool = False
     sso_issuer_url: str = "http://keycloak:8090/realms/etlnexus"

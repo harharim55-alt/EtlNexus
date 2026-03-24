@@ -1,6 +1,7 @@
 {
   "realm": "etlnexus",
   "enabled": true,
+  "loginTheme": "etlnexus",
   "sslRequired": "none",
   "registrationAllowed": false,
   "loginWithEmailAllowed": true,

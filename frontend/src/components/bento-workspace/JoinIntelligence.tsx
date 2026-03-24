@@ -3,6 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useJoinSuggestions } from "@/hooks/use-join-suggestions";
 import { fetchJoinInsight } from "@/api/ai";
 import { Skeleton } from "@/components/ui/skeleton";
+import { stripDummy } from "@/lib/format";
 
 interface JoinIntelligenceProps {
   pipelineId: string;
@@ -39,7 +40,7 @@ export function JoinIntelligence({ pipelineId }: JoinIntelligenceProps) {
                 className="p-2.5 rounded-lg bg-white/5 border border-white/5 flex flex-col gap-1.5"
               >
                 <div className="font-medium text-[13px] text-slate-200">
-                  {match.pipeline_name}
+                  {stripDummy(match.pipeline_name)}
                 </div>
                 <div className="flex flex-wrap gap-1.5 items-center">
                   <span className="text-[10px] text-slate-500 font-mono">

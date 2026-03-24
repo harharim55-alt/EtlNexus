@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.auth import get_current_user
 from app.dependencies import get_usage_service
@@ -14,9 +14,13 @@ router = APIRouter(prefix="/api/usage", tags=["usage"])
 async def get_pipeline_usage(
     etl_name: str,
     dates: DateRangeParams = Depends(),
+    network: str | None = Query(None, description="Filter downstream consumers by DAG network"),
     user: User = Depends(get_current_user),
     service: UsageService = Depends(get_usage_service),
 ):
     return await service.get_pipeline_usage(
-        etl_name, date_from=dates.date_from, date_to=dates.date_to,
+        etl_name,
+        date_from=dates.date_from,
+        date_to=dates.date_to,
+        network=network,
     )

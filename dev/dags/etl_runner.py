@@ -248,15 +248,55 @@ def _simulate_resource_usage(
     cpu_base = min(40 + cores * 5, 70)
     cpu_pct = round(rng.uniform(cpu_base, min(cpu_base + 25, 98)), 1)
 
+    # sparkMeasure-style extended metrics (scaled by resource weight)
+    io_scale = max(mem_weight * active_executors, 1)
+    jvm_gc_time_ms = rng.randint(int(200 * io_scale / 4), int(2000 * io_scale / 4))
+    shuffle_read_bytes = rng.randint(
+        int(10_000_000 * io_scale), int(200_000_000 * io_scale)
+    )
+    shuffle_write_bytes = rng.randint(
+        int(5_000_000 * io_scale), int(150_000_000 * io_scale)
+    )
+    input_bytes = rng.randint(
+        int(20_000_000 * io_scale), int(500_000_000 * io_scale)
+    )
+    output_bytes = rng.randint(
+        int(10_000_000 * io_scale), int(300_000_000 * io_scale)
+    )
+    memory_bytes_spilled = (
+        rng.randint(10_000_000, int(50_000_000 * io_scale))
+        if rng.random() < 0.10
+        else 0
+    )
+    disk_bytes_spilled = (
+        rng.randint(5_000_000, int(20_000_000 * io_scale))
+        if rng.random() < 0.05
+        else 0
+    )
+    executor_mem_peak = _mem_used_mb(
+        config.get("spark_executor_memory"), executor_util
+    )
+    peak_execution_memory = (
+        int(executor_mem_peak * 1024 * 1024 * rng.uniform(0.8, 1.1))
+        if executor_mem_peak
+        else None
+    )
+
     return {
         "driver_memory_used_mb": _mem_used_mb(
             config.get("spark_driver_memory"), driver_util
         ),
-        "executor_memory_peak_mb": _mem_used_mb(
-            config.get("spark_executor_memory"), executor_util
-        ),
+        "executor_memory_peak_mb": executor_mem_peak,
         "cpu_utilization_pct": cpu_pct,
         "executors_active": active_executors,
+        "jvm_gc_time_ms": jvm_gc_time_ms,
+        "shuffle_read_bytes": shuffle_read_bytes,
+        "shuffle_write_bytes": shuffle_write_bytes,
+        "input_bytes": input_bytes,
+        "output_bytes": output_bytes,
+        "memory_bytes_spilled": memory_bytes_spilled,
+        "disk_bytes_spilled": disk_bytes_spilled,
+        "peak_execution_memory": peak_execution_memory,
     }
 
 
@@ -325,88 +365,284 @@ def _make_etl_callable(etl_name: str, module_name: str, ti=None):
         etl.spark = spark  # Use the SparkSession from run_etl
         etl.run()  # extract -> transform -> load
 
-        # Extract execution plan tree with real metrics.
-        # Strategy: tree structure from the result DataFrame's plan,
-        # metrics from the status store's planGraph (matched by desc).
-        if hasattr(etl, "result") and etl.result is not None:
-            try:
-                metrics_map = _get_graph_metrics(spark)
-                plan = etl.result._jdf.queryExecution().executedPlan()
-                plan_tree = _extract_plan_tree(plan, metrics_map)
-                if plan_tree:
-                    print(f"ETL_EXECUTION_PLAN: {json.dumps(plan_tree)}")
-            except Exception:
-                logger.warning("Could not extract execution plan for %s", etl_name, exc_info=True)
+        # Flush the async listener bus so the AppStatusStore has the
+        # complete plan graph and accumulator values before we read them.
+        # Without this, metrics events may still be queued and the store
+        # returns empty/incomplete data (classic LiveListenerBus race).
+        try:
+            spark.sparkContext._jsc.sc().listenerBus().waitUntilEmpty(10000)
+        except Exception:
+            pass
+
+        # Build execution plan tree from the status store's plan graph.
+        # Uses the same approach as the Spark UI: planGraph(execId) for
+        # structure + executionMetrics(execId) for accumulator values.
+        # Falls back to building from the initial plan (via SparkPlanInfo)
+        # when AQE collapses the plan into LocalTableScan.
+        try:
+            plan_tree = _build_tree_from_graph(spark)
+            graph_nodes = _count_nodes(plan_tree) if plan_tree else 0
+            logger.info("GRAPH_DEBUG: graph tree has %d nodes for %s", graph_nodes, etl_name)
+            # If the graph produced a trivial tree (AQE collapsed to
+            # LocalTableScan), try building from the initial plan instead
+            if plan_tree and graph_nodes <= 3 and hasattr(etl, "result") and etl.result is not None:
+                initial_tree = _build_tree_from_initial_plan(spark, etl.result)
+                if initial_tree and _count_nodes(initial_tree) > _count_nodes(plan_tree):
+                    plan_tree = initial_tree
+            if plan_tree:
+                print(f"ETL_EXECUTION_PLAN: {json.dumps(plan_tree)}")
+        except Exception:
+            logger.warning("Could not extract execution plan for %s", etl_name, exc_info=True)
 
     return callable
 
 
-def _get_graph_metrics(spark) -> dict:
-    """Get real metric values from the SQL status store's planGraph.
+def _count_nodes(tree: dict) -> int:
+    """Count total nodes in a plan tree dict."""
+    return 1 + sum(_count_nodes(c) for c in tree.get("children", []))
 
-    Returns dict mapping cleaned_desc (str) → {display_key: formatted_value}.
-    The key is the first line of the node description with column IDs stripped,
-    which allows matching against the result DataFrame's plan nodes regardless
-    of different accumulator/column ID assignments.
 
-    Scans ALL executions in the status store (not just the last one) so that
-    metrics from complex ETLs with multiple read/transform/write executions
-    are captured correctly.
+def _build_tree_from_initial_plan(spark, result_df) -> dict | None:
+    """Build plan tree from the initial (pre-AQE) plan via SparkPlanInfo.
+
+    When AQE collapses a complex plan into LocalTableScan, the status store's
+    graph only has 1-3 nodes.  This fallback builds a full tree from the
+    initial plan using Spark's own SparkPlanGraph.apply(SparkPlanInfo).
+    Metrics won't be available (different accumulator ID space), but the
+    tree structure is complete.
     """
     try:
-        store = spark._jsparkSession.sharedState().statusStore()
-        exec_list = store.executionsList()
-        if exec_list.isEmpty():
-            return {}
+        plan = result_df._jdf.queryExecution().executedPlan()
+        # Get the initial plan from AdaptiveSparkPlan
+        if str(plan.nodeName()) == "AdaptiveSparkPlan":
+            initial = plan.initialPlan()
+        else:
+            initial = plan
 
-        result = {}
-        size = exec_list.size()
-        for idx in range(size):
-            exec_data = exec_list.apply(idx)
-            exec_id = exec_data.executionId()
+        # Build graph via Spark's own APIs
+        SparkPlanInfo = spark._jvm.org.apache.spark.sql.execution.SparkPlanInfo
+        SparkPlanGraph = spark._jvm.org.apache.spark.sql.execution.ui.SparkPlanGraph
+        info = SparkPlanInfo.fromSparkPlan(initial)
+        graph = SparkPlanGraph.apply(info)
 
-            # Get all accumulator values: Scala Map[Long, String]
-            metric_values = store.executionMetrics(exec_id)
-            acc_map = {}
-            it = metric_values.iterator()
-            while it.hasNext():
-                pair = it.next()
-                acc_map[int(pair._1())] = str(pair._2())
+        all_nodes = graph.allNodes()
+        edges = graph.edges()
 
-            if not acc_map:
-                continue
+        if all_nodes.size() == 0:
+            return None
 
-            # Get plan graph nodes — each has a desc and metric accumulator IDs
-            graph = store.planGraph(exec_id)
-            nodes = graph.allNodes()
-            for i in range(nodes.size()):
-                n = nodes.apply(i)
-                desc = str(n.desc())
-                key = _strip_col_ids(desc.split("\n")[0].strip())[:120]
-                if key in result:
-                    continue  # keep first match
-                metrics = {}
-                metric_seq = n.metrics()
-                for j in range(metric_seq.size()):
-                    m = metric_seq.apply(j)
-                    name = str(m.name())
-                    if name in _METRIC_SKIP:
-                        continue
-                    acc_id = int(m.accumulatorId())
-                    if acc_id in acc_map:
-                        val = _clean_metric_value(acc_map[acc_id])
-                        if not val or _is_zero_metric(val):
-                            continue
-                        display_key = _METRIC_DISPLAY.get(name, name)
-                        metrics[display_key] = _format_metric_value(name, val)
-                if metrics:
-                    result[key] = metrics
+        # Build node lookup and children adjacency
+        node_map = {}
+        for i in range(all_nodes.size()):
+            n = all_nodes.apply(i)
+            node_map[int(n.id())] = n
 
-        return result
+        children_map: dict[int, list[int]] = {}
+        child_ids = set()
+        for i in range(edges.size()):
+            e = edges.apply(i)
+            from_id = int(e.fromId())  # child
+            to_id = int(e.toId())      # parent
+            children_map.setdefault(to_id, []).append(from_id)
+            child_ids.add(from_id)
 
+        root_ids = [nid for nid in node_map if nid not in child_ids]
+        if not root_ids:
+            return None
+
+        counter = [0]
+
+        def build_node(nid: int) -> dict | None:
+            if nid not in node_map:
+                return None
+            n = node_map[nid]
+            desc = str(n.desc())
+            first_line = desc.split("\n")[0].strip()
+            node_name = first_line.split("(")[0].split("[")[0].strip().split(" ")[0]
+
+            if node_name in _SKIP_NODES:
+                child_results = []
+                for cid in children_map.get(nid, []):
+                    cr = build_node(cid)
+                    if cr:
+                        child_results.append(cr)
+                if len(child_results) == 1:
+                    return child_results[0]
+                if child_results:
+                    counter[0] += 1
+                    return {"id": counter[0], "name": node_name, "type": "transform",
+                            "detail": "", "full_detail": "", "metrics": {}, "children": child_results}
+                return None
+
+            clean_desc = _strip_col_ids(first_line)
+            node_type = _classify_node(node_name)
+            detail = _extract_detail(node_name, clean_desc)
+            full_detail = _extract_full_detail(node_name, clean_desc)
+
+            # No metrics available (initial plan has different accumulator IDs)
+            child_results = []
+            for cid in children_map.get(nid, []):
+                cr = build_node(cid)
+                if cr:
+                    child_results.append(cr)
+
+            counter[0] += 1
+            return {
+                "id": counter[0],
+                "name": _clean_node_name(node_name),
+                "type": node_type,
+                "detail": detail,
+                "full_detail": full_detail,
+                "metrics": {},
+                "children": child_results,
+            }
+
+        for rid in root_ids:
+            result = build_node(rid)
+            if result:
+                return result
+        return None
     except Exception:
-        logger.warning("Could not get graph metrics from status store", exc_info=True)
-        return {}
+        return None
+
+
+def _build_tree_from_graph(spark) -> dict | None:
+    """Build execution plan tree from the status store's plan graph.
+
+    Uses the same approach as the Spark UI: ``planGraph(execId)`` for the
+    graph structure (nodes + edges) and ``executionMetrics(execId)`` for
+    accumulator values.  Each graph node's ``metrics`` field contains
+    ``SQLPlanMetric`` objects with ``accumulatorId()`` that map directly
+    to the accumulator values — no description matching needed.
+    """
+    store = spark._jsparkSession.sharedState().statusStore()
+    exec_list = store.executionsList()
+    if exec_list.isEmpty():
+        return None
+
+    # Use the last execution (the write operation)
+    last_exec = exec_list.last()
+    exec_id = last_exec.executionId()
+
+    # Get accumulator values: Map[Long, String]
+    metric_values = store.executionMetrics(exec_id)
+    acc_map: dict[int, str] = {}
+    it = metric_values.iterator()
+    while it.hasNext():
+        pair = it.next()
+        acc_map[int(pair._1())] = str(pair._2())
+
+    # Get plan graph
+    graph = store.planGraph(exec_id)
+    all_nodes = graph.allNodes()
+    edges = graph.edges()
+
+    if all_nodes.size() == 0:
+        return None
+
+    # Build node lookup and children adjacency from edges
+    node_map = {}  # id -> graph node
+    for i in range(all_nodes.size()):
+        n = all_nodes.apply(i)
+        node_map[int(n.id())] = n
+
+    # Edges go child → parent (data flow direction in Spark's graph).
+    # We need parent → [children] for tree building.
+    children_map: dict[int, list[int]] = {}  # parent_id -> [child_ids]
+    child_ids = set()
+    for i in range(edges.size()):
+        e = edges.apply(i)
+        from_id = int(e.fromId())  # child
+        to_id = int(e.toId())      # parent
+        children_map.setdefault(to_id, []).append(from_id)
+        child_ids.add(from_id)
+
+    # Root = node that is NOT a child of any other node
+    root_ids = [nid for nid in node_map if nid not in child_ids]
+    if not root_ids:
+        return None
+
+    counter = [0]
+
+    def build_node(nid: int) -> dict | None:
+        if nid not in node_map:
+            return None
+        n = node_map[nid]
+        desc = str(n.desc())
+        first_line = desc.split("\n")[0].strip()
+
+        # Derive node name from the description
+        node_name = first_line.split("(")[0].split("[")[0].strip().split(" ")[0]
+
+        # Skip wrapper nodes — recurse into children
+        if node_name in _SKIP_NODES:
+            child_results = []
+            for cid in children_map.get(nid, []):
+                cr = build_node(cid)
+                if cr:
+                    child_results.append(cr)
+            if len(child_results) == 1:
+                return child_results[0]
+            if child_results:
+                counter[0] += 1
+                return {
+                    "id": counter[0],
+                    "name": node_name,
+                    "type": "transform",
+                    "detail": "",
+                    "full_detail": "",
+                    "metrics": {},
+                    "children": child_results,
+                }
+            return None
+
+        # Clean description for detail extraction
+        clean_desc = _strip_col_ids(first_line)
+        node_type = _classify_node(node_name)
+        detail = _extract_detail(node_name, clean_desc)
+        full_detail = _extract_full_detail(node_name, clean_desc)
+
+        # Extract metrics by looking up each accumulator ID in the values map
+        metrics = {}
+        metric_seq = n.metrics()
+        for j in range(metric_seq.size()):
+            m = metric_seq.apply(j)
+            name = str(m.name())
+            if name in _METRIC_SKIP:
+                continue
+            mid = int(m.accumulatorId())
+            if mid in acc_map:
+                val = _clean_metric_value(acc_map[mid])
+                if not val or _is_zero_metric(val):
+                    continue
+                display_key = _METRIC_DISPLAY.get(name, name)
+                metrics[display_key] = _format_metric_value(name, val)
+
+        # Recurse children
+        child_results = []
+        for cid in children_map.get(nid, []):
+            cr = build_node(cid)
+            if cr:
+                child_results.append(cr)
+
+        counter[0] += 1
+        return {
+            "id": counter[0],
+            "name": _clean_node_name(node_name),
+            "type": node_type,
+            "detail": detail,
+            "full_detail": full_detail,
+            "metrics": metrics,
+            "children": child_results,
+        }
+
+    # Build tree from roots, skipping top-level write wrappers
+    for rid in root_ids:
+        result = build_node(rid)
+        if result:
+            return result
+
+    return None
 
 
 # Node types to skip (wrappers that add no semantic value)
@@ -419,103 +655,9 @@ _SKIP_NODES = {
     "ShuffleQueryStage",
     "CommandResult",
     "Execute",
+    "OverwritePartitionsDynamic",
+    "WriteFiles",
 }
-
-_node_counter = 0
-
-
-def _extract_plan_tree(plan_node, metrics_map: dict | None = None) -> dict | None:
-    """Extract a Spark physical plan tree via py4j with optional metrics."""
-    global _node_counter
-    _node_counter = 0
-    return _traverse_plan_node(plan_node, metrics_map or {})
-
-
-def _traverse_plan_node(node, metrics_map: dict) -> dict | None:
-    """Traverse a plan node, matching metrics by stripped description."""
-    global _node_counter
-
-    node_name = node.nodeName()
-
-    # AdaptiveSparkPlan wraps the final plan after AQE — use executedPlan
-    if node_name == "AdaptiveSparkPlan":
-        try:
-            return _traverse_plan_node(node.executedPlan(), metrics_map)
-        except Exception:
-            pass
-
-    # Skip wrapper nodes — recurse into their children
-    if node_name in _SKIP_NODES:
-        children = node.children()
-        child_count = children.length()
-        if child_count == 1:
-            return _traverse_plan_node(children.apply(0), metrics_map)
-        result_children = []
-        for i in range(child_count):
-            child_result = _traverse_plan_node(children.apply(i), metrics_map)
-            if child_result:
-                result_children.append(child_result)
-        if len(result_children) == 1:
-            return result_children[0]
-        if result_children:
-            _node_counter += 1
-            return {
-                "id": _node_counter,
-                "name": node_name,
-                "type": "transform",
-                "detail": "",
-                "full_detail": "",
-                "metrics": {},
-                "children": result_children,
-            }
-        return None
-
-    node_type = _classify_node(node_name)
-
-    # Extract detail via toString() (most reliable py4j method on SparkPlan)
-    raw_detail = node_name
-    try:
-        raw_detail = str(node)
-        first_line = raw_detail.split("\n")[0].strip()
-        if first_line:
-            raw_detail = first_line
-    except Exception:
-        pass
-    detail = _extract_detail(node_name, raw_detail)
-    full_detail = _extract_full_detail(node_name, raw_detail)
-
-    # Match metrics by stripped description (column IDs removed so both
-    # the result plan and the write execution's plan graph match)
-    metrics = {}
-    try:
-        key = _strip_col_ids(raw_detail)[:120]
-        metrics = metrics_map.get(key, {})
-    except Exception:
-        pass
-
-    # Recurse into children
-    result_children = []
-    try:
-        children = node.children()
-        child_count = children.length()
-        for i in range(child_count):
-            child_result = _traverse_plan_node(children.apply(i), metrics_map)
-            if child_result:
-                result_children.append(child_result)
-    except Exception:
-        pass
-
-    _node_counter += 1
-    return {
-        "id": _node_counter,
-        "name": _clean_node_name(node_name),
-        "type": node_type,
-        "detail": detail,
-        "full_detail": full_detail,
-        "metrics": metrics,
-        "children": result_children,
-    }
-
 
 def _classify_node(name: str) -> str:
     """Classify a Spark plan node into read/write/shuffle/transform."""
@@ -883,10 +1025,22 @@ def _parse_simple_node_detail(node_name: str, s: str) -> str:
         if m:
             return f"{m.group(1)} partitions"
     if lower == "expand":
-        m = re.search(r"\[([^\]]+)\]", s)
-        if m:
-            items = [x.strip() for x in m.group(1).split(",")]
-            return ", ".join(items[:5]) + ("..." if len(items) > 5 else "")
+        # Expand has nested brackets: [[col1, null, 0, ...], [col2, ...], ...]
+        # Count expansion groups and extract the output column names
+        groups = re.findall(r"\[([^\[\]]+)\]", s)
+        if groups:
+            # The LAST bracket group is usually the output columns
+            output_cols = [c.strip() for c in groups[-1].split(",") if c.strip() and c.strip() != "null"]
+            n_groups = len(groups) - 1  # exclude the output column list
+            parts = []
+            if n_groups > 0:
+                parts.append(f"{n_groups} groups")
+            if output_cols:
+                col_str = ", ".join(output_cols[:4])
+                if len(output_cols) > 4:
+                    col_str += f" +{len(output_cols) - 4}"
+                parts.append(col_str)
+            return " | ".join(parts) if parts else ""
     if lower == "generate":
         m = re.search(r"Generator\s+(\w+)", s) or re.search(r"Generate\s+(\w+)", s)
         if m:

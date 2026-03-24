@@ -4,6 +4,7 @@ import { useUpstreamTopology } from "@/hooks/use-upstream-topology";
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { getStatusStyle, STATUS_CONFIG } from "@/lib/status-config";
 import { useEdgeDrawing } from "./hooks/useEdgeDrawing";
+import { stripDummy } from "@/lib/format";
 import type { UpstreamNode, UpstreamEdge } from "@/types/topology";
 
 /* ── Props ─────────────────────────────────────────────────────────── */
@@ -404,7 +405,7 @@ function NodeCard({
   isDimmed: boolean;
   onClick: () => void;
 }) {
-  const displayName = node.pipeline_name ?? node.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+  const displayName = stripDummy(node.pipeline_name ?? node.task_id).replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const isClickable = !node.is_current && !!node.pipeline_id;
   const cfg = getStatusStyle(node.status);
 
@@ -455,7 +456,7 @@ function BouncerNodeCard({
   isHighlighted: boolean;
   isDimmed: boolean;
 }) {
-  const displayName = node.pipeline_name ?? node.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+  const displayName = stripDummy(node.pipeline_name ?? node.task_id).replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const cfg = getStatusStyle(node.status);
 
   return (

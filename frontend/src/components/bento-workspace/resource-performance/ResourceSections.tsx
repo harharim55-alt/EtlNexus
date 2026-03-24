@@ -117,7 +117,7 @@ export function ResourceSection({
       label: "Executor Memory",
       allocated: config.spark_executor_memory,
       actual: actualUsage.avg_executor_memory_peak_mb
-        ? `~${(actualUsage.avg_executor_memory_peak_mb / 1024).toFixed(1)}g`
+        ? `~${(actualUsage.avg_executor_memory_peak_mb / 1024).toFixed(1)}g peak avg`
         : null,
     },
     {
@@ -137,6 +137,8 @@ export function ResourceSection({
         : null,
     },
   ];
+
+  const peakExecMem = actualUsage.avg_peak_execution_memory;
 
   return (
     <div className="flex flex-col gap-3">
@@ -163,6 +165,19 @@ export function ResourceSection({
             </div>
           );
         })}
+        {peakExecMem != null && (
+          <div className="flex items-start gap-2">
+            <MemoryStick className="w-3.5 h-3.5 text-slate-600 mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <div className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+                Peak Exec Memory
+              </div>
+              <div className="text-sm font-medium text-white font-mono">
+                {formatBytes(peakExecMem)}
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -228,31 +243,12 @@ export function CapacitySection({ bars }: { bars: CapacityBarType[] }) {
   );
 }
 
-// --- Metrics Source Badge ---
-export function MetricsSourceBadge({ source }: { source: string | null }) {
-  if (!source) return null;
-  const isReal = source !== "simulation";
-  return (
-    <span
-      className={`ml-2 text-[8px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded-full ${
-        isReal
-          ? "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20"
-          : "bg-slate-500/10 text-slate-500 border border-slate-500/20"
-      }`}
-    >
-      {isReal ? "Real" : "Simulated"}
-    </span>
-  );
-}
-
 // --- Spark Internals Section (sparkMeasure metrics) ---
 export function SparkInternalsSection({ actualUsage }: { actualUsage: ActualUsage }) {
   const hasData =
-    actualUsage.metrics_source != null &&
-    actualUsage.metrics_source !== "simulation" &&
-    (actualUsage.avg_jvm_gc_time_ms != null ||
-      actualUsage.avg_shuffle_read_bytes != null ||
-      actualUsage.avg_input_bytes != null);
+    actualUsage.avg_jvm_gc_time_ms != null ||
+    actualUsage.avg_shuffle_read_bytes != null ||
+    actualUsage.avg_input_bytes != null;
 
   if (!hasData) return null;
 

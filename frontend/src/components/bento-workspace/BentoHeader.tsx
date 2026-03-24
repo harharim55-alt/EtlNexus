@@ -21,6 +21,7 @@ import { StatusBadge } from "@/components/shared/StatusBadge";
 import { useSyncPipeline } from "@/hooks/use-sync-pipeline";
 import { useTopology } from "@/hooks/use-topology";
 import type { PipelineDetail } from "@/types/pipeline";
+import { stripDummy } from "@/lib/format";
 import { DocumentationModal } from "./DocumentationModal";
 import { CompactRevisionList } from "./RevisionHistoryPanel";
 import { AIRFLOW_URL } from "@/lib/config";
@@ -113,7 +114,7 @@ export function BentoHeader({
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <h1 className="text-xl font-semibold text-white tracking-tight truncate">
-              {pipeline.name}
+              {stripDummy(pipeline.name)}
             </h1>
             <StatusBadge status={pipeline.airflow_status} size="md" />
             {pipeline.category && (
@@ -314,7 +315,7 @@ export function BentoHeader({
         open={docOpen}
         onClose={() => setDocOpen(false)}
         pipelineId={pipeline.id}
-        pipelineName={pipeline.name}
+        pipelineName={stripDummy(pipeline.name)}
         documentation={pipeline.documentation}
         onSave={(doc) => {
           onSaveDocumentation(doc);

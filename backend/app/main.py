@@ -75,6 +75,10 @@ async def lifespan(app: FastAPI):
     from app.integrations.oidc_client import oidc_client
     await oidc_client.initialize()
 
+    # Initialize Oasis Prod client (no-op if URL not configured)
+    from app.integrations.oasis_prod_client import oasis_prod_client
+    await oasis_prod_client.initialize()
+
     from app.tasks.scheduler import run_startup_sync, setup_scheduler
 
     # Run initial syncs in background — don't block app startup.
@@ -109,6 +113,8 @@ async def lifespan(app: FastAPI):
     await _oidc.close()
     from app.integrations.llm_client import llm_client
     await llm_client.close()
+    from app.integrations.oasis_prod_client import oasis_prod_client as _oasis
+    await _oasis.close()
     from app.integrations.iceberg_client import iceberg_client
     iceberg_client.stop()
     logger.info("ETL Explorer Hub shutting down")

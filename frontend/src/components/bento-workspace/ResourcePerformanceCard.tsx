@@ -1,5 +1,6 @@
-import { Gauge, Clock, Cpu, Server } from "lucide-react";
-import { DateRangePicker } from "@/components/shared/DateRangePicker";
+import { useState } from "react";
+import { Gauge, Clock, Cpu, Server, TrendingUp } from "lucide-react";
+
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResourceMetrics } from "@/hooks/use-resource-metrics";
 import { usePipelineStore } from "@/stores/pipeline-store";
@@ -8,9 +9,9 @@ import {
   DurationSection,
   ResourceSection,
   CapacitySection,
-  MetricsSourceBadge,
   SparkInternalsSection,
 } from "./resource-performance/ResourceSections";
+import { ResourceHistoryModal } from "./ResourceHistoryModal";
 
 interface ResourcePerformanceCardProps {
   pipelineId: string;
@@ -20,6 +21,7 @@ interface ResourcePerformanceCardProps {
 export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardProps) {
   const { data, isLoading } = useResourceMetrics(pipelineId);
   const selectedDagId = usePipelineStore((s) => s.selectedDagId);
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   return (
     <div className="col-span-12 bg-[#18181b] border border-white/5 rounded-2xl p-5 flex flex-col">
@@ -30,7 +32,14 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
             Resource & Performance
           </h3>
         </div>
-        <DateRangePicker />
+          <button
+            type="button"
+            onClick={() => setHistoryOpen(true)}
+            className="text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer text-slate-500 bg-white/[0.03] border-white/5 hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-1.5"
+          >
+            <TrendingUp className="w-3 h-3" />
+            Usage Over Time
+          </button>
       </div>
 
       {isLoading ? (
@@ -78,7 +87,6 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
                   <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
                     Resources
                   </span>
-                  <MetricsSourceBadge source={data.actual_usage.metrics_source} />
                 </div>
                 <ResourceSection
                   configs={filteredConfigs}
@@ -107,6 +115,12 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
           </span>
         </div>
       )}
+
+      <ResourceHistoryModal
+        open={historyOpen}
+        onClose={() => setHistoryOpen(false)}
+        pipelineId={pipelineId}
+      />
     </div>
   );
 }

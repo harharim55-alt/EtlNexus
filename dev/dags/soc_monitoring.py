@@ -34,7 +34,7 @@ with DAG(
     default_args=default_args,
     description="SOC real-time monitoring — syslog forensics and incident response analytics",
     schedule="0 * * * *",
-    start_date=datetime(2026, 1, 1),
+    start_date=datetime(2026, 3, 8),
     catchup=False,
 ) as dag:
 

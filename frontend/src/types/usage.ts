@@ -4,7 +4,8 @@ export interface PipelineUsage {
   usage_type: string;
   description: string | null;
   last_accessed_at: string | null;
-  access_count: number;
+  unique_reads: number;
+  total_reads: number;
   airflow_status: string | null;
   dag_id: string | null;
   is_current: boolean;

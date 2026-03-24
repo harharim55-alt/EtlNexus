@@ -6,6 +6,7 @@ import { usePipelineStore } from "@/stores/pipeline-store";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStatusStyle } from "@/lib/status-config";
+import { stripDummy } from "@/lib/format";
 import { groupByDag } from "@/components/bento-workspace/lineage/lineage-utils";
 import type { BouncerTopologyNode } from "@/types/bouncer";
 
@@ -39,7 +40,7 @@ function EtlNode({
   onClick?: () => void;
 }) {
   const cfg = getStatusStyle(node.status);
-  const displayName = node.pipeline_name ?? node.task_id.replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
+  const displayName = stripDummy(node.pipeline_name ?? node.task_id).replace(/([a-z0-9])([A-Z])/g, "$1 $2").replace(/_/g, " ");
   const isClickable = !!node.pipeline_id;
 
   return (

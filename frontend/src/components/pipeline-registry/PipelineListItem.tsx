@@ -1,5 +1,6 @@
 import { memo } from "react";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
+import { stripDummy } from "@/lib/format";
 
 function getSuccessRateDot(rate: number | null) {
   if (rate == null) return { color: "bg-slate-500", title: "No recent runs" };
@@ -36,7 +37,7 @@ export const PipelineListItem = memo(function PipelineListItem({
             isActive ? "text-indigo-400" : "text-slate-200"
           }`}
         >
-          {pipeline.name}
+          {stripDummy(pipeline.name)}
         </h3>
         <span
           className={`shrink-0 mt-1.5 h-2 w-2 rounded-full ${dot.color}`}

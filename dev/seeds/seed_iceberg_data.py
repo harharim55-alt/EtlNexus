@@ -30,7 +30,7 @@ random.seed(SEED)
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-DATES = [date(2026, 3, d) for d in range(7, 11)]
+DATES = [date(2026, 3, d) for d in range(7, 22)]  # 15 days: Mar 7-21
 HOURS = list(range(24))
 
 
@@ -232,7 +232,7 @@ def gen_syslog_event_stream():
     eid = 1
     for d in DATES:
         for h in HOURS:
-            for _ in range(25):
+            for _ in range(80):
                 ts = rand_ts_hour(d, h)
                 rows.append((
                     eid, random.choice(HOSTNAMES),
@@ -295,7 +295,7 @@ def gen_netflow_capture():
     fid = 1
     for d in DATES:
         for h in HOURS:
-            for _ in range(25):
+            for _ in range(80):
                 ts = rand_ts_hour(d, h)
                 rows.append((
                     f"flow-{fid:08d}", rand_ip(), rand_ip(),
@@ -360,7 +360,7 @@ def gen_switch_port_collector():
     ])
     rows = []
     for d in DATES:
-        for _ in range(175):
+        for _ in range(500):
             ts = rand_ts(d)
             rows.append((
                 random.randint(1, 20),
@@ -389,7 +389,7 @@ def gen_device_fingerprint_enrichment():
     rows = []
     did = 1
     for d in DATES:
-        for _ in range(150):
+        for _ in range(400):
             rows.append((
                 f"dev-{did:06d}", rand_mac(),
                 random.choice(HOSTNAMES),
@@ -662,7 +662,7 @@ def gen_endpoint_activity_scoring():
     rows = []
     eid = 1
     for d in DATES:
-        for _ in range(175):
+        for _ in range(500):
             activity = round(random.uniform(0.0, 100.0), 2)
             rows.append((
                 f"ep-{eid:06d}",
@@ -753,7 +753,7 @@ def gen_dhcp_lease_sync():
     rows = []
     lid = 1
     for d in DATES:
-        for _ in range(175):
+        for _ in range(500):
             ts = rand_ts(d)
             rows.append((
                 lid, rand_ip(), rand_mac(),
@@ -841,7 +841,7 @@ def gen_threat_scoring_pipeline():
     ])
     rows = []
     for d in DATES:
-        for _ in range(175):
+        for _ in range(500):
             threat = round(random.uniform(0.0, 100.0), 2)
             bucket = (
                 "low" if threat < 25 else

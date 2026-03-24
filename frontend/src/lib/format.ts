@@ -11,3 +11,7 @@ export function formatDuration(seconds: number): string {
   const remainMins = mins % 60;
   return remainMins > 0 ? `${hrs}h ${remainMins}m` : `${hrs}h`;
 }
+
+export function stripDummy(name: string): string {
+  return name.replace(/Dummy$/i, "");
+}

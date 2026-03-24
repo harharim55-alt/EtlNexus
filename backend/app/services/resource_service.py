@@ -14,6 +14,8 @@ from app.schemas.resources import (
     CapacityBar,
     DurationRun,
     ResourceConfigEntry,
+    ResourceHistoryRecord,
+    ResourceHistoryResponse,
     ResourceMetricsResponse,
 )
 
@@ -96,6 +98,11 @@ class ResourceService:
             avg_memory_bytes_spilled=stats.get("avg_memory_bytes_spilled"),
             avg_disk_bytes_spilled=stats.get("avg_disk_bytes_spilled"),
             avg_peak_execution_memory=stats.get("avg_peak_execution_memory"),
+            peak_driver_memory_used_mb=stats.get("peak_driver_mem_used_mb"),
+            peak_executor_memory_mb=stats.get("peak_executor_mem_mb"),
+            peak_cpu_utilization_pct=stats.get("peak_cpu_pct"),
+            peak_executors_active=stats.get("peak_executors_active"),
+            peak_execution_memory=stats.get("peak_execution_memory"),
             metrics_source=dominant_source,
         )
 
@@ -121,6 +128,46 @@ class ResourceService:
             actual_usage=actual_usage,
             capacity=capacity,
         )
+
+    async def get_resource_history(
+        self,
+        pipeline_id: uuid.UUID,
+        date_from: datetime | None = None,
+        date_to: datetime | None = None,
+    ) -> ResourceHistoryResponse | None:
+        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            return None
+
+        runs, total = await self.resource_repo.get_resource_history(
+            pipeline_id, date_from=date_from, date_to=date_to,
+        )
+
+        records = [
+            ResourceHistoryRecord(
+                execution_date=r.start_date.isoformat() if r.start_date else None,
+                dag_id=r.dag_id,
+                dag_run_id=r.dag_run_id,
+                status=r.status,
+                duration_seconds=r.duration_seconds,
+                driver_memory_used_mb=r.driver_memory_used_mb,
+                executor_memory_peak_mb=r.executor_memory_peak_mb,
+                cpu_utilization_pct=r.cpu_utilization_pct,
+                executors_active=r.executors_active,
+                peak_execution_memory=r.peak_execution_memory,
+                jvm_gc_time_ms=r.jvm_gc_time_ms,
+                shuffle_read_bytes=r.shuffle_read_bytes,
+                shuffle_write_bytes=r.shuffle_write_bytes,
+                input_bytes=r.input_bytes,
+                output_bytes=r.output_bytes,
+                memory_bytes_spilled=r.memory_bytes_spilled,
+                disk_bytes_spilled=r.disk_bytes_spilled,
+                metrics_source=r.metrics_source,
+            )
+            for r in runs
+        ]
+
+        return ResourceHistoryResponse(records=records, total=total)
 
     async def get_execution_plan(
         self,
@@ -190,13 +237,13 @@ class ResourceService:
 
         bars: list[CapacityBar] = []
 
-        # Driver Memory
+        # Driver Memory — use peak values for capacity
         if best.spark_driver_memory:
             alloc_gb = self._parse_memory_gb(best.spark_driver_memory)
             max_gb = settings.spark_max_driver_memory_gb
             used_gb = (
-                actual_usage.avg_driver_memory_used_mb / 1024
-                if actual_usage.avg_driver_memory_used_mb
+                actual_usage.peak_driver_memory_used_mb / 1024
+                if actual_usage.peak_driver_memory_used_mb
                 else 0
             )
             bars.append(
@@ -210,13 +257,13 @@ class ResourceService:
                 )
             )
 
-        # Executor Memory
+        # Executor Memory — use peak values for capacity
         if best.spark_executor_memory:
             alloc_gb = self._parse_memory_gb(best.spark_executor_memory)
             max_gb = settings.spark_max_executor_memory_gb
             used_gb = (
-                actual_usage.avg_executor_memory_peak_mb / 1024
-                if actual_usage.avg_executor_memory_peak_mb
+                actual_usage.peak_executor_memory_mb / 1024
+                if actual_usage.peak_executor_memory_mb
                 else 0
             )
             bars.append(
@@ -230,13 +277,13 @@ class ResourceService:
                 )
             )
 
-        # Executor Cores
+        # Executor Cores — use peak CPU for capacity
         if best.spark_executor_cores:
             alloc = best.spark_executor_cores
             max_val = settings.spark_max_executor_cores
             used = (
-                round(alloc * (actual_usage.avg_cpu_utilization_pct / 100))
-                if actual_usage.avg_cpu_utilization_pct
+                round(alloc * (actual_usage.peak_cpu_utilization_pct / 100))
+                if actual_usage.peak_cpu_utilization_pct
                 else 0
             )
             bars.append(
@@ -250,11 +297,11 @@ class ResourceService:
                 )
             )
 
-        # Num Executors
+        # Num Executors — use peak for capacity
         if best.spark_num_executors:
             alloc = best.spark_num_executors
             max_val = settings.spark_max_total_executors
-            used = actual_usage.avg_executors_active or 0
+            used = actual_usage.peak_executors_active or 0
             bars.append(
                 CapacityBar(
                     label="Executors",

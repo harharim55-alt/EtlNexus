@@ -35,6 +35,12 @@ class ActualUsage(BaseModel):
     avg_memory_bytes_spilled: int | None = None
     avg_disk_bytes_spilled: int | None = None
     avg_peak_execution_memory: int | None = None
+    # Peak (max) values across runs
+    peak_driver_memory_used_mb: int | None = None
+    peak_executor_memory_mb: int | None = None
+    peak_cpu_utilization_pct: float | None = None
+    peak_executors_active: int | None = None
+    peak_execution_memory: int | None = None
     metrics_source: str | None = None
 
 
@@ -65,3 +71,29 @@ class ResourceMetricsResponse(BaseModel):
 
     # Capacity utilization (allocated + used vs cluster max)
     capacity: list[CapacityBar] = []
+
+
+class ResourceHistoryRecord(BaseModel):
+    execution_date: str | None = None
+    dag_id: str = ""
+    dag_run_id: str = ""
+    status: str = "unknown"
+    duration_seconds: float | None = None
+    driver_memory_used_mb: int | None = None
+    executor_memory_peak_mb: int | None = None
+    cpu_utilization_pct: float | None = None
+    executors_active: int | None = None
+    peak_execution_memory: int | None = None
+    jvm_gc_time_ms: int | None = None
+    shuffle_read_bytes: int | None = None
+    shuffle_write_bytes: int | None = None
+    input_bytes: int | None = None
+    output_bytes: int | None = None
+    memory_bytes_spilled: int | None = None
+    disk_bytes_spilled: int | None = None
+    metrics_source: str | None = None
+
+
+class ResourceHistoryResponse(BaseModel):
+    records: list[ResourceHistoryRecord] = []
+    total: int = 0

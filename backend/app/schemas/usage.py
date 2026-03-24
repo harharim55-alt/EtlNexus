@@ -9,7 +9,8 @@ class PipelineUsageSchema(BaseModel):
     usage_type: str  # "etl" or "api"
     description: str | None = None
     last_accessed_at: datetime | None = None
-    access_count: int = 0
+    unique_reads: int = 0
+    total_reads: int = 0
     airflow_status: str | None = None
     dag_id: str | None = None
     is_current: bool = False

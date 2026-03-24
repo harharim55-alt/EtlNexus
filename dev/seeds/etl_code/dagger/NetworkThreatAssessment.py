@@ -41,11 +41,40 @@ class NetworkThreatAssessment(BaseETL):
         from pyspark.sql import functions as F
         from pyspark.sql.window import Window
 
+        # ── Data amplification: multiply input rows to create a heavier workload
+        # Cross-join with a small range then union — produces ~20x flow data
+        # and ~10x syslog data to generate real CPU/memory/shuffle pressure.
+        amplifier = self.spark.range(20).withColumnRenamed("id", "_amp_id")
+        amplified_flows = (
+            self.flows
+            .crossJoin(F.broadcast(amplifier))
+            .withColumn(
+                "bytes_transferred",
+                (F.col("bytes_transferred") * (F.lit(1.0) + F.col("_amp_id") * F.lit(0.05))).cast("long"),
+            )
+            .withColumn(
+                "flow_id",
+                F.concat(F.col("flow_id"), F.lit("_"), F.col("_amp_id").cast("string")),
+            )
+            .drop("_amp_id")
+        )
+
+        syslog_amplifier = self.spark.range(10).withColumnRenamed("id", "_amp_id")
+        amplified_syslog = (
+            self.syslog
+            .crossJoin(F.broadcast(syslog_amplifier))
+            .withColumn(
+                "event_id",
+                F.col("event_id") * F.lit(100) + F.col("_amp_id"),
+            )
+            .drop("_amp_id")
+        )
+
         # ── Stage 1: Aggregate netflow traffic per source IP ───────────
         # Exercises: groupBy, count, sum, avg, min, max, countDistinct,
         #            collect_set, concat_ws, filter
         flow_stats = (
-            self.flows
+            amplified_flows
             .filter(F.col("bytes_transferred") > 0)
             .groupBy("src_ip")
             .agg(
@@ -58,12 +87,13 @@ class NetworkThreatAssessment(BaseETL):
                 F.countDistinct("protocol").alias("protocol_count"),
                 F.concat_ws(",", F.collect_set("protocol")).alias("protocols_csv"),
             )
+            .repartition(200, "src_ip")  # Force heavy shuffle
         )
 
         # ── Stage 2: Syslog critical anomaly scoring per host ─────────
         # Exercises: filter with isin, groupBy, sum with when/otherwise
         syslog_critical = (
-            self.syslog
+            amplified_syslog
             .filter(F.col("severity").isin("emerg", "alert", "crit", "err"))
             .groupBy("source_host")
             .agg(
@@ -82,7 +112,7 @@ class NetworkThreatAssessment(BaseETL):
         # ── Stage 3: Syslog warning branch + union ────────────────────
         # Exercises: union (guarantees Union node in physical plan)
         syslog_warnings = (
-            self.syslog
+            amplified_syslog
             .filter(F.col("severity").isin("warning", "notice"))
             .groupBy("source_host")
             .agg(
@@ -98,9 +128,12 @@ class NetworkThreatAssessment(BaseETL):
 
         syslog_combined = syslog_critical.union(syslog_warnings)
 
+        # Repartition after union to test Exchange node metrics
+        syslog_repartitioned = syslog_combined.repartition(4, "source_host")
+
         # Re-aggregate after union to merge host entries from both branches
         syslog_scores = (
-            syslog_combined
+            syslog_repartitioned
             .groupBy("source_host")
             .agg(
                 F.sum("critical_event_count").alias("critical_event_count"),
@@ -118,6 +151,10 @@ class NetworkThreatAssessment(BaseETL):
             .select("ip_address", "mac_address", "hostname", "pool_name")
             .dropDuplicates(["ip_address"])
         )
+
+        # Cache the DHCP leases lookup (small dimension table, reused via broadcast).
+        # cache()/persist() on side inputs don't truncate the main result lineage.
+        active_leases.cache()
 
         flow_with_dhcp = (
             flow_stats
@@ -144,6 +181,12 @@ class NetworkThreatAssessment(BaseETL):
             .drop("source_ip")
         )
 
+        # Persist the syslog scores (side input) at MEMORY_AND_DISK level.
+        # Persisting side inputs exercises the StorageLevel without truncating
+        # the main result chain's execution plan.
+        from pyspark import StorageLevel
+        syslog_scores.persist(StorageLevel.MEMORY_AND_DISK)
+
         # ── Stage 6: Syslog left join + activity broadcast join ───────
         # Exercises: left outer join (SortMergeJoin), second broadcast join
         with_syslog = (
@@ -166,6 +209,11 @@ class NetworkThreatAssessment(BaseETL):
                 "frequency_score",
             )
         )
+
+        # Checkpoint activity dimension (side input) to exercise checkpoint
+        # without truncating the main result chain's plan.
+        self.spark.sparkContext.setCheckpointDir("/tmp/spark-checkpoint")
+        activity_dim = activity_dim.checkpoint(eager=True)
 
         with_activity = (
             with_syslog
@@ -274,8 +322,12 @@ class NetworkThreatAssessment(BaseETL):
             )
         )
 
+        # Coalesce partitions before final select to test Coalesce node
+        coalesced = scored.coalesce(2)
+
         self.result = (
-            scored
+            coalesced
+            .repartition(4)
             .select(
                 F.col("src_ip").alias("ip_address"),
                 F.coalesce(F.col("hostname"), F.lit("unknown")).alias("hostname"),
@@ -305,9 +357,10 @@ class NetworkThreatAssessment(BaseETL):
                 F.coalesce(F.col("activity_tier"), F.lit("unknown")).alias("activity_tier"),
                 F.current_timestamp().alias("assessed_at"),
             )
-            .orderBy(F.desc("composite_health_score"))
             .withColumn("date", F.lit(self.start_date).cast("date"))
         )
 
     def load(self):
         self.result.writeTo(f"iceberg.dagger.{self.etl_name}").overwritePartitions()
+        # Cleanup cached/persisted DataFrames
+        self.spark.catalog.clearCache()

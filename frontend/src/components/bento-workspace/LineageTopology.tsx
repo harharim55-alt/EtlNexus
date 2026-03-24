@@ -258,7 +258,7 @@ export function LineageTopology({ pipelineId, fullWidth }: LineageTopologyProps)
                   <span
                     key={t}
                     title={t}
-                    className="text-[9px] bg-indigo-500/5 px-2 py-1 rounded text-indigo-400/50 font-mono border border-indigo-500/10 truncate max-w-[160px]"
+                    className="text-[9px] bg-indigo-500/5 px-2 py-1 rounded text-indigo-400/50 font-mono border border-indigo-500/10"
                   >
                     {t}
                   </span>
@@ -290,7 +290,7 @@ export function LineageTopology({ pipelineId, fullWidth }: LineageTopologyProps)
               <span
                 key={t}
                 title={t}
-                className="text-[9px] bg-indigo-500/5 px-2 py-1 rounded text-indigo-400/50 font-mono border border-indigo-500/10 truncate max-w-[160px]"
+                className="text-[9px] bg-indigo-500/5 px-2 py-1 rounded text-indigo-400/50 font-mono border border-indigo-500/10"
               >
                 {t}
               </span>

@@ -13,6 +13,7 @@ import { UsageCard } from "./UsageCard";
 import { ResourcePerformanceCard } from "./ResourcePerformanceCard";
 import { TransformInspectorCard } from "./TransformInspectorCard";
 import { isApiPipeline } from "@/lib/utils";
+import { stripDummy } from "@/lib/format";
 
 export function BentoWorkspace() {
   const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
@@ -77,7 +78,7 @@ export function BentoWorkspace() {
               <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
             </div>
             <div className="col-span-12 lg:col-span-5">
-              <ConsumeSnippet pipelineName={pipeline.name} pipelineType={pipeline.pipeline_type} team={pipeline.team} />
+              <ConsumeSnippet pipelineName={stripDummy(pipeline.name)} pipelineType={pipeline.pipeline_type} team={pipeline.team} />
             </div>
           </>
         ) : (
@@ -96,7 +97,7 @@ export function BentoWorkspace() {
             </div>
             <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
               <JoinIntelligence pipelineId={pipeline.id} />
-              <ConsumeSnippet pipelineName={pipeline.name} pipelineType={pipeline.pipeline_type} team={pipeline.team} />
+              <ConsumeSnippet pipelineName={stripDummy(pipeline.name)} pipelineType={pipeline.pipeline_type} team={pipeline.team} />
             </div>
           </>
         )}

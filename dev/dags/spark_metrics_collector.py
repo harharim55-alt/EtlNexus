@@ -44,6 +44,14 @@ class SparkMetricsCollector:
 
     def end(self):
         if self._stage_metrics is not None:
+            # Flush the async listener bus so sparkMeasure sees all stage
+            # completion events.  Without this, the aggregation may read
+            # empty data if events are still queued (LiveListenerBus race).
+            try:
+                self.spark.sparkContext._jsc.sc().listenerBus().waitUntilEmpty(10000)
+            except Exception:
+                logger.debug("Could not wait for listener bus flush")
+
             self._stage_metrics.end()
             self._metrics = self._extract_sparkmeasure_metrics()
         else:
@@ -58,8 +66,28 @@ class SparkMetricsCollector:
         try:
             agg = self._stage_metrics.aggregate_stagemetrics()
         except Exception:
-            logger.warning("sparkMeasure aggregate failed, falling back to basic metrics")
-            return self._extract_basic_metrics()
+            logger.warning("sparkMeasure aggregate failed (likely 0 stages). Returning empty metrics.")
+            return {
+                "driver_memory_used_mb": self._get_driver_memory_mb(),
+                "executor_memory_peak_mb": None,
+                "cpu_utilization_pct": 0.0,
+                "executors_active": self._get_executor_count(),
+                "spark_application_id": self.spark.sparkContext.applicationId,
+                "executor_run_time_ms": 0,
+                "executor_cpu_time_ms": 0,
+                "jvm_gc_time_ms": 0,
+                "shuffle_read_bytes": 0,
+                "shuffle_write_bytes": 0,
+                "input_bytes": 0,
+                "output_bytes": 0,
+                "memory_bytes_spilled": 0,
+                "disk_bytes_spilled": 0,
+                "peak_execution_memory": 0,
+                "result_size_bytes": 0,
+                "num_tasks": 0,
+                "num_stages": 0,
+                "metrics_source": "sparkmeasure_empty",
+            }
 
         executor_run_time = agg.get("executorRunTime", 0)
         executor_cpu_time = agg.get("executorCpuTime", 0)
