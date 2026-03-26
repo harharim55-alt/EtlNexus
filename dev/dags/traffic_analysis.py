@@ -54,7 +54,7 @@ with DAG(
     default_args=default_args,
     description="Deep traffic analysis — packet inspection, protocol analysis, endpoint risk scoring",
     schedule="30 3 * * *",
-    start_date=datetime(2026, 3, 8),
+    start_date=datetime(2026, 3, 24),
     catchup=True,
 ) as dag:
 

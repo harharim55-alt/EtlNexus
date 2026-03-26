@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -84,8 +85,19 @@ class UserRepository:
             )
             .returning(User.id)
         )
-        result = await self.session.execute(stmt)
-        user_id = result.scalar_one()
+
+        try:
+            async with self.session.begin_nested():
+                result = await self.session.execute(stmt)
+                user_id = result.scalar_one()
+        except IntegrityError:
+            # Race condition: concurrent request already cleaned the stale
+            # user and inserted with the same sub.  Just load it.
+            loaded = await self.get_by_sub(sub)
+            if loaded:
+                return loaded
+            raise
+
         await self.session.flush()
 
         # Reload with team memberships eagerly loaded

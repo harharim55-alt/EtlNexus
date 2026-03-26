@@ -39,7 +39,7 @@ with DAG(
     default_args=default_args,
     description="Nightly peering audit — route table recon, bandwidth analysis, DNS intelligence",
     schedule="0 0 * * *",
-    start_date=datetime(2026, 3, 8),
+    start_date=datetime(2026, 3, 24),
     catchup=True,
 ) as dag:
 

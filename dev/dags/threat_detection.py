@@ -51,7 +51,7 @@ with DAG(
     default_args=default_args,
     description="Threat detection pipeline — threat hunting, access log forensics, intrusion attribution",
     schedule="0 2 * * *",
-    start_date=datetime(2026, 3, 8),
+    start_date=datetime(2026, 3, 24),
     catchup=True,
 ) as dag:
 

@@ -11,6 +11,7 @@ Uses a persistent ``httpx.AsyncClient`` matching the pattern established by
 
 import logging
 import time
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 import jwt as pyjwt
@@ -124,6 +125,14 @@ class OIDCClient:
             if not jwks_uri:
                 logger.warning("OIDC well-known configuration missing 'jwks_uri'")
                 return
+
+        # Rewrite jwks_uri to use the internal Docker hostname so the
+        # backend can always fetch keys regardless of KC_HOSTNAME setting.
+        internal = urlparse(settings.sso_issuer_url)
+        parsed = urlparse(jwks_uri)
+        if parsed.netloc != internal.netloc:
+            jwks_uri = urlunparse(parsed._replace(scheme=internal.scheme, netloc=internal.netloc))
+            logger.debug("Rewrote JWKS URI to internal: %s", jwks_uri)
 
         try:
             resp = await self._client.get(jwks_uri)

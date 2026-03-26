@@ -51,11 +51,10 @@ else
   cp -r dev/keycloak "$OUT_DIR/dev/keycloak"
 fi
 
-for img in "${IMAGES[@]}"; do
-  filename=$(echo "$img" | tr '/:' '__')
-  echo "  Saving $img -> ${filename}.tar"
-  docker save "$img" -o "$OUT_DIR/${filename}.tar"
-done
+# Save all images in a single tarball (deduplicates shared layers)
+echo "  Saving ${#IMAGES[@]} images -> images.tar"
+docker save "${IMAGES[@]}" -o "$OUT_DIR/images.tar"
+echo "  Size: $(du -h "$OUT_DIR/images.tar" | cut -f1)"
 
 cp .env.example "$OUT_DIR/.env.example"
 cp "$SCRIPT_DIR/import-images.sh" "$OUT_DIR/import-images.sh"

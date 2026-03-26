@@ -30,6 +30,8 @@ services:
       OASIS_PROD_DATABASE_URL: postgresql+asyncpg://oasis-prod-db:5432/oasis_prod
       OASIS_PROD_USERNAME: oasis
       OASIS_PROD_PASSWORD: oasis
+      SSO_PUBLIC_ISSUER_URL: http://${HOSTNAME:-localhost}:8090/realms/etlnexus
+      CORS_ORIGINS: '["http://localhost:5173","http://${HOSTNAME:-localhost}:5173"]'
     ports:
       - "8000:8000"
     depends_on:
@@ -53,6 +55,8 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: production
+      args:
+        VITE_AIRFLOW_URL: http://${HOSTNAME:-localhost}:8080
     ports:
       - "5173:80"
     healthcheck:
@@ -192,6 +196,8 @@ services:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
       KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_HTTP_PORT: 8090
+      KC_HOSTNAME: ${HOSTNAME:-localhost}
+      KC_HOSTNAME_PORT: 8090
     volumes:
       - ./dev/keycloak:/opt/keycloak/data/import
       - ./dev/keycloak/themes/etlnexus:/opt/keycloak/themes/etlnexus
