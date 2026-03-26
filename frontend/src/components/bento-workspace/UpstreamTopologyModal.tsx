@@ -2,6 +2,7 @@ import { useEffect, useCallback, useMemo, useState } from "react";
 import { X, GitFork, Lock, Sparkles, Radio, Loader2 } from "lucide-react";
 import { useUpstreamTopology } from "@/hooks/use-upstream-topology";
 import { usePipelineStore } from "@/stores/pipeline-store";
+import { useRunSelectorStore } from "@/stores/run-selector-store";
 import { getStatusStyle, STATUS_CONFIG } from "@/lib/status-config";
 import { useEdgeDrawing } from "./hooks/useEdgeDrawing";
 import { NodeCard, BouncerNodeCard } from "./TopologyNodeCard";
@@ -59,7 +60,8 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
   const [activeDagId, setActiveDagId] = useState<string | null>(null);
   const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
-  const { data, isLoading } = useUpstreamTopology(pipelineId, activeDagId, open);
+  const dagRunId = useRunSelectorStore((s) => s.selectedDagRunId);
+  const { data, isLoading } = useUpstreamTopology(pipelineId, activeDagId, open, dagRunId);
   const setSelectedPipelineId = usePipelineStore((s) => s.setSelectedPipelineId);
 
   const { containerRef, edgePaths, setNodeRef } = useEdgeDrawing(open, data?.edges);

@@ -38,11 +38,6 @@ class BaseETL(*_bases):
     def load(self):
         raise NotImplementedError
 
-    def run(self):
-        self.extract()
-        self.transform()
-        self.load()
-
     @staticmethod
     def _get_or_create_spark():
         from pyspark.sql import SparkSession

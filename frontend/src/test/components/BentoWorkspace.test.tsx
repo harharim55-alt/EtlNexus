@@ -109,6 +109,8 @@ function makePipelineDetail(overrides: Partial<PipelineDetail> = {}): PipelineDe
     team: "Dagger",
     team_id: "team-1",
     can_edit: true,
+    execution_date: null,
+    last_checked_at: null,
     ...overrides,
   };
 }

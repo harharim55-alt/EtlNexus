@@ -4,6 +4,7 @@ import { Gauge, Clock, Cpu, Server, TrendingUp } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResourceMetrics } from "@/hooks/use-resource-metrics";
 import { usePipelineStore } from "@/stores/pipeline-store";
+import { useRunSelectorStore } from "@/stores/run-selector-store";
 import { computeRunStats, recomputeCapacityBars } from "./resource-performance/resource-utils";
 import {
   DurationSection,
@@ -21,7 +22,9 @@ interface ResourcePerformanceCardProps {
 export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardProps) {
   const { data, isLoading } = useResourceMetrics(pipelineId);
   const selectedDagId = usePipelineStore((s) => s.selectedDagId);
+  const _dagRunId = useRunSelectorStore((s) => s.selectedDagRunId);
   const [historyOpen, setHistoryOpen] = useState(false);
+  void _dagRunId; // Will power per-run resource view in next iteration
 
   return (
     <div className="col-span-12 bg-[#18181b] border border-white/5 rounded-2xl p-5 flex flex-col">

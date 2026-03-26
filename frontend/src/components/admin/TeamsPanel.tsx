@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, ChevronDown, Users } from "lucide-react";
+import { formatDateAdmin } from "@/lib/format";
 import { useAdminTeams, useAdminGrants, useTeamDetail } from "@/hooks/use-admin";
 import { useQuery } from "@tanstack/react-query";
 import { fetchPipelines } from "@/api/pipelines";
@@ -127,7 +128,7 @@ function TeamDetailSection({ teamId }: { teamId: string }) {
                     {g.grant_level}
                   </span>
                   <span className="text-[10px] font-mono text-slate-600 ml-auto">
-                    {new Date(g.created_at).toLocaleDateString()}
+                    {formatDateAdmin(g.created_at)}
                   </span>
                 </div>
               );

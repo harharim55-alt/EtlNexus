@@ -1,10 +1,14 @@
-import { Activity, BarChart3, Database, HelpCircle, LogOut, Network, Radio, Shield, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { Activity, BarChart3, Database, HelpCircle, LogOut, Network, Radio, RefreshCw, Shield, Sparkles } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useAirflowStatuses } from "@/hooks/use-airflow-status";
 import { useAuthStore } from "@/stores/auth-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { isAdmin } from "@/lib/permissions";
 import { AIRFLOW_URL } from "@/lib/config";
+import { syncAllPipelines } from "@/api/airflow";
 import { useAuth } from "react-oidc-context";
 import { NavIcon } from "./NavIcon";
 import {
@@ -48,6 +52,8 @@ export function Sidebar() {
   const { data: airflowData } = useAirflowStatuses();
   const user = useAuthStore((s) => s.user);
   const ssoEnabled = useAuthStore((s) => s.ssoEnabled);
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const queryClient = useQueryClient();
 
   return (
     <nav className="w-20 border-r border-white/5 bg-[#09090b] flex flex-col items-center py-6 z-20 shrink-0">
@@ -112,6 +118,45 @@ export function Sidebar() {
 
       {/* Airflow Status + User */}
       <div className="mt-auto flex flex-col items-center gap-4">
+        {isAdmin(user) && (
+          <Tooltip>
+            <TooltipTrigger
+              className={`p-1.5 rounded-lg transition-all duration-200 cursor-pointer ${
+                isSyncingAll
+                  ? "text-amber-400 bg-amber-500/10"
+                  : "text-slate-600 hover:text-amber-400 hover:bg-amber-500/10"
+              }`}
+              onClick={async () => {
+                if (isSyncingAll) return;
+                setIsSyncingAll(true);
+                try {
+                  const result = await syncAllPipelines();
+                  toast.success(`Synced ${result.synced} pipelines from Airflow`);
+                  queryClient.invalidateQueries({ queryKey: ["pipelines"] });
+                  queryClient.invalidateQueries({ queryKey: ["airflow-statuses"] });
+                  queryClient.invalidateQueries({ queryKey: ["dag-summary"] });
+                  queryClient.invalidateQueries({ queryKey: ["topology"] });
+                  queryClient.invalidateQueries({ queryKey: ["lineage"] });
+                  queryClient.invalidateQueries({ queryKey: ["resource-metrics"] });
+                  queryClient.invalidateQueries({ queryKey: ["pipeline-runs"] });
+                } catch {
+                  toast.error("Failed to sync pipelines from Airflow");
+                } finally {
+                  setIsSyncingAll(false);
+                }
+              }}
+            >
+              <RefreshCw className={`size-4 ${isSyncingAll ? "animate-spin" : ""}`} />
+            </TooltipTrigger>
+            <TooltipContent
+              side="right"
+              className="bg-[#18181b] border-white/10 text-white text-xs font-medium"
+            >
+              {isSyncingAll ? "Syncing all pipelines..." : "Sync all pipelines"}
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         <Tooltip>
           <TooltipTrigger
             className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all duration-200 cursor-pointer"

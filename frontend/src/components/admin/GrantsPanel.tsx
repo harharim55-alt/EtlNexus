@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 import { ArrowRight, Plus, X } from "lucide-react";
+import { formatDateAdmin } from "@/lib/format";
 import { useAdminGrants, useAdminTeams, useAdminUsers, useDeleteGrant } from "@/hooks/use-admin";
 import { useQuery } from "@tanstack/react-query";
 import { fetchPipelines } from "@/api/pipelines";
@@ -158,7 +159,7 @@ export function GrantsPanel() {
                     by {grant.granted_by}
                   </span>
                   <span className="text-[10px] font-mono text-slate-600">
-                    {new Date(grant.created_at).toLocaleDateString()}
+                    {formatDateAdmin(grant.created_at)}
                   </span>
                   <button
                     type="button"

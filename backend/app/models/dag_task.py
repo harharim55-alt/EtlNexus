@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import JSON, ForeignKey, String, UniqueConstraint, func
+from sqlalchemy import JSON, DateTime, ForeignKey, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -29,7 +29,7 @@ class DagTask(Base):
     bouncer_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("bouncers.id", ondelete="SET NULL"), index=True, nullable=True
     )
-    synced_at: Mapped[datetime] = mapped_column(server_default=func.now(), onupdate=func.now())
+    synced_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     pipeline: Mapped["Pipeline | None"] = relationship(foreign_keys=[pipeline_id])
     bouncer: Mapped["Bouncer | None"] = relationship(foreign_keys=[bouncer_id])

@@ -15,6 +15,8 @@ function makePipeline(overrides: Partial<PipelineListItemType> = {}): PipelineLi
     airflow_status: "success",
     success_rate: 95,
     team: "Dagger",
+    last_run_at: null,
+    execution_date: null,
     ...overrides,
   };
 }

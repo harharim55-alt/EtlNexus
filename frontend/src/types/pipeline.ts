@@ -16,6 +16,8 @@ export interface PipelineListItem {
   airflow_status: string;
   success_rate: number | null;
   team: string | null;
+  last_run_at: string | null;
+  execution_date: string | null;
 }
 
 export interface PipelineListResponse {
@@ -44,6 +46,8 @@ export interface PipelineDetail {
   team: string | null;
   team_id: string | null;
   can_edit: boolean;
+  execution_date: string | null;
+  last_checked_at: string | null;
 }
 
 export interface PipelineUpdateRequest {

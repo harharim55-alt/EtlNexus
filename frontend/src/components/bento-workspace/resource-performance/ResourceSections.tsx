@@ -1,5 +1,5 @@
 import { CheckCircle, Activity, ArrowDownUp, Database, HardDrive, MemoryStick } from "lucide-react";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, formatDateFull } from "@/lib/format";
 import type { ActualUsage, CapacityBar as CapacityBarType, DurationRun, ResourceConfigEntry } from "@/types/resources";
 import {
   RESOURCE_ICONS,
@@ -77,7 +77,7 @@ export function DurationSection({
                 key={i}
                 className={`rounded-sm w-[6px] ${statusColor(run.status)} opacity-80 hover:opacity-100 transition-opacity`}
                 style={{ height: `${height}%` }}
-                title={`${formatDuration(run.duration_seconds)} \u2014 ${run.status} (${run.dag_id})`}
+                title={`${formatDateFull(run.execution_date)} \u2014 ${formatDuration(run.duration_seconds)} \u2014 ${run.status}`}
               />
             );
           })}

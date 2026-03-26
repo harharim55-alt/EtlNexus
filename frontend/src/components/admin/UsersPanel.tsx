@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react";
 import { ArrowRight, Ban, ChevronDown, Search } from "lucide-react";
+import { formatDateAdmin } from "@/lib/format";
 import { useAdminUsers, useAdminGrants, useAdminTeams, useUpdateUserRole, useUpdateUserActive } from "@/hooks/use-admin";
 import { useQuery } from "@tanstack/react-query";
 import { fetchPipelines } from "@/api/pipelines";
@@ -254,7 +255,7 @@ export function UsersPanel() {
                                   {g.grant_level}
                                 </span>
                                 <span className="text-[10px] font-mono text-slate-600 ml-auto">
-                                  {new Date(g.created_at).toLocaleDateString()}
+                                  {formatDateAdmin(g.created_at)}
                                 </span>
                               </div>
                             );

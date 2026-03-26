@@ -5,10 +5,11 @@ export function useUpstreamTopology(
   pipelineId: string | null,
   dagId?: string | null,
   enabled?: boolean,
+  dagRunId?: string | null,
 ) {
   return useQuery({
-    queryKey: ["upstream-topology", pipelineId, dagId ?? null],
-    queryFn: () => fetchUpstreamTopology(pipelineId!, dagId),
+    queryKey: ["upstream-topology", pipelineId, dagId ?? null, dagRunId ?? null],
+    queryFn: () => fetchUpstreamTopology(pipelineId!, dagId, dagRunId),
     enabled: !!pipelineId && enabled !== false,
     staleTime: 2 * 60_000,
   });

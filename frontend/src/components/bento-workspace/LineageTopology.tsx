@@ -4,6 +4,7 @@ import { UpstreamTopologyModal } from "./UpstreamTopologyModal";
 import { useLineage } from "@/hooks/use-lineage";
 import { useTopology } from "@/hooks/use-topology";
 import { usePipelineStore } from "@/stores/pipeline-store";
+import { useRunSelectorStore } from "@/stores/run-selector-store";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useBouncerStore } from "@/stores/bouncer-store";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -23,7 +24,8 @@ export function LineageTopology({ pipelineId, fullWidth }: LineageTopologyProps)
   const [upstreamOpen, setUpstreamOpen] = useState(false);
   const selectedDagId = usePipelineStore((s) => s.selectedDagId);
   const setSelectedDagId = usePipelineStore((s) => s.setSelectedDagId);
-  const { data: topology, isLoading: topoLoading } = useTopology(pipelineId, selectedDagId);
+  const dagRunId = useRunSelectorStore((s) => s.selectedDagRunId);
+  const { data: topology, isLoading: topoLoading } = useTopology(pipelineId, selectedDagId, dagRunId);
   const { data: lineage, isLoading: lineageLoading } = useLineage(pipelineId);
   const setSelectedPipelineId = usePipelineStore(
     (s) => s.setSelectedPipelineId,

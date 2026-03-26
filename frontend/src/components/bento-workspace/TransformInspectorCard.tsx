@@ -3,6 +3,7 @@ import { GitMerge, Maximize2, ScanEye } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useExecutionPlan } from "@/hooks/use-execution-plan";
 import { formatDuration } from "@/lib/format";
+import { useRunSelectorStore } from "@/stores/run-selector-store";
 import type { ExecutionPlanNode } from "@/types/execution-plan";
 import { NodeDetailModal } from "./execution-plan/PlanFormatters";
 import { TreeNode, treeStyles } from "./execution-plan/PlanTree";
@@ -18,8 +19,11 @@ interface TransformInspectorCardProps {
 export function TransformInspectorCard({
   pipelineId,
 }: TransformInspectorCardProps) {
-  const [selectedRunId, setSelectedRunId] = useState<string | undefined>();
-  const { data, isLoading } = useExecutionPlan(pipelineId, selectedRunId);
+  const globalRunId = useRunSelectorStore((s) => s.selectedDagRunId);
+  const [localRunId, setLocalRunId] = useState<string | undefined>();
+  // Global run selector takes precedence over local run picker
+  const effectiveRunId = globalRunId ?? localRunId;
+  const { data, isLoading } = useExecutionPlan(pipelineId, effectiveRunId);
   const [expandedNode, setExpandedNode] = useState<ExecutionPlanNode | null>(
     null,
   );
@@ -69,7 +73,7 @@ export function TransformInspectorCard({
           <RunPicker
             pipelineId={pipelineId}
             currentRunId={data.dag_run_id}
-            onSelect={setSelectedRunId}
+            onSelect={setLocalRunId}
           />
           <button
             type="button"

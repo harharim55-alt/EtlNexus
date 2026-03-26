@@ -1,13 +1,19 @@
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_role
+from app.database import async_session_factory
 from app.dependencies import get_airflow_repo
 from app.integrations.airflow_client import airflow_client
 from app.models.user import User
 from app.repositories.airflow_repo import AirflowRepository
 from app.schemas.airflow import AirflowStatusesResponse, AirflowStatusSchema
+from app.services.airflow_sync_service import AirflowSyncService
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/airflow", tags=["airflow"])
 
@@ -49,3 +55,28 @@ async def get_pipeline_status(
         execution_date=status.execution_date,
         last_checked_at=status.last_checked_at,
     )
+
+
+class SyncAllResponse(BaseModel):
+    synced: int
+    message: str
+
+
+@router.post(
+    "/sync-all",
+    response_model=SyncAllResponse,
+    dependencies=[Depends(require_role("admin"))],
+)
+async def sync_all_pipelines(
+    user: User = Depends(get_current_user),
+):
+    """Trigger a full pipeline sync from Airflow (admin only)."""
+    logger.info("Admin %s triggered full Airflow sync", user.email)
+    try:
+        async with async_session_factory() as session:
+            service = AirflowSyncService(session)
+            count = await service.sync_pipelines_from_airflow()
+        return SyncAllResponse(synced=count, message=f"Synced {count} pipelines from Airflow")
+    except Exception as e:
+        logger.exception("Manual full sync failed")
+        raise HTTPException(status_code=500, detail=str(e))

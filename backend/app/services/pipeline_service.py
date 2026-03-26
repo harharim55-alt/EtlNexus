@@ -71,8 +71,10 @@ class PipelineService:
             rates = await self.pipeline_repo.get_success_rates(
                 ids, date_from=date_from, date_to=date_to,
             )
+            run_dates = await self.pipeline_repo.get_last_run_dates(ids)
             for item in items:
                 item.success_rate = rates.get(item.id)
+                item.last_run_at = run_dates.get(item.id)
 
         result = PipelineListResponse(items=items, total=total)
         if cache_key:
@@ -215,6 +217,16 @@ class PipelineService:
             updated_at=pipeline.updated_at,
             team=pipeline.team,
             team_id=pipeline.team_id,
+            execution_date=(
+                pipeline.airflow_status.execution_date
+                if pipeline.airflow_status
+                else None
+            ),
+            last_checked_at=(
+                pipeline.airflow_status.last_checked_at
+                if pipeline.airflow_status
+                else None
+            ),
         )
 
     async def get_pipeline_detail_for_user(
@@ -347,4 +359,9 @@ class PipelineService:
                 pipeline.airflow_status.status if pipeline.airflow_status else "unknown"
             ),
             team=pipeline.team,
+            execution_date=(
+                pipeline.airflow_status.execution_date
+                if pipeline.airflow_status
+                else None
+            ),
         )

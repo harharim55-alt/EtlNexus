@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useRunSelectorStore } from "./run-selector-store";
 
 export interface PipelineState {
   selectedPipelineId: string | null;
@@ -30,7 +31,10 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   teamFilters: new Set<string>(),
   dagFilters: new Set<string>(),
   statusFilters: new Set<string>(),
-  setSelectedPipelineId: (id) => set({ selectedPipelineId: id, selectedDagId: null }),
+  setSelectedPipelineId: (id) => {
+    useRunSelectorStore.getState().clearRun();
+    set({ selectedPipelineId: id, selectedDagId: null });
+  },
   setSelectedDagId: (dagId) => set({ selectedDagId: dagId }),
   setSearchQuery: (query) => set({ searchQuery: query }),
   setFiltersOpen: (open) => set({ filtersOpen: open }),

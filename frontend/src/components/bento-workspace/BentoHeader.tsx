@@ -8,6 +8,7 @@ import { stripDummy } from "@/lib/format";
 import { DocumentationModal } from "./DocumentationModal";
 import { HeaderActions } from "./HeaderActions";
 import { EditableTitle } from "./EditableTitle";
+import { RunSelector } from "./RunSelector";
 import { AIRFLOW_URL } from "@/lib/config";
 
 interface BentoHeaderProps {
@@ -53,16 +54,23 @@ export function BentoHeader({
             )}
           </div>
 
-          <HeaderActions
-            lastUpdatedBy={pipeline.last_updated_by}
-            lastUpdatedAt={pipeline.last_updated_at}
-            dagId={topology?.dag_ids?.[0] ?? null}
-            taskId={pipeline.task_id}
-            airflowUrl={AIRFLOW_URL}
-            isSyncing={isSyncing}
-            onSync={() => sync()}
-            onOpenDocs={() => setDocOpen(true)}
-          />
+          <div className="flex items-center gap-2 shrink-0">
+            <RunSelector pipelineId={pipeline.id} />
+
+            <div className="w-px h-5 bg-white/[0.06]" />
+
+            <HeaderActions
+              lastUpdatedBy={pipeline.last_updated_by}
+              lastUpdatedAt={pipeline.last_updated_at}
+              executionDate={pipeline.execution_date}
+              dagId={topology?.dag_ids?.[0] ?? null}
+              taskId={pipeline.task_id}
+              airflowUrl={AIRFLOW_URL}
+              isSyncing={isSyncing}
+              onSync={() => sync()}
+              onOpenDocs={() => setDocOpen(true)}
+            />
+          </div>
         </div>
 
         {/* Editable description */}

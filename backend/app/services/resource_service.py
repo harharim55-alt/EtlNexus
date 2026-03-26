@@ -14,6 +14,9 @@ from app.schemas.resources import (
     ActualUsage,
     CapacityBar,
     DurationRun,
+    FieldSnapshot,
+    PipelineRunDetail,
+    PipelineRunsResponse,
     ResourceConfigEntry,
     ResourceHistoryRecord,
     ResourceHistoryResponse,
@@ -220,6 +223,62 @@ class ResourceService:
             pipeline_id, skip=skip, limit=limit,
         )
         return {"items": items, "total": total}
+
+    async def get_pipeline_runs(
+        self,
+        pipeline_id: uuid.UUID,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> PipelineRunsResponse:
+        """List all runs for a pipeline, paginated."""
+        items, total = await self.resource_repo.get_all_runs(
+            pipeline_id, skip=skip, limit=limit,
+        )
+        return PipelineRunsResponse(items=items, total=total)
+
+    async def get_run_detail(
+        self,
+        pipeline_id: uuid.UUID,
+        dag_run_id: str,
+    ) -> PipelineRunDetail | None:
+        """Get full detail for a single run."""
+        run = await self.resource_repo.get_run_by_id(pipeline_id, dag_run_id)
+        if not run:
+            return None
+
+        fields_snapshot = None
+        if run.fields_snapshot:
+            fields_snapshot = [
+                FieldSnapshot(**f) if isinstance(f, dict) else f
+                for f in run.fields_snapshot
+            ]
+
+        return PipelineRunDetail(
+            dag_run_id=run.dag_run_id,
+            dag_id=run.dag_id,
+            status=run.status,
+            start_date=run.start_date,
+            end_date=run.end_date,
+            duration_seconds=run.duration_seconds,
+            driver_memory_used_mb=run.driver_memory_used_mb,
+            executor_memory_peak_mb=run.executor_memory_peak_mb,
+            cpu_utilization_pct=run.cpu_utilization_pct,
+            executors_active=run.executors_active,
+            peak_execution_memory=run.peak_execution_memory,
+            jvm_gc_time_ms=run.jvm_gc_time_ms,
+            shuffle_read_bytes=run.shuffle_read_bytes,
+            shuffle_write_bytes=run.shuffle_write_bytes,
+            input_bytes=run.input_bytes,
+            output_bytes=run.output_bytes,
+            memory_bytes_spilled=run.memory_bytes_spilled,
+            disk_bytes_spilled=run.disk_bytes_spilled,
+            metrics_source=run.metrics_source,
+            spark_application_id=run.spark_application_id,
+            has_execution_plan=run.execution_plan is not None,
+            fields_snapshot=fields_snapshot,
+            source_tables_snapshot=run.source_tables_snapshot,
+            destination_tables_snapshot=run.destination_tables_snapshot,
+        )
 
     def _compute_capacity(
         self,

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import ForeignKey, String, func
+from sqlalchemy import DateTime, ForeignKey, String, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -20,7 +20,7 @@ class LineageEdge(Base):
     source_table: Mapped[str] = mapped_column(String(500))
     target_table: Mapped[str] = mapped_column(String(500))
     edge_type: Mapped[str] = mapped_column(String(20))  # "reads_from" | "writes_to"
-    discovered_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    discovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     source_pipeline: Mapped["Pipeline | None"] = relationship(
         foreign_keys=[source_pipeline_id], back_populates="lineage_targets"

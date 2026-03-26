@@ -177,6 +177,26 @@ class PipelineRepository:
                 )
         return rates
 
+    async def get_last_run_dates(
+        self, pipeline_ids: list[uuid.UUID],
+    ) -> dict[uuid.UUID, datetime]:
+        """Get the most recent start_date for a batch of pipelines."""
+        if not pipeline_ids:
+            return {}
+        stmt = (
+            select(
+                PipelineRunHistory.pipeline_id,
+                func.max(PipelineRunHistory.start_date).label("last_run"),
+            )
+            .where(
+                PipelineRunHistory.pipeline_id.in_(pipeline_ids),
+                PipelineRunHistory.start_date.isnot(None),
+            )
+            .group_by(PipelineRunHistory.pipeline_id)
+        )
+        result = await self.session.execute(stmt)
+        return {row.pipeline_id: row.last_run for row in result.all()}
+
     async def get_by_task_id(self, task_id: str) -> Pipeline | None:
         stmt = select(Pipeline).where(Pipeline.task_id == task_id)
         result = await self.session.execute(stmt)

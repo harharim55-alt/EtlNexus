@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
+from app.repositories.resource_repo import ResourceRepository
 from app.schemas.topology import (
     TopologyBouncer,
     TopologyGraph,
@@ -29,9 +30,11 @@ class TopologyService:
         self.pipeline_repo = PipelineRepository(session)
         self.dag_task_repo = DagTaskRepository(session)
         self.bouncer_repo = BouncerRepository(session)
+        self.resource_repo = ResourceRepository(session)
 
     async def build_pipeline_topology(
         self, pipeline_id: uuid.UUID, dag_id: str | None = None,
+        dag_run_id: str | None = None,
     ) -> TopologyGraph | None:
         """Build direct dependency topology for a pipeline.
 
@@ -101,16 +104,19 @@ class TopologyService:
         # Enrich bouncers from DB
         upstream_bouncers_list = await self._enrich_bouncers(found_bouncers)
 
-        # Pipeline status
-        pipeline_status = "unknown"
-        if pipeline.airflow_status:
-            pipeline_status = pipeline.airflow_status.status
-
-        # Build status map from all pipelines
-        status_map: dict[str, str] = {}
-        for p in all_pipelines:
-            if p.task_id and p.airflow_status:
-                status_map[p.task_id] = p.airflow_status.status
+        # Build status map — historical (per-run) or current (live Airflow)
+        if dag_run_id:
+            run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
+            status_map: dict[str, str] = dict(run_statuses)
+            pipeline_status = status_map.get(my_task_id, "unknown")
+        else:
+            pipeline_status = "unknown"
+            if pipeline.airflow_status:
+                pipeline_status = pipeline.airflow_status.status
+            status_map = {}
+            for p in all_pipelines:
+                if p.task_id and p.airflow_status:
+                    status_map[p.task_id] = p.airflow_status.status
 
         merged_needs: dict[str, TopologyTask] = {}
         merged_prefers: dict[str, TopologyTask] = {}
@@ -152,6 +158,7 @@ class TopologyService:
 
     async def build_upstream_topology(
         self, pipeline_id: uuid.UUID, dag_id: str | None = None,
+        dag_run_id: str | None = None,
     ) -> UpstreamTopologyGraph | None:
         """Build full recursive upstream dependency subgraph via BFS through needs/prefers.
 
@@ -165,9 +172,15 @@ class TopologyService:
         if not my_task_id:
             return None
 
-        pipeline_status = "unknown"
-        if pipeline.airflow_status:
-            pipeline_status = pipeline.airflow_status.status
+        # Resolve pipeline status — will be overridden by status_map if dag_run_id
+        if dag_run_id:
+            run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
+            _run_status_map = dict(run_statuses)
+            pipeline_status = _run_status_map.get(my_task_id, "unknown")
+        else:
+            pipeline_status = "unknown"
+            if pipeline.airflow_status:
+                pipeline_status = pipeline.airflow_status.status
 
         dag_entries = await self.dag_task_repo.get_dags_for_task(my_task_id)
         if not dag_entries:
@@ -215,13 +228,19 @@ class TopologyService:
         # Build pipeline lookup for enrichment
         all_pipelines = await self.pipeline_repo.get_all()
         task_id_to_pipeline = {}
-        status_map: dict[str, str] = {}
         for p in all_pipelines:
-            if not p.task_id:
-                continue
-            task_id_to_pipeline[p.task_id] = p
-            if p.airflow_status:
-                status_map[p.task_id] = p.airflow_status.status
+            if p.task_id:
+                task_id_to_pipeline[p.task_id] = p
+
+        # Status map — historical or current
+        if dag_run_id:
+            run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
+            status_map: dict[str, str] = dict(run_statuses)
+        else:
+            status_map = {}
+            for p in all_pipelines:
+                if p.task_id and p.airflow_status:
+                    status_map[p.task_id] = p.airflow_status.status
 
         # BFS through needs/prefers (semantic data dependencies)
         visited, raw_edges = bfs_upstream_semantic(

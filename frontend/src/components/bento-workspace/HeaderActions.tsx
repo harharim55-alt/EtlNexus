@@ -2,9 +2,11 @@ import {
   FileText,
   User,
   Calendar,
+  Clock,
   RefreshCw,
   ExternalLink,
 } from "lucide-react";
+import { formatRelativeTime, formatFreshness } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import {
   Tooltip,
@@ -17,6 +19,7 @@ import {
 interface HeaderActionsProps {
   lastUpdatedBy: string | null;
   lastUpdatedAt: string | null;
+  executionDate: string | null;
   dagId: string | null;
   taskId: string | null;
   airflowUrl: string;
@@ -25,23 +28,12 @@ interface HeaderActionsProps {
   onOpenDocs: () => void;
 }
 
-/* ── Helpers ──────────────────────────────────────────────────────── */
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "\u2014";
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
-}
-
 /* ── Component ─────────────────────────────────────────────────────── */
 
 export function HeaderActions({
   lastUpdatedBy,
   lastUpdatedAt,
+  executionDate,
   dagId,
   taskId,
   airflowUrl,
@@ -49,8 +41,19 @@ export function HeaderActions({
   onSync,
   onOpenDocs,
 }: HeaderActionsProps) {
+  const fresh = executionDate ? formatFreshness(executionDate) : null;
+
   return (
     <div className="flex items-center gap-2 shrink-0">
+      {fresh && fresh.label !== "never" && (
+        <span
+          className={`hidden xl:flex items-center gap-1.5 text-[11px] font-mono bg-white/[0.02] px-2.5 py-1.5 rounded-lg border border-white/5 ${fresh.className}`}
+          title="Last Airflow run"
+        >
+          <Clock className="size-3" />
+          {fresh.label}
+        </span>
+      )}
       {lastUpdatedBy && (
         <span
           className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-500 font-mono bg-white/[0.02] px-2.5 py-1.5 rounded-lg border border-white/5"
@@ -66,7 +69,7 @@ export function HeaderActions({
           title="Last updated"
         >
           <Calendar className="size-3 text-slate-600" />
-          {formatDate(lastUpdatedAt)}
+          {formatRelativeTime(lastUpdatedAt)}
         </span>
       )}
 

@@ -3,10 +3,11 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.pipeline import Pipeline
 from app.models.resource_config import PipelineResourceConfig
 from app.models.run_history import PipelineRunHistory
 from app.repositories.base import apply_updates
@@ -86,6 +87,10 @@ class ResourceRepository:
                 "num_stages": None,
                 "metrics_source": None,
                 "execution_plan": None,
+                # Preserve snapshots from the new attempt
+                "fields_snapshot": stmt.excluded.fields_snapshot,
+                "source_tables_snapshot": stmt.excluded.source_tables_snapshot,
+                "destination_tables_snapshot": stmt.excluded.destination_tables_snapshot,
             },
         )
         result = await self.session.execute(stmt)
@@ -272,4 +277,83 @@ class ResourceRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    # ── Run-centric queries ──────────────────────────────────────────
+
+    async def get_all_runs(
+        self, pipeline_id: uuid.UUID, skip: int = 0, limit: int = 20,
+    ) -> tuple[list[dict], int]:
+        """List ALL runs for a pipeline (not just those with execution plans)."""
+        conditions = [PipelineRunHistory.pipeline_id == pipeline_id]
+
+        count_stmt = (
+            select(func.count())
+            .select_from(PipelineRunHistory)
+            .where(*conditions)
+        )
+        count_result = await self.session.execute(count_stmt)
+        total = count_result.scalar_one()
+
+        stmt = (
+            select(
+                PipelineRunHistory.dag_run_id,
+                PipelineRunHistory.dag_id,
+                PipelineRunHistory.status,
+                PipelineRunHistory.start_date,
+                PipelineRunHistory.end_date,
+                PipelineRunHistory.duration_seconds,
+                case(
+                    (PipelineRunHistory.execution_plan.isnot(None), True),
+                    else_=False,
+                ).label("has_execution_plan"),
+            )
+            .where(*conditions)
+            .order_by(PipelineRunHistory.start_date.desc().nullslast())
+            .offset(skip)
+            .limit(limit)
+        )
+        result = await self.session.execute(stmt)
+        items = [
+            {
+                "dag_run_id": row.dag_run_id,
+                "dag_id": row.dag_id,
+                "status": row.status,
+                "start_date": row.start_date,
+                "end_date": row.end_date,
+                "duration_seconds": row.duration_seconds,
+                "has_execution_plan": row.has_execution_plan,
+            }
+            for row in result.all()
+        ]
+        return items, total
+
+    async def get_run_by_id(
+        self, pipeline_id: uuid.UUID, dag_run_id: str,
+    ) -> PipelineRunHistory | None:
+        """Get a single run record by pipeline_id + dag_run_id."""
+        stmt = (
+            select(PipelineRunHistory)
+            .where(
+                PipelineRunHistory.pipeline_id == pipeline_id,
+                PipelineRunHistory.dag_run_id == dag_run_id,
+            )
+            .limit(1)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_statuses_for_dag_run(
+        self, dag_run_id: str,
+    ) -> list[tuple[str, str]]:
+        """Get (task_id, status) for all pipelines in a specific dag_run."""
+        stmt = (
+            select(Pipeline.task_id, PipelineRunHistory.status)
+            .join(Pipeline, PipelineRunHistory.pipeline_id == Pipeline.id)
+            .where(
+                PipelineRunHistory.dag_run_id == dag_run_id,
+                Pipeline.task_id.isnot(None),
+            )
+        )
+        result = await self.session.execute(stmt)
+        return [(row[0], row[1]) for row in result.all()]
 

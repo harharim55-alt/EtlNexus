@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { X, Activity } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResourceHistory } from "@/hooks/use-resource-history";
-import { formatDuration } from "@/lib/format";
+import { formatDuration, formatDateShort, formatDateFull } from "@/lib/format";
 import { formatBytes } from "./resource-performance/resource-utils";
 import { ResourceChart } from "./ResourceChart";
 import type { ResourceHistoryRecord } from "@/types/resources";
@@ -17,27 +17,10 @@ interface ResourceHistoryModalProps {
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
 
-function formatDate(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return `${d.getMonth() + 1}/${d.getDate()}`;
-}
-
-function formatDateFull(iso: string | null): string {
-  if (!iso) return "";
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-  });
-}
-
 function prepareData(records: ResourceHistoryRecord[]) {
   return records.map((r) => ({
     ...r,
-    date: formatDate(r.execution_date),
+    date: formatDateShort(r.execution_date),
     dateFull: formatDateFull(r.execution_date),
     durationDisplay: r.duration_seconds != null ? formatDuration(r.duration_seconds) : null,
     driverMemGb: r.driver_memory_used_mb != null ? +(r.driver_memory_used_mb / 1024).toFixed(2) : null,

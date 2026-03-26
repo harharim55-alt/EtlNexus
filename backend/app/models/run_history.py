@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -27,7 +27,7 @@ class PipelineRunHistory(Base):
     executor_memory_peak_mb: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cpu_utilization_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
     executors_active: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    recorded_at: Mapped[datetime] = mapped_column(server_default=func.now())
+    recorded_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     # sparkMeasure / real Spark metrics (migration 012)
     spark_application_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
@@ -48,6 +48,11 @@ class PipelineRunHistory(Base):
 
     # Spark execution plan (migration 013)
     execution_plan: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Per-run snapshots of schema & lineage (migration 031)
+    fields_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    source_tables_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    destination_tables_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
     pipeline: Mapped["Pipeline"] = relationship(back_populates="run_history")
 

@@ -1,6 +1,6 @@
 import { Clock, Layers, Timer, Workflow, CheckCircle, CalendarClock, AlertTriangle } from "lucide-react";
 import { getStatusStyle, STATUS_SEVERITY_ORDER } from "@/lib/status-config";
-import { formatDuration, stripDummy } from "@/lib/format";
+import { formatDuration, formatTimeUTC, stripDummy } from "@/lib/format";
 import type { DagSummary, DagTaskSummary } from "@/types/dag-summary";
 
 /* ── Helpers ──────────────────────────────────────────────────────── */
@@ -26,21 +26,6 @@ function statusBadgeColor(status: string): string {
 
 function formatGroupName(groupId: string): string {
   return groupId.replace(/_/g, " ");
-}
-
-function formatFinishTime(isoString: string | null): string {
-  if (!isoString) return "\u2014";
-  try {
-    const d = new Date(isoString);
-    return d.toLocaleTimeString("en-US", {
-      hour: "2-digit",
-      minute: "2-digit",
-      hour12: false,
-      timeZone: "UTC",
-    }) + " UTC";
-  } catch {
-    return "\u2014";
-  }
 }
 
 function groupFailedTasks(tasks: DagTaskSummary[]): Record<string, DagTaskSummary[]> {
@@ -238,7 +223,7 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
           <Clock className="w-3 h-3 text-slate-600" />
           <span className="text-slate-500">Last finish</span>
           <span className="text-slate-300">
-            {formatFinishTime(dag.latest_run_end)}
+            {formatTimeUTC(dag.latest_run_end)}
           </span>
         </div>
         {dag.typical_finish_hour && (

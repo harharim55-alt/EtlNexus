@@ -1,19 +1,7 @@
 import { useState, useRef, useEffect } from "react";
 import { ChevronDown, Loader2 } from "lucide-react";
 import { useExecutionPlanRuns } from "@/hooks/use-execution-plan";
-
-export function formatRunDate(iso: string | null): string {
-  if (!iso) return "\u2014";
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false,
-    timeZone: "UTC",
-  }) + " UTC";
-}
+import { formatDateFull } from "@/lib/format";
 
 export function RunPicker({
   pipelineId,
@@ -67,7 +55,7 @@ export function RunPicker({
         onClick={() => setOpen(!open)}
         className="text-[10px] font-mono px-2.5 py-1 rounded-full border transition-all cursor-pointer inline-flex items-center gap-1 text-indigo-300 bg-indigo-500/15 border-indigo-500/30"
       >
-        {current ? formatRunDate(current.start_date) : "Latest"}
+        {current ? formatDateFull(current.start_date) : "Latest"}
         <ChevronDown className={`w-2.5 h-2.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
@@ -87,7 +75,7 @@ export function RunPicker({
                     : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
                 }`}
               >
-                <span>{formatRunDate(run.start_date)}</span>
+                <span>{formatDateFull(run.start_date)}</span>
                 <span className="text-[9px] text-slate-600">{run.dag_id}</span>
               </button>
             ))}

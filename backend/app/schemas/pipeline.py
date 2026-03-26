@@ -24,6 +24,8 @@ class PipelineListItem(BaseModel):
     airflow_status: str = "unknown"
     success_rate: float | None = None
     team: str | None = None
+    last_run_at: datetime | None = None
+    execution_date: datetime | None = None
 
     model_config = {"from_attributes": True}
 
@@ -54,6 +56,8 @@ class PipelineDetail(BaseModel):
     team: str | None = None
     team_id: uuid.UUID | None = None
     can_edit: bool = False
+    execution_date: datetime | None = None
+    last_checked_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 
