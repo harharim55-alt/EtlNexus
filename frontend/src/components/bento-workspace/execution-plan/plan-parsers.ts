@@ -314,6 +314,122 @@ export function formatSQL(pred: string): string[] {
   return [s];
 }
 
+// ── Smart filter parsing ────────────────────────────────────────
+
+export interface SmartFilter {
+  dateRanges: { column: string; from: string; to: string }[];
+  notNulls: string[];
+  equalities: { column: string; value: string }[];
+  inLists: { column: string; values: string[] }[];
+  booleans: string[];
+  ranges: { column: string; op: string; value: string }[];
+  complex: string[];
+}
+
+/**
+ * Parse a compound filter predicate into semantic groups.
+ * Splits on AND at depth 0, then classifies each condition.
+ */
+export function parseSmartFilter(detail: string): SmartFilter {
+  const result: SmartFilter = {
+    dateRanges: [],
+    notNulls: [],
+    equalities: [],
+    inLists: [],
+    booleans: [],
+    ranges: [],
+    complex: [],
+  };
+
+  // First, try CASE→IN simplification on the whole expression
+  const caseResult = simplifyPredicate(detail);
+  if (caseResult.simplified) {
+    result.inLists.push({ column: caseResult.column, values: caseResult.values });
+    return result;
+  }
+
+  // Split into individual predicates
+  const preds = parseFilterPredicates(detail);
+
+  // Temporary storage for range merging
+  const rangeParts: Map<string, { op: string; value: string }[]> = new Map();
+
+  for (const pred of preds) {
+    const trimmed = pred.trim();
+
+    // Try CASE→IN on individual predicates
+    const sub = simplifyPredicate(trimmed);
+    if (sub.simplified) {
+      result.inLists.push({ column: sub.column, values: sub.values });
+      continue;
+    }
+
+    // NOT NULL: notnull(col) or isnotnull(col)
+    const nnMatch = trimmed.match(/^(?:is)?notnull\((\w+)\)$/i);
+    if (nnMatch) {
+      result.notNulls.push(nnMatch[1]);
+      continue;
+    }
+
+    // Filter isnotnull(col) — with "Filter" prefix from detail
+    const nnMatch2 = trimmed.match(/^Filter\s+isnotnull\((\w+)\)$/i);
+    if (nnMatch2) {
+      result.notNulls.push(nnMatch2[1]);
+      continue;
+    }
+
+    // IN list: col IN (v1,v2,v3)
+    const inMatch = trimmed.match(/^(\w+)\s+IN\s+\((.+)\)$/i);
+    if (inMatch) {
+      const values = inMatch[2].split(",").map((v) => v.trim()).filter(Boolean);
+      result.inLists.push({ column: inMatch[1], values });
+      continue;
+    }
+
+    // Equality: (col = value) or col = value
+    const eqMatch = trimmed.match(/^\(?(\w+)\s*=\s*(\S+?)\)?$/);
+    if (eqMatch) {
+      result.equalities.push({ column: eqMatch[1], value: eqMatch[2] });
+      continue;
+    }
+
+    // Range comparisons: (col >= value), (col < value), (col > value), (col <= value)
+    const rangeMatch = trimmed.match(/^\(?(\w+)\s*(>=|<=|>|<)\s*(\S+?)\)?$/);
+    if (rangeMatch) {
+      const col = rangeMatch[1];
+      const op = rangeMatch[2];
+      const val = rangeMatch[3];
+      if (!rangeParts.has(col)) rangeParts.set(col, []);
+      rangeParts.get(col)!.push({ op, value: val });
+      continue;
+    }
+
+    // Boolean: bare column name (e.g., is_active)
+    if (/^\w+$/.test(trimmed)) {
+      result.booleans.push(trimmed);
+      continue;
+    }
+
+    // Complex: anything else
+    result.complex.push(trimmed);
+  }
+
+  // Merge range parts into date ranges or individual ranges
+  for (const [col, parts] of rangeParts) {
+    const gte = parts.find((p) => p.op === ">=" || p.op === ">");
+    const lt = parts.find((p) => p.op === "<" || p.op === "<=");
+    if (gte && lt) {
+      result.dateRanges.push({ column: col, from: gte.value, to: lt.value });
+    } else {
+      for (const p of parts) {
+        result.ranges.push({ column: col, op: p.op, value: p.value });
+      }
+    }
+  }
+
+  return result;
+}
+
 export function parseWindowDetail(detail: string): {
   partitionBy: string[];
   orderBy: { column: string; direction: "ASC" | "DESC" }[];
