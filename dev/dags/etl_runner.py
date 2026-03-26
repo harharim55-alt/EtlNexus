@@ -137,17 +137,9 @@ def _run_real_spark(
     """Create a SparkSession, run the callable, and collect metrics via sparkMeasure."""
     spark = _create_spark_session(etl_name, config)
     try:
-        try:
-            from spark_metrics_collector import collect_spark_metrics
-            with collect_spark_metrics(spark) as collector:
-                spark_callable(spark, **kwargs)
-            # Emit collected resource metrics so the backend can parse them
-            metrics = collector.get_metrics()
-            if metrics:
-                print(f"ETL_RESOURCE_ACTUAL: {json.dumps(metrics)}")
-        except ImportError:
-            logger.warning("sparkMeasure unavailable for %s, running without metrics", etl_name)
-            spark_callable(spark, **kwargs)
+        # Metrics collection is handled by EtlNexusMixin.run() via
+        # etlnexus_hooks.metrics_collector — no wrapping needed here.
+        spark_callable(spark, **kwargs)
     except Exception:
         logger.exception("Spark task %s failed", etl_name)
         raise

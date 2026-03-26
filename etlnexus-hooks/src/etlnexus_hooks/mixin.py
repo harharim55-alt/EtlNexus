@@ -68,13 +68,22 @@ class EtlNexusMixin:
         else:
             captured_tables = []
 
+        # ── Start metrics collection (sparkMeasure wraps around execution) ──
+        metrics_collector = None
+        if spark is not None:
+            try:
+                from etlnexus_hooks.metrics_collector import SparkMetricsCollector
+                metrics_collector = SparkMetricsCollector(spark)
+                metrics_collector.begin()
+            except Exception:
+                metrics_collector = None
+
         # ── Execute ETL: extract → transform → load ──
         try:
             self.extract()
             self.transform()
             self.load()
         except Exception:
-            # Clean up write interceptor before re-raising
             if write_capture is not None:
                 try:
                     write_capture.__exit__(None, None, None)
@@ -101,9 +110,15 @@ class EtlNexusMixin:
         if spark is None:
             return
 
-        # Note: ETL_RESOURCE_ACTUAL is emitted by the etl_runner's
-        # sparkMeasure collector which wraps around run() — it captures
-        # richer metrics (CPU, GC, shuffle, memory) than the StatusStore.
+        # ── Post-run: emit resource metrics ──
+        if metrics_collector is not None:
+            try:
+                metrics_collector.end()
+                metrics = metrics_collector.get_metrics()
+                if metrics:
+                    print(f"ETL_RESOURCE_ACTUAL: {json.dumps(metrics)}")
+            except Exception:
+                logger.debug("Could not collect metrics for %s", etl_name, exc_info=True)
 
         # ── Post-run: emit execution plan ──
         try:
