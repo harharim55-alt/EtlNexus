@@ -208,6 +208,112 @@ export function parseSortKeys(
     });
 }
 
+// ── Smart predicate simplification ──────────────────────────────
+
+export interface SimplifiedPredicate {
+  simplified: true;
+  column: string;
+  values: string[];
+}
+
+export interface UnsimplifiedPredicate {
+  simplified: false;
+}
+
+export type PredicateSimplification = SimplifiedPredicate | UnsimplifiedPredicate;
+
+/**
+ * Detect patterns that can be collapsed into `column IN (v1, v2, ...)`:
+ *  - CASE WHEN (col = v1) THEN true WHEN (col = v2) THEN true ... ELSE false END
+ *  - (col = v1) OR (col = v2) OR ...
+ */
+export function simplifyPredicate(pred: string): PredicateSimplification {
+  const s = pred.trim();
+
+  // Pattern 1: CASE WHEN (col = v) THEN true ... ELSE false END
+  const caseMatch = s.match(/^CASE\s+(.+?)\s+ELSE\s+false\s+END$/i);
+  if (caseMatch) {
+    const whenBody = caseMatch[1];
+    const whenParts = [...whenBody.matchAll(/WHEN\s+\(?(\w+)\s*=\s*(\w+)\)?\s+THEN\s+true/gi)];
+    if (whenParts.length >= 2) {
+      const columns = new Set(whenParts.map((m) => m[1]));
+      if (columns.size === 1) {
+        return {
+          simplified: true,
+          column: whenParts[0][1],
+          values: whenParts.map((m) => m[2]),
+        };
+      }
+    }
+  }
+
+  // Pattern 2: (col = v1) OR (col = v2) OR ...
+  const orParts = s.split(/\s+OR\s+/i).map((p) => p.trim());
+  if (orParts.length >= 2) {
+    const eqMatches = orParts.map((p) => {
+      const cleaned = p.replace(/^\(/, "").replace(/\)$/, "").trim();
+      return cleaned.match(/^(\w+)\s*=\s*(\w+)$/);
+    });
+    if (eqMatches.every((m) => m !== null)) {
+      const columns = new Set(eqMatches.map((m) => m![1]));
+      if (columns.size === 1) {
+        return {
+          simplified: true,
+          column: eqMatches[0]![1],
+          values: eqMatches.map((m) => m![2]),
+        };
+      }
+    }
+  }
+
+  return { simplified: false };
+}
+
+/**
+ * Format a complex SQL expression with indentation for readability.
+ * Puts each WHEN on its own line, indented under CASE.
+ */
+export function formatSQL(pred: string): string[] {
+  const s = pred.trim();
+
+  // If it contains CASE, format with indentation
+  if (/\bCASE\b/i.test(s)) {
+    const lines: string[] = [];
+    // Split on WHEN/ELSE/END boundaries
+    let remaining = s;
+
+    const caseIdx = remaining.search(/\bCASE\b/i);
+    if (caseIdx >= 0) {
+      const before = remaining.slice(0, caseIdx).trim();
+      if (before) lines.push(before);
+      remaining = remaining.slice(caseIdx);
+    }
+
+    // Extract CASE keyword
+    lines.push("CASE");
+    remaining = remaining.replace(/^\s*CASE\s*/i, "");
+
+    // Extract WHEN ... THEN ... clauses
+    const whenRegex = /\bWHEN\b\s+(.+?)\s+\bTHEN\b\s+(\S+)/gi;
+    let match;
+    while ((match = whenRegex.exec(remaining)) !== null) {
+      lines.push(`  WHEN ${match[1].trim()} THEN ${match[2]}`);
+    }
+
+    // Extract ELSE
+    const elseMatch = remaining.match(/\bELSE\b\s+(\S+)/i);
+    if (elseMatch) {
+      lines.push(`  ELSE ${elseMatch[1]}`);
+    }
+
+    lines.push("END");
+    return lines;
+  }
+
+  // No CASE — return as-is
+  return [s];
+}
+
 export function parseWindowDetail(detail: string): {
   partitionBy: string[];
   orderBy: { column: string; direction: "ASC" | "DESC" }[];
