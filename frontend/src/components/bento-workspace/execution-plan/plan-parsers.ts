@@ -327,8 +327,103 @@ export interface SmartFilter {
 }
 
 /**
+ * Recursively flatten a compound predicate into atomic conditions.
+ * Strips outer parens and splits on AND/OR, then recurses on any
+ * part that still contains AND/OR at depth 0.
+ */
+function flattenPredicates(detail: string): string[] {
+  let s = detail.trim();
+  // Strip outer balanced parens
+  while (s.startsWith("(") && s.endsWith(")") && isBalancedInner(s)) {
+    s = s.slice(1, -1).trim();
+  }
+
+  // Split on AND at depth 0
+  const parts = parseFilterPredicates(s);
+  const result: string[] = [];
+  for (const part of parts) {
+    let p = part.trim();
+    // Strip outer parens again on each part
+    while (p.startsWith("(") && p.endsWith(")") && isBalancedInner(p)) {
+      p = p.slice(1, -1).trim();
+    }
+    // If it still contains AND at depth 0, recurse
+    const subParts = parseFilterPredicates(p);
+    if (subParts.length > 1) {
+      result.push(...flattenPredicates(p));
+    } else {
+      result.push(p);
+    }
+  }
+  return result;
+}
+
+/**
+ * Classify a single atomic predicate into a smart filter category.
+ * Returns true if classified, false if it should go to complex.
+ */
+function classifyPredicate(
+  trimmed: string,
+  result: SmartFilter,
+  rangeParts: Map<string, { op: string; value: string }[]>,
+): boolean {
+  // CASE→IN simplification
+  const sub = simplifyPredicate(trimmed);
+  if (sub.simplified) {
+    result.inLists.push({ column: sub.column, values: sub.values });
+    return true;
+  }
+
+  // NOT NULL: notnull(col) or isnotnull(col)
+  const nnMatch = trimmed.match(/^(?:is)?notnull\((\w+)\)$/i);
+  if (nnMatch) {
+    result.notNulls.push(nnMatch[1]);
+    return true;
+  }
+
+  // Filter isnotnull(col) — with "Filter" prefix from detail
+  const nnMatch2 = trimmed.match(/^Filter\s+isnotnull\((\w+)\)$/i);
+  if (nnMatch2) {
+    result.notNulls.push(nnMatch2[1]);
+    return true;
+  }
+
+  // IN list: col IN (v1,v2,v3)
+  const inMatch = trimmed.match(/^(\w+)\s+IN\s+\((.+)\)$/i);
+  if (inMatch) {
+    const values = inMatch[2].split(",").map((v) => v.trim()).filter(Boolean);
+    result.inLists.push({ column: inMatch[1], values });
+    return true;
+  }
+
+  // Equality: (col = value) or col = value
+  const eqMatch = trimmed.match(/^\(?(\w+)\s*=\s*(\S+?)\)?$/);
+  if (eqMatch) {
+    result.equalities.push({ column: eqMatch[1], value: eqMatch[2] });
+    return true;
+  }
+
+  // Range comparisons: (col >= value), (col < value), etc.
+  const rangeMatch = trimmed.match(/^\(?(\w+)\s*(>=|<=|>|<)\s*(\S+?)\)?$/);
+  if (rangeMatch) {
+    const col = rangeMatch[1];
+    if (!rangeParts.has(col)) rangeParts.set(col, []);
+    rangeParts.get(col)!.push({ op: rangeMatch[2], value: rangeMatch[3] });
+    return true;
+  }
+
+  // Boolean: bare column name (e.g., is_active)
+  if (/^\w+$/.test(trimmed)) {
+    result.booleans.push(trimmed);
+    return true;
+  }
+
+  return false;
+}
+
+/**
  * Parse a compound filter predicate into semantic groups.
- * Splits on AND at depth 0, then classifies each condition.
+ * Recursively flattens nested AND expressions, then classifies each.
  */
 export function parseSmartFilter(detail: string): SmartFilter {
   const result: SmartFilter = {
@@ -348,70 +443,16 @@ export function parseSmartFilter(detail: string): SmartFilter {
     return result;
   }
 
-  // Split into individual predicates
-  const preds = parseFilterPredicates(detail);
+  // Recursively flatten into atomic predicates
+  const atoms = flattenPredicates(detail);
 
   // Temporary storage for range merging
   const rangeParts: Map<string, { op: string; value: string }[]> = new Map();
 
-  for (const pred of preds) {
-    const trimmed = pred.trim();
-
-    // Try CASE→IN on individual predicates
-    const sub = simplifyPredicate(trimmed);
-    if (sub.simplified) {
-      result.inLists.push({ column: sub.column, values: sub.values });
-      continue;
+  for (const atom of atoms) {
+    if (!classifyPredicate(atom, result, rangeParts)) {
+      result.complex.push(atom);
     }
-
-    // NOT NULL: notnull(col) or isnotnull(col)
-    const nnMatch = trimmed.match(/^(?:is)?notnull\((\w+)\)$/i);
-    if (nnMatch) {
-      result.notNulls.push(nnMatch[1]);
-      continue;
-    }
-
-    // Filter isnotnull(col) — with "Filter" prefix from detail
-    const nnMatch2 = trimmed.match(/^Filter\s+isnotnull\((\w+)\)$/i);
-    if (nnMatch2) {
-      result.notNulls.push(nnMatch2[1]);
-      continue;
-    }
-
-    // IN list: col IN (v1,v2,v3)
-    const inMatch = trimmed.match(/^(\w+)\s+IN\s+\((.+)\)$/i);
-    if (inMatch) {
-      const values = inMatch[2].split(",").map((v) => v.trim()).filter(Boolean);
-      result.inLists.push({ column: inMatch[1], values });
-      continue;
-    }
-
-    // Equality: (col = value) or col = value
-    const eqMatch = trimmed.match(/^\(?(\w+)\s*=\s*(\S+?)\)?$/);
-    if (eqMatch) {
-      result.equalities.push({ column: eqMatch[1], value: eqMatch[2] });
-      continue;
-    }
-
-    // Range comparisons: (col >= value), (col < value), (col > value), (col <= value)
-    const rangeMatch = trimmed.match(/^\(?(\w+)\s*(>=|<=|>|<)\s*(\S+?)\)?$/);
-    if (rangeMatch) {
-      const col = rangeMatch[1];
-      const op = rangeMatch[2];
-      const val = rangeMatch[3];
-      if (!rangeParts.has(col)) rangeParts.set(col, []);
-      rangeParts.get(col)!.push({ op, value: val });
-      continue;
-    }
-
-    // Boolean: bare column name (e.g., is_active)
-    if (/^\w+$/.test(trimmed)) {
-      result.booleans.push(trimmed);
-      continue;
-    }
-
-    // Complex: anything else
-    result.complex.push(trimmed);
   }
 
   // Merge range parts into date ranges or individual ranges
