@@ -140,11 +140,12 @@ def _run_real_spark(
             from spark_metrics_collector import collect_spark_metrics
             with collect_spark_metrics(spark) as collector:
                 spark_callable(spark, **kwargs)
-        except Exception as metrics_err:
-            logger.warning(
-                "sparkMeasure unavailable for %s (%s), running without metrics",
-                etl_name, type(metrics_err).__name__,
-            )
+            # Emit collected resource metrics so the backend can parse them
+            metrics = collector.get_metrics()
+            if metrics:
+                print(f"ETL_RESOURCE_ACTUAL: {json.dumps(metrics)}")
+        except ImportError:
+            logger.warning("sparkMeasure unavailable for %s, running without metrics", etl_name)
             spark_callable(spark, **kwargs)
     except Exception:
         logger.exception("Spark task %s failed", etl_name)
