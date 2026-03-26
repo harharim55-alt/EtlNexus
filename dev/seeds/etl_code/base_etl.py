@@ -5,6 +5,7 @@ The SparkSession is shared or created with Iceberg catalog configuration.
 EtlNexusMixin auto-instruments run() with structured log markers.
 """
 
+import os
 from datetime import timedelta
 
 try:
@@ -49,7 +50,7 @@ class BaseETL(*_bases):
             .config("spark.jars", "/opt/airflow/jars/iceberg-spark-runtime.jar")
             .config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog")
             .config("spark.sql.catalog.iceberg.type", "rest")
-            .config("spark.sql.catalog.iceberg.uri", "http://iceberg-rest:8181")
+            .config("spark.sql.catalog.iceberg.uri", os.environ.get("ICEBERG_CATALOG_URI", "http://iceberg-rest:8181"))
             .config(
                 "spark.sql.extensions",
                 "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
