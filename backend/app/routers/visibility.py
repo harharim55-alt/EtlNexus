@@ -1,5 +1,6 @@
 """Visibility grant endpoints — admin management of cross-team pipeline access."""
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,6 +12,7 @@ from app.models.visibility_grant import VisibilityGrant
 from app.schemas.visibility import GrantListResponse, VisibilityGrantRequest, VisibilityGrantResponse
 from app.services.visibility_service import VisibilityService
 
+audit_logger = logging.getLogger("audit")
 router = APIRouter(prefix="/api/visibility", tags=["visibility"])
 
 
@@ -69,6 +71,7 @@ async def create_grant(
         granted_by_user_id=user.id,
     )
 
+    audit_logger.info("grant_created", extra={"grant_id": str(grant.id), "granted_by": user.display_name})
     return _grant_to_response(grant)
 
 
@@ -82,4 +85,5 @@ async def delete_grant(
     deleted = await service.delete_grant(grant_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Grant not found")
+    audit_logger.info("grant_deleted", extra={"grant_id": str(grant_id), "deleted_by": user.display_name})
     return {"ok": True}

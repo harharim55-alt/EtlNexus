@@ -1,5 +1,6 @@
 """User management endpoints — admin listing, role updates, and activation."""
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -16,6 +17,7 @@ from app.schemas.auth import (
 )
 from app.services.user_auth_service import invalidate_user_cache
 
+audit_logger = logging.getLogger("audit")
 router = APIRouter(prefix="/api/users", tags=["users"])
 
 
@@ -67,6 +69,7 @@ async def update_user_role(
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
 
+    audit_logger.info("role_changed", extra={"target_user_id": str(user_id), "new_role": body.role, "changed_by": user.display_name})
     await invalidate_user_cache()
     return {"ok": True}
 

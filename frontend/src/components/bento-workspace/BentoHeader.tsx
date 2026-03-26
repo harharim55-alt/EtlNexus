@@ -1,29 +1,13 @@
-import { useState, useEffect, useRef } from "react";
-import {
-  Edit3,
-  Save,
-  FileText,
-  User,
-  Calendar,
-  RefreshCw,
-  Users,
-  ExternalLink,
-  History,
-  X,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipTrigger,
-  TooltipContent,
-} from "@/components/ui/tooltip";
+import { useState } from "react";
+import { Users } from "lucide-react";
 import { StatusBadge } from "@/components/shared/StatusBadge";
 import { useSyncPipeline } from "@/hooks/use-sync-pipeline";
 import { useTopology } from "@/hooks/use-topology";
 import type { PipelineDetail } from "@/types/pipeline";
 import { stripDummy } from "@/lib/format";
 import { DocumentationModal } from "./DocumentationModal";
-import { CompactRevisionList } from "./RevisionHistoryPanel";
+import { HeaderActions } from "./HeaderActions";
+import { EditableTitle } from "./EditableTitle";
 import { AIRFLOW_URL } from "@/lib/config";
 
 interface BentoHeaderProps {
@@ -32,16 +16,6 @@ interface BentoHeaderProps {
   onSaveDocumentation: (documentation: string) => void;
   isSaving: boolean;
   canEdit: boolean;
-}
-
-function formatDate(iso: string | null): string {
-  if (!iso) return "\u2014";
-  const d = new Date(iso);
-  return d.toLocaleDateString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 export function BentoHeader({
@@ -54,63 +28,12 @@ export function BentoHeader({
   const { mutate: sync, isPending: isSyncing } = useSyncPipeline(pipeline.id);
   const { data: topology } = useTopology(pipeline.id);
 
-  const [isEditingDesc, setIsEditingDesc] = useState(false);
-  const [editValue, setEditValue] = useState(pipeline.description ?? "");
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [docOpen, setDocOpen] = useState(false);
-  const [descHistoryOpen, setDescHistoryOpen] = useState(false);
-  const descHistoryRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    setEditValue(pipeline.description ?? "");
-    setIsEditingDesc(false);
-    setDescHistoryOpen(false);
-  }, [pipeline.id, pipeline.description]);
-
-  // Close description history popover on outside click
-  useEffect(() => {
-    if (!descHistoryOpen) return;
-    const handleClick = (e: MouseEvent) => {
-      if (descHistoryRef.current && !descHistoryRef.current.contains(e.target as Node)) {
-        setDescHistoryOpen(false);
-      }
-    };
-    document.addEventListener("mousedown", handleClick);
-    return () => document.removeEventListener("mousedown", handleClick);
-  }, [descHistoryOpen]);
-
-  useEffect(() => {
-    if (isEditingDesc && textareaRef.current) {
-      const el = textareaRef.current;
-      el.focus();
-      el.selectionStart = el.value.length;
-    }
-  }, [isEditingDesc]);
-
-  const handleSaveDesc = () => {
-    onSaveDescription(editValue);
-    setIsEditingDesc(false);
-  };
-
-  const handleCancelEdit = () => {
-    setEditValue(pipeline.description ?? "");
-    setIsEditingDesc(false);
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-      e.preventDefault();
-      handleSaveDesc();
-    }
-    if (e.key === "Escape") {
-      handleCancelEdit();
-    }
-  };
 
   return (
     <>
       <div className="bg-[#18181b] border border-white/5 rounded-2xl p-5">
-        {/* ── Identity row: Name + Status + Category | Metadata + Docs + Sync */}
+        {/* Identity row: Name + Status + Category | Metadata + Docs + Sync */}
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <h1 className="text-xl font-semibold text-white tracking-tight truncate">
@@ -130,185 +53,26 @@ export function BentoHeader({
             )}
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            {pipeline.last_updated_by && (
-              <span
-                className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-500 font-mono bg-white/[0.02] px-2.5 py-1.5 rounded-lg border border-white/5"
-                title="Last updated by"
-              >
-                <User className="size-3 text-slate-600" />
-                {pipeline.last_updated_by}
-              </span>
-            )}
-            {pipeline.last_updated_at && (
-              <span
-                className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-500 font-mono bg-white/[0.02] px-2.5 py-1.5 rounded-lg border border-white/5"
-                title="Last updated"
-              >
-                <Calendar className="size-3 text-slate-600" />
-                {formatDate(pipeline.last_updated_at)}
-              </span>
-            )}
-
-            {/* Docs icon-button */}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="icon-sm"
-                    onClick={() => setDocOpen(true)}
-                    className="border-white/10 bg-white/[0.03] text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 hover:border-indigo-500/20 transition-all duration-200"
-                  />
-                }
-              >
-                <FileText className="size-3.5" />
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                Open Documentation
-              </TooltipContent>
-            </Tooltip>
-
-            {/* Open in Airflow */}
-            {topology?.dag_ids?.[0] && pipeline.task_id && (
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() =>
-                        window.open(
-                          `${AIRFLOW_URL}/dags/${topology.dag_ids[0]}/grid?task_id=${pipeline.task_id}`,
-                          "_blank",
-                          "noopener,noreferrer",
-                        )
-                      }
-                      className="border-white/10 bg-white/[0.03] text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 transition-all duration-200"
-                    />
-                  }
-                >
-                  <ExternalLink className="size-3.5" />
-                  <span className="text-xs">Airflow</span>
-                </TooltipTrigger>
-                <TooltipContent side="bottom">
-                  Open in Airflow ({topology.dag_ids[0]})
-                </TooltipContent>
-              </Tooltip>
-            )}
-
-            {/* Sync button */}
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={isSyncing}
-                    onClick={() => sync()}
-                    className="border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.07] transition-all duration-200"
-                  />
-                }
-              >
-                <RefreshCw
-                  className={`size-3.5 ${isSyncing ? "animate-spin" : ""}`}
-                />
-                <span className="text-xs">
-                  {isSyncing ? "Syncing\u2026" : "Sync"}
-                </span>
-              </TooltipTrigger>
-              <TooltipContent side="bottom">
-                Refresh this pipeline from Airflow
-              </TooltipContent>
-            </Tooltip>
-          </div>
+          <HeaderActions
+            lastUpdatedBy={pipeline.last_updated_by}
+            lastUpdatedAt={pipeline.last_updated_at}
+            dagId={topology?.dag_ids?.[0] ?? null}
+            taskId={pipeline.task_id}
+            airflowUrl={AIRFLOW_URL}
+            isSyncing={isSyncing}
+            onSync={() => sync()}
+            onOpenDocs={() => setDocOpen(true)}
+          />
         </div>
 
-        {/* ── Editable description ───────────────────────────────── */}
-        <div className="mt-3">
-          {isEditingDesc && canEdit ? (
-            <div className="animate-in fade-in duration-200">
-              <textarea
-                ref={textareaRef}
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onKeyDown={handleKeyDown}
-                className="w-full bg-[#09090b] border border-indigo-500/40 rounded-xl p-4 text-sm text-slate-300 leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all resize-none placeholder:text-slate-600"
-                rows={3}
-                placeholder="Enter a brief description of this pipeline..."
-              />
-              <div className="flex items-center justify-between mt-2">
-                <span className="text-[10px] text-slate-600 font-mono select-none">
-                  Ctrl+Enter to save · Esc to cancel
-                </span>
-                <div className="flex gap-2">
-                  <button
-                    onClick={handleCancelEdit}
-                    className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors rounded-lg"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    onClick={handleSaveDesc}
-                    disabled={isSaving}
-                    className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-xs font-medium rounded-lg transition-colors flex items-center gap-1.5"
-                  >
-                    <Save className="size-3" />
-                    {isSaving ? "Saving\u2026" : "Save Changes"}
-                  </button>
-                </div>
-              </div>
-            </div>
-          ) : (
-            <div className="group/desc relative">
-              <p className="text-slate-400 text-sm leading-relaxed max-w-3xl pr-10">
-                {pipeline.description || (
-                  <span className="text-slate-600 italic">No description</span>
-                )}
-              </p>
-              <div className="absolute top-0 right-0 flex items-center gap-0.5 opacity-0 group-hover/desc:opacity-100 transition-all duration-200">
-                {/* Description history */}
-                <div className="relative" ref={descHistoryRef}>
-                  <button
-                    onClick={() => setDescHistoryOpen((v) => !v)}
-                    className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20 transition-all duration-200"
-                    title="Description history"
-                  >
-                    <History className="size-3.5" />
-                  </button>
-                  {descHistoryOpen && (
-                    <div className="absolute top-full right-0 mt-1 z-50 w-80 bg-[#111116] border border-white/[0.08] rounded-xl shadow-2xl shadow-black/50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-                      <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center justify-between">
-                        <span className="text-[11px] font-semibold text-white tracking-tight">Description History</span>
-                        <button onClick={() => setDescHistoryOpen(false)} className="p-0.5 text-slate-500 hover:text-white transition-colors rounded">
-                          <X className="size-3" />
-                        </button>
-                      </div>
-                      <CompactRevisionList
-                        pipelineId={pipeline.id}
-                        canEdit={canEdit}
-                        onRestored={() => setDescHistoryOpen(false)}
-                      />
-                    </div>
-                  )}
-                </div>
-                {/* Edit description */}
-                {canEdit && (
-                  <button
-                    onClick={() => {
-                      setEditValue(pipeline.description ?? "");
-                      setIsEditingDesc(true);
-                    }}
-                    className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20 transition-all duration-200"
-                    title="Edit Description"
-                  >
-                    <Edit3 className="size-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Editable description */}
+        <EditableTitle
+          pipelineId={pipeline.id}
+          description={pipeline.description}
+          canEdit={canEdit}
+          isSaving={isSaving}
+          onSaveDescription={onSaveDescription}
+        />
       </div>
 
       <DocumentationModal

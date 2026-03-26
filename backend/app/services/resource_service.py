@@ -9,6 +9,7 @@ from datetime import datetime
 from app.config import settings
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
+from app.repositories.resource_stats import ResourceStatsBuilder
 from app.schemas.resources import (
     ActualUsage,
     CapacityBar,
@@ -30,6 +31,7 @@ class ResourceService:
     ):
         self.resource_repo = resource_repo
         self.pipeline_repo = pipeline_repo
+        self.stats = ResourceStatsBuilder(resource_repo.session)
 
     async def get_resource_metrics(
         self,
@@ -48,7 +50,7 @@ class ResourceService:
         runs = await self.resource_repo.get_recent_runs(
             pipeline_id, limit=20, date_from=date_from, date_to=date_to,
         )
-        stats = await self.resource_repo.get_run_stats(
+        stats = await self.stats.get_run_stats(
             pipeline_id, date_from=date_from, date_to=date_to,
         )
 
@@ -139,7 +141,7 @@ class ResourceService:
         if not pipeline:
             return None
 
-        runs, total = await self.resource_repo.get_resource_history(
+        runs, total = await self.stats.get_resource_history(
             pipeline_id, date_from=date_from, date_to=date_to,
         )
 

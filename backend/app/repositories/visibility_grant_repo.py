@@ -8,51 +8,7 @@ from sqlalchemy.orm import selectinload
 
 from app.cache import grant_level_cache
 from app.models.visibility_grant import VisibilityGrant
-
-
-def _build_grant_conditions(
-    pipeline_id: uuid.UUID,
-    user_id: uuid.UUID,
-    user_team_ids: set[uuid.UUID],
-    pipeline_team_id: uuid.UUID | None,
-):
-    """Build OR-able SQLAlchemy conditions matching any grant that covers a pipeline.
-
-    Returns a list of BinaryExpression clauses covering:
-    - Direct pipeline grants to the user
-    - Direct pipeline grants to user's teams
-    - Source-team grants to the user
-    - Source-team grants to user's teams
-    """
-    conditions = []
-
-    # Direct pipeline grants → user
-    conditions.append(
-        (VisibilityGrant.grantee_user_id == user_id)
-        & (VisibilityGrant.pipeline_id == pipeline_id)
-    )
-
-    # Direct pipeline grants → user's teams
-    if user_team_ids:
-        conditions.append(
-            VisibilityGrant.grantee_team_id.in_(user_team_ids)
-            & (VisibilityGrant.pipeline_id == pipeline_id)
-        )
-
-    # Source-team grants → user
-    if pipeline_team_id:
-        conditions.append(
-            (VisibilityGrant.grantee_user_id == user_id)
-            & (VisibilityGrant.source_team_id == pipeline_team_id)
-        )
-        # Source-team grants → user's teams
-        if user_team_ids:
-            conditions.append(
-                VisibilityGrant.grantee_team_id.in_(user_team_ids)
-                & (VisibilityGrant.source_team_id == pipeline_team_id)
-            )
-
-    return conditions
+from app.repositories.visibility_filter import VisibilityFilter
 
 
 class VisibilityGrantRepository:
@@ -254,7 +210,7 @@ class VisibilityGrantRepository:
             pipeline_result = await self.session.execute(pipeline_stmt)
             pipeline_team_id = pipeline_result.scalar_one_or_none()
 
-        conditions = _build_grant_conditions(
+        conditions = VisibilityFilter.build_single_pipeline_conditions(
             pipeline_id, user_id, user_team_ids, pipeline_team_id
         )
 
@@ -276,7 +232,7 @@ class VisibilityGrantRepository:
         if cached is not None:
             return cached
 
-        conditions = _build_grant_conditions(
+        conditions = VisibilityFilter.build_single_pipeline_conditions(
             pipeline_id, user_id, user_team_ids, pipeline_team_id
         )
 
@@ -315,7 +271,7 @@ class VisibilityGrantRepository:
         if pipeline_team_id in user_team_ids:
             return True
 
-        conditions = _build_grant_conditions(
+        conditions = VisibilityFilter.build_single_pipeline_conditions(
             pipeline_id, user_id, user_team_ids, pipeline_team_id
         )
 

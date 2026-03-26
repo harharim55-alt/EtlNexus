@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import {
   FileText,
   Edit3,
@@ -16,8 +16,7 @@ import rehypeSanitize, { defaultSchema } from "rehype-sanitize";
 import rehypeHighlight from "rehype-highlight";
 
 import { markdownComponents } from "./documentation/markdown-components";
-import { MarkdownToolbar } from "./documentation/doc-toolbar";
-import { CheatsheetPanel } from "./documentation/doc-cheatsheet";
+import { MarkdownEditor } from "./MarkdownEditor";
 
 /** Allow safe HTML elements while blocking XSS vectors like <script>. */
 const sanitizeSchema = {
@@ -89,11 +88,9 @@ export function DocumentationModal({
   const [editValue, setEditValue] = useState(documentation ?? "");
   const [cheatsheetOpen, setCheatsheetOpen] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const gutterRef = useRef<HTMLDivElement>(null);
 
   const isEditing = activeTab === "edit";
 
-  const lines = useMemo(() => editValue.split("\n"), [editValue]);
   const previewContent = editValue || documentation || "";
 
   useEffect(() => {
@@ -139,12 +136,6 @@ export function DocumentationModal({
   const handleSave = () => {
     onSave(editValue);
     setActiveTab("preview");
-  };
-
-  const syncGutterScroll = () => {
-    if (gutterRef.current && textareaRef.current) {
-      gutterRef.current.scrollTop = textareaRef.current.scrollTop;
-    }
   };
 
   if (!open) return null;
@@ -240,53 +231,22 @@ export function DocumentationModal({
           </div>
         </div>
 
-        {/* ── Toolbar (edit mode) ────────────────────────────────── */}
+        {/* ── Toolbar + Editor (edit mode) ─────────────────────── */}
         {isEditing && (
-          <div className="relative shrink-0">
-            <MarkdownToolbar
-              textareaRef={textareaRef}
-              editValue={editValue}
-              setEditValue={setEditValue}
-              onToggleCheatsheet={() => setCheatsheetOpen((v) => !v)}
-              cheatsheetOpen={cheatsheetOpen}
-            />
-            {cheatsheetOpen && (
-              <CheatsheetPanel onClose={() => setCheatsheetOpen(false)} />
-            )}
-          </div>
+          <MarkdownEditor
+            editValue={editValue}
+            onEditValueChange={setEditValue}
+            textareaRef={textareaRef}
+            cheatsheetOpen={cheatsheetOpen}
+            onToggleCheatsheet={() => setCheatsheetOpen((v) => !v)}
+            onCloseCheatsheet={() => setCheatsheetOpen(false)}
+          />
         )}
 
-        {/* ── Body ───────────────────────────────────────────────── */}
+        {/* ── Body (non-edit modes) ───────────────────────────── */}
+        {!isEditing && (
         <div className="flex-1 overflow-auto bg-[#09090b] custom-scrollbar">
-          {activeTab === "edit" ? (
-            <div className="flex h-full">
-              {/* Line number gutter */}
-              <div
-                ref={gutterRef}
-                className="shrink-0 py-8 pl-5 pr-3 text-right select-none overflow-hidden border-r border-white/[0.04]"
-              >
-                {lines.map((_, i) => (
-                  <div
-                    key={i}
-                    className="text-[11px] font-mono text-slate-700 leading-relaxed"
-                    style={{ height: "1.625rem" }}
-                  >
-                    {i + 1}
-                  </div>
-                ))}
-              </div>
-              {/* Textarea */}
-              <textarea
-                ref={textareaRef}
-                value={editValue}
-                onChange={(e) => setEditValue(e.target.value)}
-                onScroll={syncGutterScroll}
-                className="flex-1 h-full min-h-full bg-transparent text-slate-300 font-mono text-sm resize-none focus:outline-none py-8 px-6 leading-relaxed placeholder:text-slate-600"
-                placeholder="# Start writing documentation here..."
-                spellCheck={false}
-              />
-            </div>
-          ) : activeTab === "history" ? (
+          {activeTab === "history" ? (
             <RevisionHistoryPanel
               pipelineId={pipelineId}
               field="documentation"
@@ -309,6 +269,7 @@ export function DocumentationModal({
             </div>
           )}
         </div>
+        )}
 
         {/* ── Footer ─────────────────────────────────────────────── */}
         <div className="px-7 py-2.5 bg-[#111116] border-t border-white/[0.08] text-[11px] font-mono text-slate-600 flex justify-between shrink-0">

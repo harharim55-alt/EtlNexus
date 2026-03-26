@@ -72,5 +72,34 @@ services:
         max-size: "10m"
         max-file: "3"
 
+  db-backup:
+    image: postgres:16-alpine
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./scripts/backup-db.sh:/scripts/backup-db.sh:ro
+      - ./scripts/backup-cron-entry.sh:/scripts/backup-cron-entry.sh:ro
+      - db-backups:/backups
+    environment:
+      PGHOST: db
+      PGUSER: ${POSTGRES_USER:-etlnexus}
+      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}
+      PGDATABASE: ${POSTGRES_DB:-etlnexus}
+      BACKUP_SCHEDULE: ${BACKUP_SCHEDULE:-0 2 * * *}
+      RETENTION_DAYS: ${RETENTION_DAYS:-30}
+    entrypoint: /scripts/backup-cron-entry.sh
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
 volumes:
   pgdata:
+  db-backups:

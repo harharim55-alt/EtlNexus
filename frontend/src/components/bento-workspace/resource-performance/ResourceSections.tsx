@@ -9,6 +9,7 @@ import {
   formatBytes,
   formatMs,
 } from "./resource-utils";
+import { ResourceMetricCard, CompactMetricCard } from "./ResourceMetricCard";
 
 // --- Duration Section ---
 export function DurationSection({
@@ -145,38 +146,22 @@ export function ResourceSection({
       <div className="grid grid-cols-2 gap-3">
         {items.map((item) => {
           if (!item.allocated) return null;
-          const Icon = RESOURCE_ICONS[item.key];
           return (
-            <div key={item.key} className="flex items-start gap-2">
-              <Icon className="w-3.5 h-3.5 text-slate-600 mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <div className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
-                  {item.label}
-                </div>
-                <div className="text-sm font-medium text-white font-mono">
-                  {item.allocated}
-                </div>
-                {item.actual && (
-                  <div className="text-[10px] font-mono text-indigo-400">
-                    {item.actual}
-                  </div>
-                )}
-              </div>
-            </div>
+            <ResourceMetricCard
+              key={item.key}
+              icon={RESOURCE_ICONS[item.key]}
+              label={item.label}
+              value={item.allocated}
+              detail={item.actual}
+            />
           );
         })}
         {peakExecMem != null && (
-          <div className="flex items-start gap-2">
-            <MemoryStick className="w-3.5 h-3.5 text-slate-600 mt-0.5 shrink-0" />
-            <div className="min-w-0">
-              <div className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
-                Peak Exec Memory
-              </div>
-              <div className="text-sm font-medium text-white font-mono">
-                {formatBytes(peakExecMem)}
-              </div>
-            </div>
-          </div>
+          <ResourceMetricCard
+            icon={MemoryStick}
+            label="Peak Exec Memory"
+            value={formatBytes(peakExecMem)}
+          />
         )}
       </div>
     </div>
@@ -309,22 +294,15 @@ export function SparkInternalsSection({ actualUsage }: { actualUsage: ActualUsag
         </span>
       </div>
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-        {items.map((item) => {
-          const Icon = item.icon;
-          return (
-            <div key={item.label} className="flex items-start gap-1.5">
-              <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${item.warn ? "text-amber-500" : "text-slate-600"}`} />
-              <div className="min-w-0">
-                <div className="text-[8px] font-mono uppercase tracking-widest text-slate-600 truncate">
-                  {item.label}
-                </div>
-                <div className={`text-xs font-mono ${item.warn ? "text-amber-400" : "text-white"}`}>
-                  {item.value}
-                </div>
-              </div>
-            </div>
-          );
-        })}
+        {items.map((item) => (
+          <CompactMetricCard
+            key={item.label}
+            icon={item.icon}
+            label={item.label}
+            value={item.value}
+            warn={item.warn}
+          />
+        ))}
       </div>
     </div>
   );

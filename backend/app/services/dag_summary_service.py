@@ -8,6 +8,7 @@ from app.integrations.airflow_client import airflow_client
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.resource_repo import ResourceRepository
+from app.repositories.resource_stats import ResourceStatsBuilder
 from app.schemas.dag_summary import (
     DagSummary,
     DagSummaryAggregate,
@@ -47,6 +48,7 @@ class DagSummaryService:
         self.dag_task_repo = dag_task_repo
         self.resource_repo = resource_repo
         self.airflow_repo = airflow_repo
+        self.stats = ResourceStatsBuilder(resource_repo.session)
 
     async def get_dag_summaries(
         self,
@@ -98,7 +100,7 @@ class DagSummaryService:
             total_pipelines += pc
 
             # Run stats (date range or default 30d)
-            run_stats = await self.resource_repo.get_dag_run_stats(
+            run_stats = await self.stats.get_dag_run_stats(
                 dag_id, date_from=date_from, date_to=date_to,
             )
             total_runs_30d += run_stats["dag_run_count"]
@@ -107,7 +109,7 @@ class DagSummaryService:
             latest_runs = await self.resource_repo.get_latest_runs_by_dag(dag_id)
 
             # Typical finish hour
-            finish_hour = await self.resource_repo.get_typical_finish_hour(
+            finish_hour = await self.stats.get_typical_finish_hour(
                 dag_id, date_from=date_from, date_to=date_to,
             )
 

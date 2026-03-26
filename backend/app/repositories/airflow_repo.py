@@ -4,10 +4,10 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.airflow_status import AirflowRunStatus
-from app.repositories.base import apply_updates
+from app.repositories.base import UpsertMixin
 
 
-class AirflowRepository:
+class AirflowRepository(UpsertMixin):
     def __init__(self, session: AsyncSession):
         self.session = session
 
@@ -24,18 +24,8 @@ class AirflowRepository:
         return result.scalar_one_or_none()
 
     async def upsert(self, data: dict) -> AirflowRunStatus:
-        pipeline_id = data["pipeline_id"]
-        stmt = select(AirflowRunStatus).where(
-            AirflowRunStatus.pipeline_id == pipeline_id
+        return await self._upsert(
+            AirflowRunStatus,
+            lookup_kwargs={"pipeline_id": data["pipeline_id"]},
+            data=data,
         )
-        result = await self.session.execute(stmt)
-        status = result.scalar_one_or_none()
-
-        if status:
-            apply_updates(status, data)
-        else:
-            status = AirflowRunStatus(**data)
-            self.session.add(status)
-
-        await self.session.flush()
-        return status

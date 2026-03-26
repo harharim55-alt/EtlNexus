@@ -1,39 +1,21 @@
-import { useEffect, useMemo, useRef, useCallback } from "react";
-import { useVirtualizer } from "@tanstack/react-virtual";
+import { useEffect, useMemo, useCallback } from "react";
 import { usePipelines } from "@/hooks/use-pipelines";
 import { useDagSummary } from "@/hooks/use-dag-summary";
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { PipelineSearch } from "./PipelineSearch";
 import { PipelineFilters } from "./PipelineFilters";
-import { PipelineListItem } from "./PipelineListItem";
-import { Skeleton } from "@/components/ui/skeleton";
-import { ErrorState } from "@/components/shared/ErrorState";
-import { LoadingState } from "@/components/shared/LoadingState";
+import { PipelineListContent } from "./PipelineListContent";
 import { X } from "lucide-react";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
 
-/* ── Module-level constants ────────────────────────────────────────── */
-
-const VIRTUAL_ROW_STYLE: React.CSSProperties = {
-  position: "absolute",
-  top: 0,
-  left: 0,
-  width: "100%",
-};
-
-const TOTAL_SIZE_STYLE = (height: number): React.CSSProperties => ({
-  height: `${height}px`,
-  position: "relative",
-});
+/* ── Types ────────────────────────────────────────────────────────── */
 
 interface CategoryGroup {
   category: string;
   pipelines: PipelineListItemType[];
 }
 
-type FlatItem =
-  | { type: "header"; category: string; count: number }
-  | { type: "pipeline"; pipeline: PipelineListItemType };
+/* ── Component ─────────────────────────────────────────────────────── */
 
 export function PipelineRegistry() {
   const {
@@ -64,7 +46,7 @@ export function PipelineRegistry() {
   const hasActiveFilters =
     teamFilters.size > 0 || dagFilters.size > 0 || statusFilters.size > 0;
 
-  // Build DAG → pipeline ID mapping from DAG summary
+  // Build DAG -> pipeline ID mapping from DAG summary
   const dagToPipelineIds = useMemo(() => {
     if (!dagSummary) return new Map<string, Set<string>>();
     const map = new Map<string, Set<string>>();
@@ -184,53 +166,12 @@ export function PipelineRegistry() {
 
   const isFiltered = hasActiveFilters && pipelines.length > 0 && filteredPipelines.length !== pipelines.length;
 
-  // Flatten grouped pipelines into a single virtual list
-  const flatItems = useMemo<FlatItem[]>(() => {
-    const items: FlatItem[] = [];
-    for (const group of groupedPipelines) {
-      items.push({ type: "header", category: group.category, count: group.pipelines.length });
-      for (const pipeline of group.pipelines) {
-        items.push({ type: "pipeline", pipeline });
-      }
-    }
-    return items;
-  }, [groupedPipelines]);
-
-  const scrollRef = useRef<HTMLDivElement>(null);
-
   const handleSelectPipeline = useCallback(
     (id: string) => setSelectedPipelineId(id),
     [setSelectedPipelineId],
   );
 
   const handleRetry = useCallback(() => refetch(), [refetch]);
-
-  const estimateSize = useCallback(
-    (index: number) => (flatItems[index].type === "header" ? 40 : 108),
-    [flatItems],
-  );
-
-  const virtualizer = useVirtualizer({
-    count: flatItems.length,
-    getScrollElement: () => scrollRef.current,
-    estimateSize,
-    overscan: 10,
-    measureElement: (el) => el.getBoundingClientRect().height,
-  });
-
-  // Infinite scroll: fetch next page when scrolling near bottom
-  const virtualItems = virtualizer.getVirtualItems();
-  const lastVirtualItem = virtualItems[virtualItems.length - 1];
-  useEffect(() => {
-    if (!lastVirtualItem) return;
-    if (
-      lastVirtualItem.index >= flatItems.length - 5 &&
-      hasNextPage &&
-      !isFetchingNextPage
-    ) {
-      fetchNextPage();
-    }
-  }, [lastVirtualItem?.index, flatItems.length, hasNextPage, isFetchingNextPage, fetchNextPage]);
 
   return (
     <div data-section="pipeline-registry" className="w-[400px] border-r border-white/5 flex flex-col bg-[#09090b] shrink-0">
@@ -272,79 +213,19 @@ export function PipelineRegistry() {
         </div>
       )}
 
-      <div ref={scrollRef} className="flex-1 overflow-y-auto p-3 custom-scrollbar">
-        {isLoading && (
-          <div className="space-y-3 p-2">
-            {Array.from({ length: 6 }).map((_, i) => (
-              <Skeleton key={i} className="h-24 rounded-xl bg-white/5" />
-            ))}
-          </div>
-        )}
-
-        {isError && (
-          <ErrorState
-            message="Failed to load pipelines"
-            onRetry={handleRetry}
-          />
-        )}
-
-        {flatItems.length > 0 && (
-          <div style={TOTAL_SIZE_STYLE(virtualizer.getTotalSize())}>
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const item = flatItems[virtualRow.index];
-              return (
-                <div
-                  key={virtualRow.index}
-                  ref={virtualizer.measureElement}
-                  data-index={virtualRow.index}
-                  style={{
-                    ...VIRTUAL_ROW_STYLE,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                >
-                  {item.type === "header" ? (
-                    <div className="px-3 pt-4 pb-1.5 bg-[#09090b]">
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
-                          {item.category}
-                        </span>
-                        <span className="text-[10px] font-mono text-slate-600">
-                          {item.count}
-                        </span>
-                        <div className="flex-1 h-px bg-white/5" />
-                      </div>
-                    </div>
-                  ) : (
-                    <PipelineListItem
-                      pipeline={item.pipeline}
-                      isActive={selectedPipelineId === item.pipeline.id}
-                      onClick={() => handleSelectPipeline(item.pipeline.id)}
-                    />
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        )}
-
-        {isFetchingNextPage && (
-          <div className="py-4">
-            <LoadingState />
-          </div>
-        )}
-
-        {!isLoading && pipelines.length > 0 && filteredPipelines.length === 0 && (
-          <div className="text-center text-slate-500 text-sm py-8">
-            No pipelines match filters
-          </div>
-        )}
-
-        {!isLoading && pipelines.length === 0 && (
-          <div className="text-center text-slate-500 text-sm py-8">
-            No pipelines found
-          </div>
-        )}
-      </div>
+      <PipelineListContent
+        groupedPipelines={groupedPipelines}
+        selectedPipelineId={selectedPipelineId}
+        onSelectPipeline={handleSelectPipeline}
+        isLoading={isLoading}
+        isError={isError}
+        onRetry={handleRetry}
+        totalCount={pipelines.length}
+        filteredCount={filteredPipelines.length}
+        hasNextPage={hasNextPage ?? false}
+        isFetchingNextPage={isFetchingNextPage}
+        fetchNextPage={fetchNextPage}
+      />
     </div>
   );
 }

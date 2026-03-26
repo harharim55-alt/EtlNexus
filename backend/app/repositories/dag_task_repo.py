@@ -6,29 +6,19 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.dag_task import DagTask
-from app.repositories.base import apply_updates
+from app.repositories.base import UpsertMixin
 
 
-class DagTaskRepository:
+class DagTaskRepository(UpsertMixin):
     def __init__(self, session: AsyncSession):
         self.session = session
 
     async def upsert(self, data: dict) -> DagTask:
-        stmt = select(DagTask).where(
-            DagTask.dag_id == data["dag_id"],
-            DagTask.task_id == data["task_id"],
+        return await self._upsert(
+            DagTask,
+            lookup_kwargs={"dag_id": data["dag_id"], "task_id": data["task_id"]},
+            data=data,
         )
-        result = await self.session.execute(stmt)
-        row = result.scalar_one_or_none()
-
-        if row:
-            apply_updates(row, data)
-        else:
-            row = DagTask(**data)
-            self.session.add(row)
-
-        await self.session.flush()
-        return row
 
     async def get_dags_for_task(self, task_id: str) -> list[DagTask]:
         stmt = select(DagTask).where(DagTask.task_id == task_id)

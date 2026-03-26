@@ -23,6 +23,8 @@ from app.config import settings
 from app.database import get_db_session
 from app.integrations.oidc_client import oidc_client
 from app.models.user import User
+from app.repositories.pipeline_repo import PipelineRepository
+from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.user_auth_service import UserAuthService
 
 logger = logging.getLogger(__name__)
@@ -148,8 +150,6 @@ async def _resolve_pipeline_team(
         pipeline_uuid = uuid.UUID(raw_pipeline_id)
     except ValueError:
         return None, None
-    from app.repositories.pipeline_repo import PipelineRepository
-
     pipeline = await PipelineRepository(session).get_by_id(pipeline_uuid)
     return pipeline_uuid, pipeline
 
@@ -224,8 +224,6 @@ def require_team_membership_or_editor_grant(pipeline_id_param: str = "pipeline_i
             return user
 
         # Check for editor-level grant
-        from app.repositories.visibility_grant_repo import VisibilityGrantRepository
-
         has_editor = await VisibilityGrantRepository(session).has_editor_grant(
             pipeline_id=pipeline_uuid,
             user_id=user.id,

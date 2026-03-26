@@ -1,23 +1,10 @@
 import { useEffect } from "react";
 import { X, Activity } from "lucide-react";
-import {
-  LineChart,
-  Line,
-  AreaChart,
-  Area,
-  BarChart,
-  Bar,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  Legend,
-} from "recharts";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useResourceHistory } from "@/hooks/use-resource-history";
 import { formatDuration } from "@/lib/format";
 import { formatBytes } from "./resource-performance/resource-utils";
+import { ResourceChart } from "./ResourceChart";
 import type { ResourceHistoryRecord } from "@/types/resources";
 
 /* ── Props ─────────────────────────────────────────────────────────── */
@@ -27,22 +14,6 @@ interface ResourceHistoryModalProps {
   onClose: () => void;
   pipelineId: string;
 }
-
-/* ── Chart theme ───────────────────────────────────────────────────── */
-
-const GRID_COLOR = "#1e293b";
-const TICK_STYLE = { fill: "#64748b", fontSize: 9, fontFamily: "monospace" };
-const TOOLTIP_STYLE = {
-  contentStyle: {
-    backgroundColor: "#18181b",
-    border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 8,
-    fontSize: 11,
-    fontFamily: "monospace",
-    color: "#e2e8f0",
-  },
-  labelStyle: { color: "#94a3b8", fontSize: 10 },
-};
 
 /* ── Helpers ───────────────────────────────────────────────────────── */
 
@@ -104,45 +75,26 @@ function StatusDot(props: {
   );
 }
 
-/* ── Chart section wrapper ─────────────────────────────────────────── */
-
-function ChartPanel({
-  title,
-  children,
-}: {
-  title: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4">
-      <div className="text-[9px] font-mono uppercase tracking-widest text-slate-600 mb-3">
-        {title}
-      </div>
-      <div className="h-[200px]">{children}</div>
-    </div>
-  );
-}
-
 /* ── Tooltip formatters ────────────────────────────────────────────── */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function durationTooltipFormatter(value: any) {
-  return [formatDuration(Number(value)), "Duration"];
+  return [formatDuration(Number(value)), "Duration"] as [string, string];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function gbTooltipFormatter(value: any, name: any) {
-  return [`${Number(value).toFixed(2)} GB`, name];
+  return [`${Number(value).toFixed(2)} GB`, name] as [string, string];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function pctTooltipFormatter(value: any) {
-  return [`${Number(value).toFixed(1)}%`, "CPU"];
+  return [`${Number(value).toFixed(1)}%`, "CPU"] as [string, string];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function bytesTooltipFormatter(value: any, name: any) {
-  return [formatBytes(Number(value)), name];
+  return [formatBytes(Number(value)), name] as [string, string];
 }
 
 function bytesTickFormatter(value: number) {
@@ -245,260 +197,99 @@ export function ResourceHistoryModal({
           ) : (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {/* Duration */}
-              <ChartPanel title="Run Duration">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
-                    <XAxis dataKey="date" tick={TICK_STYLE} axisLine={false} tickLine={false} />
-                    <YAxis
-                      tick={TICK_STYLE}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={(v: number) => formatDuration(v)}
-                    />
-                    <Tooltip
-                      {...TOOLTIP_STYLE}
-                      formatter={durationTooltipFormatter}
-                      labelFormatter={(_, payload) =>
-                        payload?.[0]?.payload?.dateFull ?? ""
-                      }
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="duration_seconds"
-                      stroke="#818cf8"
-                      strokeWidth={1.5}
-                      dot={<StatusDot />}
-                      name="Duration"
-                    />
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartPanel>
+              <ResourceChart
+                title="Run Duration"
+                data={chartData}
+                chartType="line"
+                yTickFormatter={(v: number) => formatDuration(v)}
+                tooltipFormatter={durationTooltipFormatter}
+                lines={[
+                  { dataKey: "duration_seconds", stroke: "#818cf8", name: "Duration", dot: <StatusDot /> },
+                ]}
+              />
 
               {/* Memory */}
-              <ChartPanel title="Memory Usage">
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chartData}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
-                    <XAxis dataKey="date" tick={TICK_STYLE} axisLine={false} tickLine={false} />
-                    <YAxis
-                      tick={TICK_STYLE}
-                      axisLine={false}
-                      tickLine={false}
-                      tickFormatter={gbTickFormatter}
-                    />
-                    <Tooltip
-                      {...TOOLTIP_STYLE}
-                      formatter={gbTooltipFormatter}
-                      labelFormatter={(_, payload) =>
-                        payload?.[0]?.payload?.dateFull ?? ""
-                      }
-                    />
-                    <Legend
-                      iconSize={8}
-                      wrapperStyle={{ fontSize: 9, fontFamily: "monospace" }}
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="driverMemGb"
-                      stroke="#818cf8"
-                      strokeWidth={1.5}
-                      dot={{ r: 2, fill: "#818cf8" }}
-                      name="Driver"
-                    />
-                    <Line
-                      type="monotone"
-                      dataKey="executorMemGb"
-                      stroke="#34d399"
-                      strokeWidth={1.5}
-                      dot={{ r: 2, fill: "#34d399" }}
-                      name="Executor Peak"
-                    />
-                    {hasPeakExec && (
-                      <Line
-                        type="monotone"
-                        dataKey="peakExecMemGb"
-                        stroke="#f59e0b"
-                        strokeWidth={1.5}
-                        strokeDasharray="4 2"
-                        dot={{ r: 2, fill: "#f59e0b" }}
-                        name="Peak Exec"
-                      />
-                    )}
-                  </LineChart>
-                </ResponsiveContainer>
-              </ChartPanel>
+              <ResourceChart
+                title="Memory Usage"
+                data={chartData}
+                chartType="line"
+                yTickFormatter={gbTickFormatter}
+                tooltipFormatter={gbTooltipFormatter}
+                showLegend
+                lines={[
+                  { dataKey: "driverMemGb", stroke: "#818cf8", name: "Driver" },
+                  { dataKey: "executorMemGb", stroke: "#34d399", name: "Executor Peak" },
+                  ...(hasPeakExec
+                    ? [{ dataKey: "peakExecMemGb", stroke: "#f59e0b", name: "Peak Exec", strokeDasharray: "4 2" }]
+                    : []),
+                ]}
+              />
 
               {/* CPU Utilization */}
-              <ChartPanel title="CPU Utilization">
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={chartData}>
-                    <defs>
-                      <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="0%" stopColor="#818cf8" stopOpacity={0.3} />
-                        <stop offset="100%" stopColor="#818cf8" stopOpacity={0.02} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
-                    <XAxis dataKey="date" tick={TICK_STYLE} axisLine={false} tickLine={false} />
-                    <YAxis
-                      tick={TICK_STYLE}
-                      axisLine={false}
-                      tickLine={false}
-                      domain={[0, 100]}
-                      tickFormatter={(v: number) => `${v}%`}
-                    />
-                    <Tooltip
-                      {...TOOLTIP_STYLE}
-                      formatter={pctTooltipFormatter}
-                      labelFormatter={(_, payload) =>
-                        payload?.[0]?.payload?.dateFull ?? ""
-                      }
-                    />
-                    <Area
-                      type="monotone"
-                      dataKey="cpu_utilization_pct"
-                      stroke="#818cf8"
-                      strokeWidth={1.5}
-                      fill="url(#cpuGradient)"
-                      dot={{ r: 2, fill: "#818cf8" }}
-                      name="CPU"
-                    />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </ChartPanel>
+              <ResourceChart
+                title="CPU Utilization"
+                data={chartData}
+                chartType="area"
+                yTickFormatter={(v: number) => `${v}%`}
+                yDomain={[0, 100]}
+                tooltipFormatter={pctTooltipFormatter}
+                gradientDefs={
+                  <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor="#818cf8" stopOpacity={0.3} />
+                    <stop offset="100%" stopColor="#818cf8" stopOpacity={0.02} />
+                  </linearGradient>
+                }
+                areas={[
+                  { dataKey: "cpu_utilization_pct", stroke: "#818cf8", fill: "url(#cpuGradient)", name: "CPU" },
+                ]}
+              />
 
               {/* Shuffle I/O */}
               {hasShuffle && (
-                <ChartPanel title="Shuffle I/O">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
-                      <XAxis dataKey="date" tick={TICK_STYLE} axisLine={false} tickLine={false} />
-                      <YAxis
-                        tick={TICK_STYLE}
-                        axisLine={false}
-                        tickLine={false}
-                        tickFormatter={bytesTickFormatter}
-                      />
-                      <Tooltip
-                        {...TOOLTIP_STYLE}
-                        formatter={bytesTooltipFormatter}
-                        labelFormatter={(_, payload) =>
-                          payload?.[0]?.payload?.dateFull ?? ""
-                        }
-                      />
-                      <Legend
-                        iconSize={8}
-                        wrapperStyle={{ fontSize: 9, fontFamily: "monospace" }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="shuffle_read_bytes"
-                        stroke="#818cf8"
-                        strokeWidth={1.5}
-                        dot={{ r: 2, fill: "#818cf8" }}
-                        name="Shuffle Read"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="shuffle_write_bytes"
-                        stroke="#f472b6"
-                        strokeWidth={1.5}
-                        dot={{ r: 2, fill: "#f472b6" }}
-                        name="Shuffle Write"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartPanel>
+                <ResourceChart
+                  title="Shuffle I/O"
+                  data={chartData}
+                  chartType="line"
+                  yTickFormatter={bytesTickFormatter}
+                  tooltipFormatter={bytesTooltipFormatter}
+                  showLegend
+                  lines={[
+                    { dataKey: "shuffle_read_bytes", stroke: "#818cf8", name: "Shuffle Read" },
+                    { dataKey: "shuffle_write_bytes", stroke: "#f472b6", name: "Shuffle Write" },
+                  ]}
+                />
               )}
 
               {/* Data I/O */}
               {hasIO && (
-                <ChartPanel title="Data I/O">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
-                      <XAxis dataKey="date" tick={TICK_STYLE} axisLine={false} tickLine={false} />
-                      <YAxis
-                        tick={TICK_STYLE}
-                        axisLine={false}
-                        tickLine={false}
-                        tickFormatter={bytesTickFormatter}
-                      />
-                      <Tooltip
-                        {...TOOLTIP_STYLE}
-                        formatter={bytesTooltipFormatter}
-                        labelFormatter={(_, payload) =>
-                          payload?.[0]?.payload?.dateFull ?? ""
-                        }
-                      />
-                      <Legend
-                        iconSize={8}
-                        wrapperStyle={{ fontSize: 9, fontFamily: "monospace" }}
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="input_bytes"
-                        stroke="#34d399"
-                        strokeWidth={1.5}
-                        dot={{ r: 2, fill: "#34d399" }}
-                        name="Input"
-                      />
-                      <Line
-                        type="monotone"
-                        dataKey="output_bytes"
-                        stroke="#fb923c"
-                        strokeWidth={1.5}
-                        dot={{ r: 2, fill: "#fb923c" }}
-                        name="Output"
-                      />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartPanel>
+                <ResourceChart
+                  title="Data I/O"
+                  data={chartData}
+                  chartType="line"
+                  yTickFormatter={bytesTickFormatter}
+                  tooltipFormatter={bytesTooltipFormatter}
+                  showLegend
+                  lines={[
+                    { dataKey: "input_bytes", stroke: "#34d399", name: "Input" },
+                    { dataKey: "output_bytes", stroke: "#fb923c", name: "Output" },
+                  ]}
+                />
               )}
 
               {/* Spill */}
               {hasSpill && (
-                <ChartPanel title="Memory & Disk Spill">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={chartData}>
-                      <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
-                      <XAxis dataKey="date" tick={TICK_STYLE} axisLine={false} tickLine={false} />
-                      <YAxis
-                        tick={TICK_STYLE}
-                        axisLine={false}
-                        tickLine={false}
-                        tickFormatter={bytesTickFormatter}
-                      />
-                      <Tooltip
-                        {...TOOLTIP_STYLE}
-                        formatter={bytesTooltipFormatter}
-                        labelFormatter={(_, payload) =>
-                          payload?.[0]?.payload?.dateFull ?? ""
-                        }
-                      />
-                      <Legend
-                        iconSize={8}
-                        wrapperStyle={{ fontSize: 9, fontFamily: "monospace" }}
-                      />
-                      <Bar
-                        dataKey="memory_bytes_spilled"
-                        fill="#f59e0b"
-                        fillOpacity={0.7}
-                        name="Mem Spill"
-                        radius={[2, 2, 0, 0]}
-                      />
-                      <Bar
-                        dataKey="disk_bytes_spilled"
-                        fill="#ef4444"
-                        fillOpacity={0.7}
-                        name="Disk Spill"
-                        radius={[2, 2, 0, 0]}
-                      />
-                    </BarChart>
-                  </ResponsiveContainer>
-                </ChartPanel>
+                <ResourceChart
+                  title="Memory & Disk Spill"
+                  data={chartData}
+                  chartType="bar"
+                  yTickFormatter={bytesTickFormatter}
+                  tooltipFormatter={bytesTooltipFormatter}
+                  showLegend
+                  bars={[
+                    { dataKey: "memory_bytes_spilled", fill: "#f59e0b", fillOpacity: 0.7, name: "Mem Spill" },
+                    { dataKey: "disk_bytes_spilled", fill: "#ef4444", fillOpacity: 0.7, name: "Disk Spill" },
+                  ]}
+                />
               )}
             </div>
           )}

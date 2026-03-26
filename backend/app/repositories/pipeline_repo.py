@@ -9,8 +9,8 @@ from sqlalchemy.orm import selectinload
 from app.cache import task_id_map_cache
 from app.models.pipeline import Pipeline, PipelineField
 from app.models.run_history import PipelineRunHistory
-from app.models.visibility_grant import VisibilityGrant
 from app.repositories.base import apply_updates
+from app.repositories.visibility_filter import VisibilityFilter
 
 
 def _escape_like(value: str) -> str:
@@ -258,47 +258,9 @@ class PipelineRepository:
             )
 
         if not is_admin:
-            visibility_conditions = [Pipeline.team_id.is_(None)]
-
-            if user_team_ids:
-                visibility_conditions.append(Pipeline.team_id.in_(user_team_ids))
-
-            # Pre-fetch all grant-visible pipeline IDs and team IDs in one flat query
-            # instead of 4 correlated subqueries
-            grant_conditions = []
-            if user_team_ids:
-                grant_conditions.append(
-                    VisibilityGrant.grantee_team_id.in_(user_team_ids)
-                )
-            if user_id:
-                grant_conditions.append(
-                    VisibilityGrant.grantee_user_id == user_id
-                )
-
-            if grant_conditions:
-                grant_stmt = select(
-                    VisibilityGrant.pipeline_id,
-                    VisibilityGrant.source_team_id,
-                ).where(or_(*grant_conditions))
-                grant_result = await self.session.execute(grant_stmt)
-
-                granted_pipeline_ids: set[uuid.UUID] = set()
-                granted_source_team_ids: set[uuid.UUID] = set()
-                for row in grant_result.all():
-                    if row.pipeline_id:
-                        granted_pipeline_ids.add(row.pipeline_id)
-                    if row.source_team_id:
-                        granted_source_team_ids.add(row.source_team_id)
-
-                if granted_pipeline_ids:
-                    visibility_conditions.append(
-                        Pipeline.id.in_(granted_pipeline_ids)
-                    )
-                if granted_source_team_ids:
-                    visibility_conditions.append(
-                        Pipeline.team_id.in_(granted_source_team_ids)
-                    )
-
+            visibility_conditions = await VisibilityFilter.build_batch_visibility_conditions(
+                self.session, user_id, user_team_ids,
+            )
             conditions.append(or_(*visibility_conditions))
 
         # Count total matching rows (without offset/limit)

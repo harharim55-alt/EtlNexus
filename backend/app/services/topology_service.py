@@ -16,6 +16,12 @@ from app.schemas.topology import (
     UpstreamNode,
     UpstreamTopologyGraph,
 )
+from app.services.graph_builder import (
+    bfs_bouncer_discovery,
+    bfs_find_bouncers,
+    bfs_upstream_semantic,
+    connect_bouncers_forward,
+)
 
 
 class TopologyService:
@@ -85,23 +91,12 @@ class TopologyService:
                     reverse_adj[adid][downstream_tid].add(dt.task_id)
 
         # BFS upstream from current task to find ancestor bouncers
-        found_bouncers: dict[str, set[str]] = {}  # bouncer_name -> dag_ids
-        for adid in active_dag_ids:
-            tid_to_dt = {dt.task_id: dt for dt in dag_tasks_by_dag[adid]}
-            visited: set[str] = set()
-            queue = [my_task_id]
-            while queue:
-                tid = queue.pop(0)
-                if tid in visited:
-                    continue
-                visited.add(tid)
-                dt_entry = tid_to_dt.get(tid)
-                if dt_entry and dt_entry.bouncer_name:
-                    found_bouncers.setdefault(dt_entry.bouncer_name, set()).add(adid)
-                    continue  # bouncers are terminal roots
-                for upstream_tid in reverse_adj[adid].get(tid, set()):
-                    if upstream_tid not in visited:
-                        queue.append(upstream_tid)
+        found_bouncers: dict[str, set[str]] = bfs_find_bouncers(
+            root_task_id=my_task_id,
+            dag_tasks_by_dag=dag_tasks_by_dag,
+            reverse_adj=reverse_adj,
+            active_dag_ids=active_dag_ids,
+        )
 
         # Enrich bouncers from DB
         upstream_bouncers_list = await self._enrich_bouncers(found_bouncers)
@@ -229,55 +224,22 @@ class TopologyService:
                 status_map[p.task_id] = p.airflow_status.status
 
         # BFS through needs/prefers (semantic data dependencies)
-        visited: dict[str, int] = {}  # task_id -> depth
-        edges: list[UpstreamEdge] = []
-        queue: list[tuple[str, int]] = [(my_task_id, 0)]
-
-        while queue:
-            tid, depth = queue.pop(0)
-            if tid in visited:
-                continue
-            visited[tid] = depth
-
-            dt = tid_to_dt.get(tid)
-            if not dt:
-                continue
-
-            for dep_tid in dt.needs or []:
-                edges.append(UpstreamEdge(
-                    source_task_id=dep_tid,
-                    target_task_id=tid,
-                    edge_type="needs",
-                ))
-                if dep_tid not in visited:
-                    queue.append((dep_tid, depth + 1))
-
-            for dep_tid in dt.prefers or []:
-                edges.append(UpstreamEdge(
-                    source_task_id=dep_tid,
-                    target_task_id=tid,
-                    edge_type="prefers",
-                ))
-                if dep_tid not in visited:
-                    queue.append((dep_tid, depth + 1))
+        visited, raw_edges = bfs_upstream_semantic(
+            root_task_id=my_task_id,
+            tid_to_dt=tid_to_dt,
+        )
+        edges: list[UpstreamEdge] = [
+            UpstreamEdge(source_task_id=src, target_task_id=tgt, edge_type=etype)
+            for src, tgt, etype in raw_edges
+        ]
 
         # Bouncer discovery via reverse_adj BFS from all visited tasks
-        found_bouncers: dict[str, set[str]] = {}
-        bouncer_visited: set[str] = set()
-        bouncer_queue = list(visited.keys())
-        while bouncer_queue:
-            tid = bouncer_queue.pop(0)
-            if tid in bouncer_visited:
-                continue
-            bouncer_visited.add(tid)
-            for upstream_tid in reverse_adj.get(tid, set()):
-                if upstream_tid in bouncer_visited:
-                    continue
-                dt_entry = tid_to_dt.get(upstream_tid)
-                if dt_entry and dt_entry.bouncer_name:
-                    found_bouncers.setdefault(dt_entry.bouncer_name, set()).add(dag_id)
-                elif upstream_tid not in visited:
-                    bouncer_queue.append(upstream_tid)
+        found_bouncers: dict[str, set[str]] = bfs_bouncer_discovery(
+            visited=visited,
+            tid_to_dt=tid_to_dt,
+            reverse_adj=reverse_adj,
+            active_dag_id=dag_id,
+        )
 
         # Build ETL nodes
         nodes: list[UpstreamNode] = []
@@ -306,6 +268,15 @@ class TopologyService:
             bouncers_db = await self.bouncer_repo.get_by_names(bouncer_names_list)
             bouncer_by_name = {s.bouncer_name: s for s in bouncers_db}
 
+            bouncer_connections = connect_bouncers_forward(
+                found_bouncers=found_bouncers,
+                tid_to_dt=tid_to_dt,
+                visited=visited,
+            )
+            bouncer_edge_lookup: dict[str, list[str]] = defaultdict(list)
+            for sname, connected_tid in bouncer_connections:
+                bouncer_edge_lookup[sname].append(connected_tid)
+
             for sname in sorted(found_bouncers.keys()):
                 s = bouncer_by_name.get(sname)
                 bouncer_dt = tid_to_dt.get(sname)
@@ -322,27 +293,12 @@ class TopologyService:
                     bouncer_name=sname,
                 ))
 
-                # Connect bouncer to visited ETL tasks it feeds
-                if bouncer_dt:
-                    fwd_queue = list(bouncer_dt.downstream_task_ids or [])
-                    fwd_seen: set[str] = set()
-                    while fwd_queue:
-                        next_tid = fwd_queue.pop(0)
-                        if next_tid in fwd_seen:
-                            continue
-                        fwd_seen.add(next_tid)
-                        if next_tid in visited:
-                            edges.append(UpstreamEdge(
-                                source_task_id=sname,
-                                target_task_id=next_tid,
-                                edge_type="needs",
-                            ))
-                            continue
-                        dt_next = tid_to_dt.get(next_tid)
-                        if dt_next:
-                            for dtid in dt_next.downstream_task_ids or []:
-                                if dtid not in fwd_seen:
-                                    fwd_queue.append(dtid)
+                for connected_tid in bouncer_edge_lookup.get(sname, []):
+                    edges.append(UpstreamEdge(
+                        source_task_id=sname,
+                        target_task_id=connected_tid,
+                        edge_type="needs",
+                    ))
 
             max_depth = bouncer_depth
 

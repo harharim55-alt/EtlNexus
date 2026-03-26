@@ -3,7 +3,7 @@
 import json
 import uuid
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -75,8 +75,15 @@ def pipeline_repo():
 
 
 @pytest.fixture
-def service(resource_repo, pipeline_repo):
-    return ResourceService(resource_repo, pipeline_repo)
+def stats_builder():
+    return AsyncMock()
+
+
+@pytest.fixture
+def service(resource_repo, pipeline_repo, stats_builder):
+    with patch("app.services.resource_service.ResourceStatsBuilder", return_value=stats_builder):
+        svc = ResourceService(resource_repo, pipeline_repo)
+    return svc
 
 
 # ---------------------------------------------------------------------------
@@ -93,7 +100,7 @@ class TestGetResourceMetrics:
         assert result is None
 
     async def test_returns_metrics_with_configs_and_runs(
-        self, service, pipeline_repo, resource_repo
+        self, service, pipeline_repo, resource_repo, stats_builder
     ):
         pipeline = make_pipeline(task_id="PortScanCollector")
         pipeline_repo.get_by_id.return_value = pipeline
@@ -103,7 +110,7 @@ class TestGetResourceMetrics:
 
         run = make_run(duration_seconds=90.0)
         resource_repo.get_recent_runs.return_value = [run]
-        resource_repo.get_run_stats.return_value = {
+        stats_builder.get_run_stats.return_value = {
             "avg_duration": 90.0,
             "min_duration": 80.0,
             "max_duration": 100.0,
@@ -133,13 +140,13 @@ class TestGetResourceMetrics:
         assert result.resource_configs[0].dag_id == "network_recon"
 
     async def test_empty_configs_returns_empty_resource_configs(
-        self, service, pipeline_repo, resource_repo
+        self, service, pipeline_repo, resource_repo, stats_builder
     ):
         pipeline = make_pipeline()
         pipeline_repo.get_by_id.return_value = pipeline
         resource_repo.get_configs_by_pipeline.return_value = []
         resource_repo.get_recent_runs.return_value = []
-        resource_repo.get_run_stats.return_value = {
+        stats_builder.get_run_stats.return_value = {
             "avg_duration": None,
             "min_duration": None,
             "max_duration": None,
@@ -167,7 +174,7 @@ class TestGetResourceMetrics:
         assert result.capacity == []
 
     async def test_skips_runs_with_no_duration(
-        self, service, pipeline_repo, resource_repo
+        self, service, pipeline_repo, resource_repo, stats_builder
     ):
         pipeline = make_pipeline()
         pipeline_repo.get_by_id.return_value = pipeline
@@ -175,7 +182,7 @@ class TestGetResourceMetrics:
         # run has no duration_seconds
         run = make_run(duration_seconds=None)
         resource_repo.get_recent_runs.return_value = [run]
-        resource_repo.get_run_stats.return_value = {
+        stats_builder.get_run_stats.return_value = {
             "avg_duration": None,
             "min_duration": None,
             "max_duration": None,
@@ -203,13 +210,13 @@ class TestGetResourceMetrics:
         assert result.latest_duration_seconds is None
 
     async def test_date_filtering_passed_to_repo(
-        self, service, pipeline_repo, resource_repo
+        self, service, pipeline_repo, resource_repo, stats_builder
     ):
         pipeline = make_pipeline()
         pipeline_repo.get_by_id.return_value = pipeline
         resource_repo.get_configs_by_pipeline.return_value = []
         resource_repo.get_recent_runs.return_value = []
-        resource_repo.get_run_stats.return_value = {
+        stats_builder.get_run_stats.return_value = {
             "avg_duration": None, "min_duration": None, "max_duration": None,
             "run_count": 0, "success_rate": None,
             "avg_driver_mem_used_mb": None, "avg_executor_mem_peak_mb": None,
@@ -228,12 +235,12 @@ class TestGetResourceMetrics:
         resource_repo.get_recent_runs.assert_awaited_once_with(
             pipeline.id, limit=20, date_from=date_from, date_to=date_to,
         )
-        resource_repo.get_run_stats.assert_awaited_once_with(
+        stats_builder.get_run_stats.assert_awaited_once_with(
             pipeline.id, date_from=date_from, date_to=date_to,
         )
 
     async def test_latest_duration_from_first_run_with_duration(
-        self, service, pipeline_repo, resource_repo
+        self, service, pipeline_repo, resource_repo, stats_builder
     ):
         pipeline = make_pipeline()
         pipeline_repo.get_by_id.return_value = pipeline
@@ -241,7 +248,7 @@ class TestGetResourceMetrics:
         run1 = make_run(duration_seconds=300.0)
         run2 = make_run(duration_seconds=200.0)
         resource_repo.get_recent_runs.return_value = [run1, run2]
-        resource_repo.get_run_stats.return_value = {
+        stats_builder.get_run_stats.return_value = {
             "avg_duration": 250.0, "min_duration": 200.0, "max_duration": 300.0,
             "run_count": 2, "success_rate": 100.0,
             "avg_driver_mem_used_mb": None, "avg_executor_mem_peak_mb": None,
@@ -258,7 +265,7 @@ class TestGetResourceMetrics:
         assert result.latest_duration_seconds == 300.0
 
     async def test_dominant_metrics_source_determined(
-        self, service, pipeline_repo, resource_repo
+        self, service, pipeline_repo, resource_repo, stats_builder
     ):
         pipeline = make_pipeline()
         pipeline_repo.get_by_id.return_value = pipeline
@@ -269,7 +276,7 @@ class TestGetResourceMetrics:
             make_run(metrics_source="log"),
         ]
         resource_repo.get_recent_runs.return_value = runs
-        resource_repo.get_run_stats.return_value = {
+        stats_builder.get_run_stats.return_value = {
             "avg_duration": 100.0, "min_duration": 90.0, "max_duration": 110.0,
             "run_count": 3, "success_rate": 100.0,
             "avg_driver_mem_used_mb": None, "avg_executor_mem_peak_mb": None,

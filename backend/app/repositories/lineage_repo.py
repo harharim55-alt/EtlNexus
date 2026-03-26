@@ -5,10 +5,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.models.lineage import LineageEdge
-from app.repositories.base import apply_updates
+from app.repositories.base import UpsertMixin
 
 
-class LineageRepository:
+class LineageRepository(UpsertMixin):
     def __init__(self, session: AsyncSession):
         self.session = session
 
@@ -45,22 +45,15 @@ class LineageRepository:
         return list(result.scalars().all())
 
     async def upsert_edge(self, data: dict) -> LineageEdge:
-        stmt = select(LineageEdge).where(
-            LineageEdge.source_table == data["source_table"],
-            LineageEdge.target_table == data["target_table"],
-            LineageEdge.edge_type == data["edge_type"],
+        return await self._upsert(
+            LineageEdge,
+            lookup_kwargs={
+                "source_table": data["source_table"],
+                "target_table": data["target_table"],
+                "edge_type": data["edge_type"],
+            },
+            data=data,
         )
-        result = await self.session.execute(stmt)
-        edge = result.scalar_one_or_none()
-
-        if edge:
-            apply_updates(edge, data)
-        else:
-            edge = LineageEdge(**data)
-            self.session.add(edge)
-
-        await self.session.flush()
-        return edge
 
     async def delete_by_pipeline_id(self, pipeline_id: uuid.UUID) -> None:
         await self.session.execute(

@@ -8,6 +8,9 @@ import pytest
 from app.cache import dag_summary_cache
 from app.services.dag_summary_service import DagSummaryService, _period_label
 
+# patch target for ResourceStatsBuilder used inside DagSummaryService
+_STATS_PATCH = "app.services.dag_summary_service.ResourceStatsBuilder"
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -94,8 +97,15 @@ def airflow_repo():
 
 
 @pytest.fixture
-def service(dag_task_repo, resource_repo, airflow_repo):
-    return DagSummaryService(dag_task_repo, resource_repo, airflow_repo)
+def stats_builder():
+    return AsyncMock()
+
+
+@pytest.fixture
+def service(dag_task_repo, resource_repo, airflow_repo, stats_builder):
+    with patch(_STATS_PATCH, return_value=stats_builder):
+        svc = DagSummaryService(dag_task_repo, resource_repo, airflow_repo)
+    return svc
 
 
 @pytest.fixture(autouse=True)
@@ -168,7 +178,7 @@ class TestGetDagSummaries:
         assert result.dags == []
 
     async def test_returns_per_dag_stats(
-        self, service, dag_task_repo, resource_repo, airflow_repo
+        self, service, dag_task_repo, resource_repo, airflow_repo, stats_builder
     ):
         dag_task_repo.get_all_dag_ids.return_value = ["network_recon"]
         dag_task_repo.count_tasks_per_dag.return_value = {"network_recon": 5}
@@ -178,13 +188,13 @@ class TestGetDagSummaries:
         dag_task_repo.get_tasks_for_dag_with_pipeline.return_value = [task]
 
         run = make_run_history()
-        resource_repo.get_dag_run_stats.return_value = {
+        stats_builder.get_dag_run_stats.return_value = {
             "dag_run_count": 10,
             "avg_duration": 120.0,
             "success_rate": 90.0,
         }
         resource_repo.get_latest_runs_by_dag.return_value = [run]
-        resource_repo.get_typical_finish_hour.return_value = "06:00"
+        stats_builder.get_typical_finish_hour.return_value = "06:00"
 
         airflow_repo.get_all.return_value = []
 
@@ -205,7 +215,7 @@ class TestGetDagSummaries:
         assert dag.total_runs_30d == 10
 
     async def test_calculates_success_rate(
-        self, service, dag_task_repo, resource_repo, airflow_repo
+        self, service, dag_task_repo, resource_repo, airflow_repo, stats_builder
     ):
         dag_task_repo.get_all_dag_ids.return_value = ["test_dag"]
         dag_task_repo.count_tasks_per_dag.return_value = {"test_dag": 4}
@@ -232,11 +242,11 @@ class TestGetDagSummaries:
         ]
         airflow_repo.get_all.return_value = statuses
 
-        resource_repo.get_dag_run_stats.return_value = {
+        stats_builder.get_dag_run_stats.return_value = {
             "dag_run_count": 5, "avg_duration": None, "success_rate": None,
         }
         resource_repo.get_latest_runs_by_dag.return_value = []
-        resource_repo.get_typical_finish_hour.return_value = None
+        stats_builder.get_typical_finish_hour.return_value = None
 
         with patch(
             "app.services.dag_summary_service.airflow_client.get_all_dags",
@@ -249,7 +259,7 @@ class TestGetDagSummaries:
         assert dag.success_rate == 75.0
 
     async def test_paused_dags_excluded_from_active_count(
-        self, service, dag_task_repo, resource_repo, airflow_repo
+        self, service, dag_task_repo, resource_repo, airflow_repo, stats_builder
     ):
         dag_task_repo.get_all_dag_ids.return_value = ["active_dag", "paused_dag"]
         dag_task_repo.count_tasks_per_dag.return_value = {
@@ -260,11 +270,11 @@ class TestGetDagSummaries:
         }
         dag_task_repo.get_tasks_for_dag_with_pipeline.return_value = []
         airflow_repo.get_all.return_value = []
-        resource_repo.get_dag_run_stats.return_value = {
+        stats_builder.get_dag_run_stats.return_value = {
             "dag_run_count": 0, "avg_duration": None, "success_rate": None,
         }
         resource_repo.get_latest_runs_by_dag.return_value = []
-        resource_repo.get_typical_finish_hour.return_value = None
+        stats_builder.get_typical_finish_hour.return_value = None
 
         with patch(
             "app.services.dag_summary_service.airflow_client.get_all_dags",
@@ -280,13 +290,13 @@ class TestGetDagSummaries:
         assert result.aggregate.active_dags == 1
 
     async def test_result_is_cached(
-        self, service, dag_task_repo, resource_repo, airflow_repo
+        self, service, dag_task_repo, resource_repo, airflow_repo, stats_builder
     ):
         dag_task_repo.get_all_dag_ids.return_value = []
         dag_task_repo.count_tasks_per_dag.return_value = {}
         dag_task_repo.count_pipelines_per_dag.return_value = {}
         airflow_repo.get_all.return_value = []
-        resource_repo.get_dag_run_stats.return_value = {
+        stats_builder.get_dag_run_stats.return_value = {
             "dag_run_count": 0, "avg_duration": None, "success_rate": None,
         }
 
@@ -301,18 +311,18 @@ class TestGetDagSummaries:
         assert dag_task_repo.get_all_dag_ids.await_count == 1
 
     async def test_schedule_interval_dict_format(
-        self, service, dag_task_repo, resource_repo, airflow_repo
+        self, service, dag_task_repo, resource_repo, airflow_repo, stats_builder
     ):
         dag_task_repo.get_all_dag_ids.return_value = ["test_dag"]
         dag_task_repo.count_tasks_per_dag.return_value = {"test_dag": 0}
         dag_task_repo.count_pipelines_per_dag.return_value = {"test_dag": 0}
         dag_task_repo.get_tasks_for_dag_with_pipeline.return_value = []
         airflow_repo.get_all.return_value = []
-        resource_repo.get_dag_run_stats.return_value = {
+        stats_builder.get_dag_run_stats.return_value = {
             "dag_run_count": 0, "avg_duration": None, "success_rate": None,
         }
         resource_repo.get_latest_runs_by_dag.return_value = []
-        resource_repo.get_typical_finish_hour.return_value = None
+        stats_builder.get_typical_finish_hour.return_value = None
 
         with patch(
             "app.services.dag_summary_service.airflow_client.get_all_dags",

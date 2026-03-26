@@ -12,6 +12,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
+from app.logging_config import build_log_config, request_id_var
 from app.rate_limit import limiter
 from app.routers import (
     ai,
@@ -22,6 +23,7 @@ from app.routers import (
     dag_summary,
     health,
     lineage,
+    metrics,
     pipelines,
     resources,
     schema_matrix,
@@ -31,37 +33,13 @@ from app.routers import (
     users,
     visibility,
 )
+from app.routers.metrics import record_request
 
 # Structured logging
-logging.config.dictConfig({
-    "version": 1,
-    "disable_existing_loggers": False,
-    "formatters": {
-        "standard": {
-            "format": "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            "datefmt": "%Y-%m-%d %H:%M:%S",
-        },
-    },
-    "handlers": {
-        "console": {
-            "class": "logging.StreamHandler",
-            "formatter": "standard",
-            "stream": "ext://sys.stdout",
-        },
-    },
-    "root": {
-        "level": "DEBUG" if settings.debug else "INFO",
-        "handlers": ["console"],
-    },
-    "loggers": {
-        "uvicorn": {"level": "INFO"},
-        "sqlalchemy.engine": {"level": "WARNING"},
-        "httpx": {"level": "WARNING"},
-        "apscheduler": {"level": "INFO"},
-        "py4j": {"level": "ERROR"},
-        "pyspark": {"level": "WARNING"},
-    },
-})
+logging.config.dictConfig(build_log_config(
+    debug=settings.debug,
+    log_format=settings.log_format,
+))
 
 logger = logging.getLogger(__name__)
 
@@ -137,16 +115,17 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Accept"],
 )
 
 
 @app.middleware("http")
 async def request_id_middleware(request: Request, call_next):
-    request_id = str(uuid.uuid4())
+    rid = str(uuid.uuid4())
+    request_id_var.set(rid)
     response = await call_next(request)
-    response.headers["X-Request-ID"] = request_id
+    response.headers["X-Request-ID"] = rid
     return response
 
 
@@ -157,14 +136,15 @@ async def request_logging_middleware(request: Request, call_next):
         return await call_next(request)
     start = time.monotonic()
     response = await call_next(request)
-    duration_ms = (time.monotonic() - start) * 1000
+    duration = time.monotonic() - start
     logger.info(
         "%s %s %d %.0fms",
         request.method,
         request.url.path,
         response.status_code,
-        duration_ms,
+        duration * 1000,
     )
+    record_request(request.method, request.url.path, response.status_code, duration)
     return response
 
 
@@ -203,3 +183,4 @@ app.include_router(auth.router)
 app.include_router(teams.router)
 app.include_router(visibility.router)
 app.include_router(users.router)
+app.include_router(metrics.router)
