@@ -50,6 +50,31 @@ def extract_team_from_task_group(
     return None
 
 
+def extract_team_from_dag_tags(
+    tags: list[dict] | None, known_teams: set[str]
+) -> str | None:
+    """Extract team name from DAG tags.
+
+    Supports tag formats:
+      {"name": "team:Dagger"}           -> 'Dagger'
+      {"name": "etlnexus:team:Dagger"}  -> 'Dagger'
+    """
+    if not tags:
+        return None
+    for tag in tags:
+        name = tag.get("name", "") if isinstance(tag, dict) else str(tag)
+        lower = name.lower()
+        if lower.startswith("team:"):
+            team = name.split(":", 1)[1].strip()
+            if team in known_teams:
+                return team
+        elif lower.startswith("etlnexus:team:"):
+            team = name.split(":", 2)[2].strip()
+            if team in known_teams:
+                return team
+    return None
+
+
 def extract_category_from_task_group(task_group: str | None) -> str:
     """Extract category from TaskGroup name.
 

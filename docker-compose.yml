@@ -115,8 +115,8 @@ services:
   airflow-init:
     image: etlnexus-airflow-init
     build:
-      context: ./dev/airflow
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dev/airflow/Dockerfile
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
@@ -139,8 +139,8 @@ services:
   airflow-webserver:
     image: etlnexus-airflow-webserver
     build:
-      context: ./dev/airflow
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dev/airflow/Dockerfile
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
@@ -167,8 +167,8 @@ services:
   airflow-scheduler:
     image: etlnexus-airflow-scheduler
     build:
-      context: ./dev/airflow
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dev/airflow/Dockerfile
     environment:
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
       AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
@@ -244,8 +244,8 @@ services:
   iceberg-data-seed:
     image: etlnexus-iceberg-data-seed
     build:
-      context: ./dev/airflow
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: dev/airflow/Dockerfile
     user: "0"
     volumes:
       - ./dev/seeds:/seeds

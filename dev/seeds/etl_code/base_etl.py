@@ -2,12 +2,20 @@
 
 All ETLs inherit from this class and implement extract(), transform(), load().
 The SparkSession is shared or created with Iceberg catalog configuration.
+EtlNexusMixin auto-instruments run() with structured log markers.
 """
 
 from datetime import timedelta
 
+try:
+    from etlnexus_hooks import EtlNexusMixin
+except ImportError:
+    EtlNexusMixin = None
 
-class BaseETL:
+_bases = (EtlNexusMixin,) if EtlNexusMixin is not None else ()
+
+
+class BaseETL(*_bases):
     def __init__(self, start_date, end_date=None, schedule="daily"):
         self.start_date = start_date
         self.schedule = schedule

@@ -8,6 +8,11 @@ RUN apt-get update \
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
 
 USER airflow
+
+# Install etlnexus-hooks package for BaseETL auto-instrumentation
+COPY --chown=airflow:root ./etlnexus-hooks/ /tmp/etlnexus-hooks/
+RUN pip install --no-cache-dir /tmp/etlnexus-hooks/ && rm -rf /tmp/etlnexus-hooks/
+
 RUN pip install --no-cache-dir pyspark==3.5.1 sparkmeasure==0.24.0 && \
     mkdir -p /opt/airflow/jars && \
     python -c "import urllib.request; \

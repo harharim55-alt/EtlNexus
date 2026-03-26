@@ -1,20 +1,16 @@
-"""Shared ETL runner — executes ETL tasks with real or simulated resource metrics.
+"""Shared ETL runner — executes ETL tasks via BaseETL subclasses with EtlNexusMixin.
 
-Dual-mode operation:
-- Real mode (spark_callable provided): Creates SparkSession, collects metrics via
-  sparkMeasure, and logs actual resource usage.
-- Simulation mode (no spark_callable): Sleeps and generates deterministic fake
-  metrics for development/demo purposes.
+All ETLs inherit from BaseETL which includes EtlNexusMixin. The mixin's run()
+auto-emits all structured log markers (ETL_DESCRIPTION, ETL_WRITES_TO,
+ETL_RESOURCE_ACTUAL, ETL_EXECUTION_PLAN). This runner's job is simply:
+find the ETL class, create a SparkSession, and run it.
 """
 
-import ast
 import importlib
 import json
 import logging
 import random
-import re
 import sys
-import time
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -33,294 +29,60 @@ def _find_etl_file(etl_name: str) -> Path:
 
 
 def run_etl(etl_name, spark_callable=None, **kwargs):
-    """Execute an ETL task with real Spark metrics or simulated metrics.
+    """Execute an ETL task with real Spark via BaseETL + EtlNexusMixin.
 
     Args:
         etl_name: Name of the ETL task (PascalCase).
-        spark_callable: Optional function(spark, **kwargs) that performs real
-            PySpark work. If provided, a SparkSession is created and metrics
-            are collected via sparkMeasure. If None, simulation mode is used.
-        **kwargs: Airflow op_kwargs (resources, ti, needs, etc.)
+        spark_callable: Optional function(spark, **kwargs) for custom Spark work.
+            If None, the ETL class is auto-discovered from team directories.
+        **kwargs: Airflow op_kwargs (resources, ti, etc.)
     """
     print(f"ETL_START: {etl_name}")
 
-    # Module name = etl_name (PascalCase matches file names)
-    module_name = etl_name
-
-    # Parse ETL code file for metadata — search team subdirectories
-    etl_path = _find_etl_file(etl_name)
-    suffixes = []
-    if etl_path.exists():
-        tree = ast.parse(etl_path.read_text())
-        docstring = ast.get_docstring(tree)
-        if docstring:
-            print(f"ETL_DESCRIPTION: {docstring}")
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Assign):
-                for target in node.targets:
-                    if isinstance(target, ast.Name) and target.id == "SUFFIXES":
-                        suffixes = ast.literal_eval(node.value)
-
-    # Check for simulated failure (raises before logging writes)
+    # Test failure injection (keeps failure scenario testing in threat_detection DAG)
     simulate_failure = kwargs.get("simulate_failure")
     if simulate_failure:
         raise RuntimeError(simulate_failure)
-
-    # Check for flaky failure (~40% chance of failing each run)
     simulate_flaky = kwargs.get("simulate_flaky")
     if simulate_flaky and random.random() < 0.4:
         raise RuntimeError(simulate_flaky)
 
-    # Log write targets
-    print(f"ETL_WRITES_TO: {etl_name}")
-    for suffix in suffixes:
-        print(f"ETL_WRITES_TO: {etl_name}_{suffix}")
+    # Auto-create callable from ETL class if not provided
+    if spark_callable is None:
+        spark_callable = _make_etl_callable(etl_name, kwargs.get("ti"))
 
-    # Resolve effective resource config (default + DAG override)
+    if spark_callable is None:
+        logger.warning("No ETL class or spark_callable for %s — skipping", etl_name)
+        return
+
+    # Resolve resource config and run with real Spark
+    effective_cfg = _resolve_resources(kwargs)
+    _run_real_spark(etl_name, spark_callable, effective_cfg, kwargs)
+
+
+def _resolve_resources(kwargs: dict) -> dict:
+    """Resolve effective Spark resource config (default + DAG override)."""
     resources = kwargs.get("resources")
+    if not resources:
+        return {}
     dag_id = ""
-    run_id = ""
     ti = kwargs.get("ti")
     if ti:
         dag_id = getattr(ti, "dag_id", "")
-        run_id = getattr(ti, "run_id", "")
-
-    effective_cfg = {}
-    if resources:
-        default_cfg = resources.get("default", {})
-        dag_override = resources.get(dag_id, {}) if dag_id else {}
-        effective_cfg = {**default_cfg, **dag_override}
-
-    # Auto-create spark_callable from ETL class if not explicitly provided
-    if spark_callable is None and etl_path.exists():
-        spark_callable = _make_etl_callable(etl_name, module_name, ti)
-
-    if spark_callable is not None:
-        # --- REAL MODE: run actual PySpark with metrics collection ---
-        actual = _run_real_spark(etl_name, spark_callable, effective_cfg, kwargs)
-    else:
-        # --- SIMULATION MODE: sleep + deterministic fake metrics ---
-        sleep_range = _compute_sleep_range(resources or {})
-        sleep_secs = random.uniform(sleep_range[0], sleep_range[1])
-        print(f"ETL_SIMULATING: sleeping {sleep_secs:.1f}s (range {sleep_range[0]}-{sleep_range[1]}s)")
-        time.sleep(sleep_secs)
-
-        actual = None
-        if effective_cfg:
-            actual = _simulate_resource_usage(effective_cfg, etl_name, dag_id, run_id)
-            actual["metrics_source"] = "simulation"
-
-    if actual:
-        print(f"ETL_RESOURCE_ACTUAL: {json.dumps(actual)}")
+    default_cfg = resources.get("default", {})
+    dag_override = resources.get(dag_id, {}) if dag_id else {}
+    return {**default_cfg, **dag_override}
 
 
-def _run_real_spark(
-    etl_name: str, spark_callable, config: dict, kwargs: dict
-) -> dict:
-    """Create a SparkSession, run the callable, and collect real metrics."""
-    spark = _create_spark_session(etl_name, config)
-    try:
-        # Try sparkMeasure metrics collection; fall back to plain execution
-        try:
-            from spark_metrics_collector import collect_spark_metrics
-            with collect_spark_metrics(spark) as collector:
-                spark_callable(spark, **kwargs)
-            return collector.get_metrics()
-        except Exception as metrics_err:
-            # If sparkMeasure fails, run without metrics collection
-            logger.warning(
-                "sparkMeasure unavailable for %s (%s), running without metrics",
-                etl_name, type(metrics_err).__name__,
-            )
-            spark_callable(spark, **kwargs)
-            return {"metrics_source": "spark_no_metrics"}
-    except Exception:
-        logger.exception("Spark task %s failed", etl_name)
-        raise
-    finally:
-        spark.stop()
-
-
-def _create_spark_session(etl_name: str, config: dict):
-    """Create a SparkSession configured from the resource allocation dict."""
-    from pyspark.sql import SparkSession
-
-    builder = SparkSession.builder.appName(etl_name)
-
-    # Map resource config to Spark properties
-    if config.get("spark_driver_memory"):
-        builder = builder.config("spark.driver.memory", config["spark_driver_memory"])
-    if config.get("spark_executor_memory"):
-        builder = builder.config("spark.executor.memory", config["spark_executor_memory"])
-    if config.get("spark_executor_cores"):
-        builder = builder.config("spark.executor.cores", str(config["spark_executor_cores"]))
-    if config.get("spark_num_executors"):
-        builder = builder.config("spark.executor.instances", str(config["spark_num_executors"]))
-
-    # Iceberg catalog + sparkMeasure JARs (pre-downloaded in Docker image)
-    builder = builder.config(
-        "spark.jars",
-        "/opt/airflow/jars/iceberg-spark-runtime.jar,"
-        "/opt/airflow/jars/spark-measure.jar",
-    )
-    builder = builder.config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog")
-    builder = builder.config("spark.sql.catalog.iceberg.type", "rest")
-    builder = builder.config("spark.sql.catalog.iceberg.uri", "http://iceberg-rest:8181")
-    builder = builder.config(
-        "spark.sql.extensions",
-        "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
-    )
-
-    # Enable event logging for future History Server compatibility
-    builder = builder.config("spark.eventLog.enabled", "true")
-    builder = builder.config("spark.eventLog.dir", "/tmp/spark-events")
-
-    # Local mode for dev
-    builder = builder.master("local[*]")
-
-    return builder.getOrCreate()
-
-
-def _compute_sleep_range(resources: dict) -> tuple[int, int]:
-    """Derive sleep duration range from resource allocation weight.
-
-    Heavier ETLs (more memory x executors) sleep longer, simulating
-    real-world processing time. Max 120 seconds.
-    """
-    default = resources.get("default", {})
-    if not default:
-        return (3, 10)  # API / no-resource tier
-
-    mem_str = default.get("spark_executor_memory", "0g")
-    mem_gb = _parse_mem_gb(mem_str)
-    executors = default.get("spark_num_executors", 1)
-    weight = mem_gb * executors
-
-    if weight <= 10:
-        return (3, 10)
-    if weight <= 30:
-        return (15, 45)
-    if weight <= 60:
-        return (40, 90)
-    return (60, 120)
-
-
-def _parse_mem_gb(mem_str: str) -> float:
-    """Parse memory string like '8g' or '512m' to GB."""
-    if not mem_str:
-        return 0.0
-    val = float(mem_str.rstrip("gGmM"))
-    if mem_str[-1].lower() == "m":
-        val /= 1024
-    return val
-
-
-def _simulate_resource_usage(
-    config: dict, etl_name: str, dag_id: str, run_id: str
-) -> dict:
-    """Simulate actual resource usage — unique per run, ETL, and DAG.
-
-    Uses a seeded RNG so the same (etl, dag, run) triple always produces
-    the same metrics, but different triples produce different values.
-    """
-    seed = hash(f"{etl_name}:{dag_id}:{run_id}") & 0xFFFFFFFF
-    rng = random.Random(seed)
-
-    # Executor count varies per run (within +/-2 of allocation)
-    alloc_executors = config.get("spark_num_executors", 1)
-    min_exec = max(1, alloc_executors - 2)
-    active_executors = rng.randint(min_exec, alloc_executors)
-
-    # Memory utilization — heavier configs tend to use more of their allocation
-    mem_weight = _parse_mem_gb(config.get("spark_executor_memory", "0g"))
-    if mem_weight >= 16:
-        util_range = (0.65, 0.95)
-    elif mem_weight >= 8:
-        util_range = (0.55, 0.88)
-    else:
-        util_range = (0.40, 0.80)
-
-    driver_util = rng.uniform(*util_range)
-    executor_util = rng.uniform(*util_range)
-
-    # CPU utilization correlates with resource weight
-    cores = config.get("spark_executor_cores", 4)
-    cpu_base = min(40 + cores * 5, 70)
-    cpu_pct = round(rng.uniform(cpu_base, min(cpu_base + 25, 98)), 1)
-
-    # sparkMeasure-style extended metrics (scaled by resource weight)
-    io_scale = max(mem_weight * active_executors, 1)
-    jvm_gc_time_ms = rng.randint(int(200 * io_scale / 4), int(2000 * io_scale / 4))
-    shuffle_read_bytes = rng.randint(
-        int(10_000_000 * io_scale), int(200_000_000 * io_scale)
-    )
-    shuffle_write_bytes = rng.randint(
-        int(5_000_000 * io_scale), int(150_000_000 * io_scale)
-    )
-    input_bytes = rng.randint(
-        int(20_000_000 * io_scale), int(500_000_000 * io_scale)
-    )
-    output_bytes = rng.randint(
-        int(10_000_000 * io_scale), int(300_000_000 * io_scale)
-    )
-    memory_bytes_spilled = (
-        rng.randint(10_000_000, int(50_000_000 * io_scale))
-        if rng.random() < 0.10
-        else 0
-    )
-    disk_bytes_spilled = (
-        rng.randint(5_000_000, int(20_000_000 * io_scale))
-        if rng.random() < 0.05
-        else 0
-    )
-    executor_mem_peak = _mem_used_mb(
-        config.get("spark_executor_memory"), executor_util
-    )
-    peak_execution_memory = (
-        int(executor_mem_peak * 1024 * 1024 * rng.uniform(0.8, 1.1))
-        if executor_mem_peak
-        else None
-    )
-
-    return {
-        "driver_memory_used_mb": _mem_used_mb(
-            config.get("spark_driver_memory"), driver_util
-        ),
-        "executor_memory_peak_mb": executor_mem_peak,
-        "cpu_utilization_pct": cpu_pct,
-        "executors_active": active_executors,
-        "jvm_gc_time_ms": jvm_gc_time_ms,
-        "shuffle_read_bytes": shuffle_read_bytes,
-        "shuffle_write_bytes": shuffle_write_bytes,
-        "input_bytes": input_bytes,
-        "output_bytes": output_bytes,
-        "memory_bytes_spilled": memory_bytes_spilled,
-        "disk_bytes_spilled": disk_bytes_spilled,
-        "peak_execution_memory": peak_execution_memory,
-    }
-
-
-def _mem_used_mb(alloc_str: str | None, utilization: float) -> int | None:
-    """Convert allocated memory string to actual used MB given utilization ratio."""
-    if not alloc_str:
-        return None
-    gb = _parse_mem_gb(alloc_str)
-    return round(gb * utilization * 1024)
-
-
-def _make_etl_callable(etl_name: str, module_name: str, ti=None):
+def _make_etl_callable(etl_name: str, ti=None):
     """Create a spark_callable from an ETL class file.
 
     Dynamically imports the ETL module, finds the BaseETL subclass,
-    and returns a callable that runs the ETL and extracts the Spark plan.
-
-    Args:
-        etl_name: PascalCase ETL name (for logging).
-        module_name: PascalCase module name (matches file name in team directory).
+    and returns a callable that instantiates and runs the ETL.
+    The mixin on BaseETL handles all marker emission during run().
     """
-    from datetime import datetime, timedelta
+    from datetime import datetime
 
-    # Resolve execution date from Airflow TaskInstance
     if ti and hasattr(ti, "execution_date") and ti.execution_date:
         start_date = ti.execution_date
     else:
@@ -335,12 +97,12 @@ def _make_etl_callable(etl_name: str, module_name: str, ti=None):
     for team_dir in sorted(ETL_CODE_ROOT.iterdir()):
         if team_dir.is_dir() and not team_dir.name.startswith((".", "__")):
             try:
-                mod = importlib.import_module(f"{team_dir.name}.{module_name}")
+                mod = importlib.import_module(f"{team_dir.name}.{etl_name}")
                 break
             except ImportError:
                 continue
     if mod is None:
-        logger.warning("Could not import ETL module %s from any team directory", module_name)
+        logger.warning("Could not import ETL module %s from any team directory", etl_name)
         return None
 
     # Find the ETL class (has extract/transform/load methods)
@@ -357,937 +119,69 @@ def _make_etl_callable(etl_name: str, module_name: str, ti=None):
             break
 
     if etl_class is None:
-        logger.warning("No ETL class found for %s", module_name)
+        logger.warning("No ETL class found for %s", etl_name)
         return None
 
     def callable(spark, **kwargs):
         etl = etl_class(start_date)
-        etl.spark = spark  # Use the SparkSession from run_etl
-        etl.run()  # extract -> transform -> load
-
-        # Flush the async listener bus so the AppStatusStore has the
-        # complete plan graph and accumulator values before we read them.
-        # Without this, metrics events may still be queued and the store
-        # returns empty/incomplete data (classic LiveListenerBus race).
-        try:
-            spark.sparkContext._jsc.sc().listenerBus().waitUntilEmpty(10000)
-        except Exception:
-            pass
-
-        # Build execution plan tree from the status store's plan graph.
-        # Uses the same approach as the Spark UI: planGraph(execId) for
-        # structure + executionMetrics(execId) for accumulator values.
-        # Falls back to building from the initial plan (via SparkPlanInfo)
-        # when AQE collapses the plan into LocalTableScan.
-        try:
-            plan_tree = _build_tree_from_graph(spark)
-            graph_nodes = _count_nodes(plan_tree) if plan_tree else 0
-            logger.info("GRAPH_DEBUG: graph tree has %d nodes for %s", graph_nodes, etl_name)
-            # If the graph produced a trivial tree (AQE collapsed to
-            # LocalTableScan), try building from the initial plan instead
-            if plan_tree and graph_nodes <= 3 and hasattr(etl, "result") and etl.result is not None:
-                initial_tree = _build_tree_from_initial_plan(spark, etl.result)
-                if initial_tree and _count_nodes(initial_tree) > _count_nodes(plan_tree):
-                    plan_tree = initial_tree
-            if plan_tree:
-                print(f"ETL_EXECUTION_PLAN: {json.dumps(plan_tree)}")
-        except Exception:
-            logger.warning("Could not extract execution plan for %s", etl_name, exc_info=True)
+        etl.spark = spark
+        etl.run()  # Mixin wraps this: emits all markers automatically
 
     return callable
 
 
-def _count_nodes(tree: dict) -> int:
-    """Count total nodes in a plan tree dict."""
-    return 1 + sum(_count_nodes(c) for c in tree.get("children", []))
-
-
-def _build_tree_from_initial_plan(spark, result_df) -> dict | None:
-    """Build plan tree from the initial (pre-AQE) plan via SparkPlanInfo.
-
-    When AQE collapses a complex plan into LocalTableScan, the status store's
-    graph only has 1-3 nodes.  This fallback builds a full tree from the
-    initial plan using Spark's own SparkPlanGraph.apply(SparkPlanInfo).
-    Metrics won't be available (different accumulator ID space), but the
-    tree structure is complete.
-    """
+def _run_real_spark(
+    etl_name: str, spark_callable, config: dict, kwargs: dict
+) -> None:
+    """Create a SparkSession, run the callable, and collect metrics via sparkMeasure."""
+    spark = _create_spark_session(etl_name, config)
     try:
-        plan = result_df._jdf.queryExecution().executedPlan()
-        # Get the initial plan from AdaptiveSparkPlan
-        if str(plan.nodeName()) == "AdaptiveSparkPlan":
-            initial = plan.initialPlan()
-        else:
-            initial = plan
-
-        # Build graph via Spark's own APIs
-        SparkPlanInfo = spark._jvm.org.apache.spark.sql.execution.SparkPlanInfo
-        SparkPlanGraph = spark._jvm.org.apache.spark.sql.execution.ui.SparkPlanGraph
-        info = SparkPlanInfo.fromSparkPlan(initial)
-        graph = SparkPlanGraph.apply(info)
-
-        all_nodes = graph.allNodes()
-        edges = graph.edges()
-
-        if all_nodes.size() == 0:
-            return None
-
-        # Build node lookup and children adjacency
-        node_map = {}
-        for i in range(all_nodes.size()):
-            n = all_nodes.apply(i)
-            node_map[int(n.id())] = n
-
-        children_map: dict[int, list[int]] = {}
-        child_ids = set()
-        for i in range(edges.size()):
-            e = edges.apply(i)
-            from_id = int(e.fromId())  # child
-            to_id = int(e.toId())      # parent
-            children_map.setdefault(to_id, []).append(from_id)
-            child_ids.add(from_id)
-
-        root_ids = [nid for nid in node_map if nid not in child_ids]
-        if not root_ids:
-            return None
-
-        counter = [0]
-
-        def build_node(nid: int) -> dict | None:
-            if nid not in node_map:
-                return None
-            n = node_map[nid]
-            desc = str(n.desc())
-            first_line = desc.split("\n")[0].strip()
-            node_name = first_line.split("(")[0].split("[")[0].strip().split(" ")[0]
-
-            if node_name in _SKIP_NODES:
-                child_results = []
-                for cid in children_map.get(nid, []):
-                    cr = build_node(cid)
-                    if cr:
-                        child_results.append(cr)
-                if len(child_results) == 1:
-                    return child_results[0]
-                if child_results:
-                    counter[0] += 1
-                    return {"id": counter[0], "name": node_name, "type": "transform",
-                            "detail": "", "full_detail": "", "metrics": {}, "children": child_results}
-                return None
-
-            clean_desc = _strip_col_ids(first_line)
-            node_type = _classify_node(node_name)
-            detail = _extract_detail(node_name, clean_desc)
-            full_detail = _extract_full_detail(node_name, clean_desc)
-
-            # No metrics available (initial plan has different accumulator IDs)
-            child_results = []
-            for cid in children_map.get(nid, []):
-                cr = build_node(cid)
-                if cr:
-                    child_results.append(cr)
-
-            counter[0] += 1
-            return {
-                "id": counter[0],
-                "name": _clean_node_name(node_name),
-                "type": node_type,
-                "detail": detail,
-                "full_detail": full_detail,
-                "metrics": {},
-                "children": child_results,
-            }
-
-        for rid in root_ids:
-            result = build_node(rid)
-            if result:
-                return result
-        return None
+        try:
+            from spark_metrics_collector import collect_spark_metrics
+            with collect_spark_metrics(spark) as collector:
+                spark_callable(spark, **kwargs)
+        except Exception as metrics_err:
+            logger.warning(
+                "sparkMeasure unavailable for %s (%s), running without metrics",
+                etl_name, type(metrics_err).__name__,
+            )
+            spark_callable(spark, **kwargs)
     except Exception:
-        return None
-
-
-def _build_tree_from_graph(spark) -> dict | None:
-    """Build execution plan tree from the status store's plan graph.
-
-    Uses the same approach as the Spark UI: ``planGraph(execId)`` for the
-    graph structure (nodes + edges) and ``executionMetrics(execId)`` for
-    accumulator values.  Each graph node's ``metrics`` field contains
-    ``SQLPlanMetric`` objects with ``accumulatorId()`` that map directly
-    to the accumulator values — no description matching needed.
-    """
-    store = spark._jsparkSession.sharedState().statusStore()
-    exec_list = store.executionsList()
-    if exec_list.isEmpty():
-        return None
-
-    # Use the last execution (the write operation)
-    last_exec = exec_list.last()
-    exec_id = last_exec.executionId()
-
-    # Get accumulator values: Map[Long, String]
-    metric_values = store.executionMetrics(exec_id)
-    acc_map: dict[int, str] = {}
-    it = metric_values.iterator()
-    while it.hasNext():
-        pair = it.next()
-        acc_map[int(pair._1())] = str(pair._2())
-
-    # Get plan graph
-    graph = store.planGraph(exec_id)
-    all_nodes = graph.allNodes()
-    edges = graph.edges()
-
-    if all_nodes.size() == 0:
-        return None
-
-    # Build node lookup and children adjacency from edges
-    node_map = {}  # id -> graph node
-    for i in range(all_nodes.size()):
-        n = all_nodes.apply(i)
-        node_map[int(n.id())] = n
-
-    # Edges go child → parent (data flow direction in Spark's graph).
-    # We need parent → [children] for tree building.
-    children_map: dict[int, list[int]] = {}  # parent_id -> [child_ids]
-    child_ids = set()
-    for i in range(edges.size()):
-        e = edges.apply(i)
-        from_id = int(e.fromId())  # child
-        to_id = int(e.toId())      # parent
-        children_map.setdefault(to_id, []).append(from_id)
-        child_ids.add(from_id)
-
-    # Root = node that is NOT a child of any other node
-    root_ids = [nid for nid in node_map if nid not in child_ids]
-    if not root_ids:
-        return None
-
-    counter = [0]
-
-    def build_node(nid: int) -> dict | None:
-        if nid not in node_map:
-            return None
-        n = node_map[nid]
-        desc = str(n.desc())
-        first_line = desc.split("\n")[0].strip()
-
-        # Derive node name from the description
-        node_name = first_line.split("(")[0].split("[")[0].strip().split(" ")[0]
-
-        # Skip wrapper nodes — recurse into children
-        if node_name in _SKIP_NODES:
-            child_results = []
-            for cid in children_map.get(nid, []):
-                cr = build_node(cid)
-                if cr:
-                    child_results.append(cr)
-            if len(child_results) == 1:
-                return child_results[0]
-            if child_results:
-                counter[0] += 1
-                return {
-                    "id": counter[0],
-                    "name": node_name,
-                    "type": "transform",
-                    "detail": "",
-                    "full_detail": "",
-                    "metrics": {},
-                    "children": child_results,
-                }
-            return None
-
-        # Clean description for detail extraction
-        clean_desc = _strip_col_ids(first_line)
-        node_type = _classify_node(node_name)
-        detail = _extract_detail(node_name, clean_desc)
-        full_detail = _extract_full_detail(node_name, clean_desc)
-
-        # Extract metrics by looking up each accumulator ID in the values map
-        metrics = {}
-        metric_seq = n.metrics()
-        for j in range(metric_seq.size()):
-            m = metric_seq.apply(j)
-            name = str(m.name())
-            if name in _METRIC_SKIP:
-                continue
-            mid = int(m.accumulatorId())
-            if mid in acc_map:
-                val = _clean_metric_value(acc_map[mid])
-                if not val or _is_zero_metric(val):
-                    continue
-                display_key = _METRIC_DISPLAY.get(name, name)
-                metrics[display_key] = _format_metric_value(name, val)
-
-        # Recurse children
-        child_results = []
-        for cid in children_map.get(nid, []):
-            cr = build_node(cid)
-            if cr:
-                child_results.append(cr)
-
-        counter[0] += 1
-        return {
-            "id": counter[0],
-            "name": _clean_node_name(node_name),
-            "type": node_type,
-            "detail": detail,
-            "full_detail": full_detail,
-            "metrics": metrics,
-            "children": child_results,
-        }
-
-    # Build tree from roots, skipping top-level write wrappers
-    for rid in root_ids:
-        result = build_node(rid)
-        if result:
-            return result
-
-    return None
-
-
-# Node types to skip (wrappers that add no semantic value)
-_SKIP_NODES = {
-    "AdaptiveSparkPlan",
-    "WholeStageCodegen",
-    "InputAdapter",
-    "ColumnarToRow",
-    "BroadcastQueryStage",
-    "ShuffleQueryStage",
-    "CommandResult",
-    "Execute",
-    "OverwritePartitionsDynamic",
-    "WriteFiles",
-}
-
-def _classify_node(name: str) -> str:
-    """Classify a Spark plan node into read/write/shuffle/transform."""
-    lower = name.lower()
-    if "scan" in lower or "datasource" in lower:
-        return "read"
-    if "write" in lower or "insert" in lower or "overwrite" in lower or "append" in lower:
-        return "write"
-    if "join" in lower or "exchange" in lower or "sort" in lower or "shuffle" in lower:
-        return "shuffle"
-    return "transform"
-
-
-def _clean_node_name(name: str) -> str:
-    """Simplify verbose Spark node names, preserving join strategy."""
-    for prefix in ("Batched",):
-        if name.startswith(prefix) and len(name) > len(prefix):
-            name = name[len(prefix):]
-    return name
-
-
-# ── Detail extraction ─────────────────────────────────────────────
-
-# Strip Spark column ID suffixes like #42, #5L
-_COL_ID_RE = re.compile(r"#\d+[L]?")
-
-
-def _split_top_level(s: str, sep: str = ",") -> list[str]:
-    """Split string on separator only at top-level (not inside parentheses)."""
-    parts: list[str] = []
-    depth = 0
-    current: list[str] = []
-    for ch in s:
-        if ch == "(":
-            depth += 1
-        elif ch == ")":
-            depth -= 1
-        if ch == sep and depth <= 0:
-            parts.append("".join(current).strip())
-            current = []
-        else:
-            current.append(ch)
-    if current:
-        parts.append("".join(current).strip())
-    return [p for p in parts if p]
-
-
-def _balance_parens(s: str) -> str:
-    """Ensure parentheses are balanced by appending/prepending as needed."""
-    opens = s.count("(")
-    closes = s.count(")")
-    if opens > closes:
-        s += ")" * (opens - closes)
-    elif closes > opens:
-        s = "(" * (closes - opens) + s
-    return s
-
-
-def _strip_col_ids(s: str) -> str:
-    return _COL_ID_RE.sub("", s)
-
-
-def _extract_full_detail(node_name: str, simple_str: str) -> str:
-    """Return full untruncated detail string for modal/expanded view."""
-    clean = _strip_col_ids(simple_str)
-    lower = node_name.lower()
-
-    try:
-        if "join" in lower:
-            return _parse_join_full(clean)
-        if "filter" in lower:
-            return _parse_filter_full(clean)
-        if "aggregate" in lower:
-            return _parse_aggregate_full(clean)
-        if "scan" in lower or "datasource" in lower:
-            return _parse_scan_full(clean)
-        if lower == "window":
-            return _parse_window_full(clean)
-        if "sort" in lower and "merge" not in lower:
-            return _parse_sort_full(clean)
-        if "exchange" in lower:
-            return _parse_exchange_detail(clean)
-        if node_name == "Project":
-            return _parse_project_full(clean)
-        if "limit" in lower or lower == "takeorderedandproject":
-            return _parse_limit_detail(clean)
-        if lower in ("union", "expand", "generate", "coalesce"):
-            return _parse_simple_node_detail(node_name, clean)
-    except Exception:
-        pass
-
-    if clean and clean != node_name and len(clean) > len(node_name) + 3:
-        return _balance_parens(clean)
-    return ""
-
-
-def _extract_detail(node_name: str, simple_str: str) -> str:
-    """Parse simpleString() into a human-readable semantic detail."""
-    clean = _strip_col_ids(simple_str)
-    lower = node_name.lower()
-
-    try:
-        if "join" in lower:
-            return _parse_join_detail(clean)
-        if "filter" in lower:
-            return _parse_filter_detail(clean)
-        if "aggregate" in lower:
-            return _parse_aggregate_detail(clean)
-        if "scan" in lower or "datasource" in lower:
-            return _parse_scan_detail(clean)
-        if lower == "window":
-            return _parse_window_detail(clean)
-        if "sort" in lower and "merge" not in lower:
-            return _parse_sort_detail(clean)
-        if "exchange" in lower:
-            return _parse_exchange_detail(clean)
-        if node_name == "Project":
-            return _parse_project_detail(clean)
-        if "limit" in lower or lower == "takeorderedandproject":
-            return _parse_limit_detail(clean)
-        if lower in ("union", "expand", "generate", "coalesce"):
-            return _parse_simple_node_detail(node_name, clean)
-    except Exception:
-        pass
-
-    # Fallback: return cleaned string if it adds info beyond the name
-    if clean and clean != node_name and len(clean) > len(node_name) + 3:
-        truncated = clean[:100] + ("..." if len(clean) > 100 else "")
-        return _balance_parens(truncated)
-    return ""
-
-
-def _parse_join_detail(s: str) -> str:
-    """Extract join type and keys from join simpleString."""
-    # Pattern: BroadcastHashJoin [col_a], [col_b], Inner, BuildRight
-    m = re.search(r"\[([^\]]+)\].*?\[([^\]]+)\].*?(Inner|Left|Right|LeftOuter|RightOuter|FullOuter|LeftSemi|LeftAnti|Cross)", s, re.IGNORECASE)
-    if m:
-        left_key = m.group(1).strip().split(",")[0].strip()
-        join_type = m.group(3).lower().replace("outer", " outer").replace("semi", " semi").replace("anti", " anti")
-        return f"{join_type} on {left_key}"
-    # Simpler pattern: just extract join type
-    for jtype in ("Inner", "LeftOuter", "RightOuter", "FullOuter", "LeftSemi", "LeftAnti", "Cross", "Left", "Right"):
-        if jtype in s:
-            return jtype.lower().replace("outer", " outer").replace("semi", " semi").replace("anti", " anti")
-    return s[:80] if len(s) > 80 else s
-
-
-def _parse_filter_detail(s: str) -> str:
-    """Extract filter predicate."""
-    # Pattern: Filter (predicate)
-    m = re.search(r"Filter\s*\((.+)\)", s, re.DOTALL)
-    if m:
-        pred = _balance_parens(m.group(1).strip())
-        # Clean up common Spark noise
-        pred = pred.replace("isnotnull", "notnull")
-        if len(pred) > 80:
-            pred = pred[:77] + "..."
-        return pred
-    return s[:80] if len(s) > 80 else s
-
-
-def _parse_aggregate_detail(s: str) -> str:
-    """Extract aggregate keys and functions."""
-    parts = []
-    # Extract keys
-    km = re.search(r"keys=\[([^\]]*)\]", s)
-    if km and km.group(1).strip():
-        keys = [k.strip() for k in km.group(1).split(",")]
-        parts.append("by " + ", ".join(keys[:3]))
-    # Extract functions
-    fm = re.search(r"functions=\[([^\]]*)\]", s)
-    if fm and fm.group(1).strip():
-        # Extract just function names: count(1) → count, sum(col) → sum
-        funcs = re.findall(r"(\w+)\(", fm.group(1))
-        # Deduplicate while preserving order
-        seen = set()
-        unique = []
-        for f in funcs:
-            if f not in seen and f not in ("cast", "coalesce", "knownfloatingpointnormalized"):
-                seen.add(f)
-                unique.append(f)
-        if unique:
-            parts.append(", ".join(unique[:4]) + ("..." if len(unique) > 4 else ""))
-    return " | ".join(parts) if parts else ""
-
-
-def _parse_scan_detail(s: str) -> str:
-    """Extract table name and selected columns from scan."""
-    # Pattern: BatchScan iceberg.{namespace}.{table}[col1, col2, ...]
-    m = re.search(r"(?:Scan|BatchScan)\s+iceberg\.(\w+)\.(\w+)\[([^\]]*)\]", s)
-    if m:
-        table = m.group(2)
-        cols = [c.strip() for c in m.group(3).split(",")]
-        col_str = ", ".join(cols[:4])
-        if len(cols) > 4:
-            col_str += f" +{len(cols) - 4}"
-        return f"{table} [{col_str}]"
-    # Legacy pattern without namespace: BatchScan table[cols]
-    m = re.search(r"(?:Scan|BatchScan)\s+(\w+)\[([^\]]*)\]", s)
-    if m:
-        table = m.group(1)
-        cols = [c.strip() for c in m.group(2).split(",")]
-        col_str = ", ".join(cols[:4])
-        if len(cols) > 4:
-            col_str += f" +{len(cols) - 4}"
-        return f"{table} [{col_str}]"
-    # Just table name without columns
-    m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.\w+\.)?(\w+)", s)
-    if m:
-        return m.group(1)
-    return s[:80] if len(s) > 80 else s
-
-
-def _parse_sort_detail(s: str) -> str:
-    """Extract sort keys."""
-    m = re.search(r"Sort\s*\[([^\]]+)\]", s)
-    if m:
-        keys = m.group(1)
-        # Simplify "col ASC NULLS FIRST" → "col ASC"
-        keys = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", keys)
-        if len(keys) > 60:
-            keys = keys[:57] + "..."
-        return keys
-    return ""
-
-
-def _parse_exchange_detail(s: str) -> str:
-    """Extract exchange type and partitioning."""
-    # Pattern: Exchange hashpartitioning(col, 200)
-    m = re.search(r"Exchange\s+(\w+)\(([^,)]+)(?:,\s*(\d+))?\)", s)
-    if m:
-        strategy = m.group(1).replace("partitioning", "")
-        col = m.group(2).strip()
-        parts = m.group(3)
-        result = f"{strategy} on {col}"
-        if parts:
-            result += f" ({parts} parts)"
-        return result
-    # SinglePartition or RoundRobin
-    m = re.search(r"Exchange\s+(\w+)", s)
-    if m:
-        return m.group(1).lower()
-    return ""
-
-
-def _parse_window_detail(s: str) -> str:
-    """Extract window partition, order, and function names.
-
-    Spark Window simpleString pattern:
-      Window [func1 windowspecdefinition(...), func2 ...], [partition_cols], [order_cols]
-    The three top-level bracket groups are: functions, partition-by, order-by.
-    """
-    brackets = _extract_top_brackets(s)
-    parts = []
-    # Partition by (second bracket)
-    if len(brackets) >= 2 and brackets[1].strip():
-        cols = [c.strip() for c in brackets[1].split(",")]
-        parts.append("partition by " + ", ".join(cols[:3]) + ("..." if len(cols) > 3 else ""))
-    # Order by (third bracket)
-    if len(brackets) >= 3 and brackets[2].strip():
-        order = brackets[2]
-        order = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", order)
-        cols = [c.strip() for c in order.split(",")]
-        parts.append("order by " + ", ".join(cols[:3]) + ("..." if len(cols) > 3 else ""))
-    # Functions (first bracket — extract names)
-    if len(brackets) >= 1 and brackets[0].strip():
-        funcs = re.findall(r"(\w+)\(", brackets[0])
-        seen = set()
-        unique = []
-        for f in funcs:
-            if f not in seen and f not in ("windowspecdefinition", "specifiedwindowframe",
-                                            "cast", "coalesce", "RowFrame", "RangeFrame",
-                                            "unboundedpreceding", "unboundedfollowing",
-                                            "currentrow", "knownfloatingpointnormalized"):
-                seen.add(f)
-                unique.append(f)
-        if unique:
-            parts.append(", ".join(unique[:4]) + ("..." if len(unique) > 4 else ""))
-    return " | ".join(parts) if parts else ""
-
-
-def _parse_window_full(s: str) -> str:
-    """Full window detail with all partition/order/function info."""
-    brackets = _extract_top_brackets(s)
-    parts = []
-    if len(brackets) >= 2 and brackets[1].strip():
-        cols = [c.strip() for c in brackets[1].split(",")]
-        parts.append("partition by " + ", ".join(cols))
-    if len(brackets) >= 3 and brackets[2].strip():
-        order = brackets[2]
-        order = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", order)
-        parts.append("order by " + order)
-    if len(brackets) >= 1 and brackets[0].strip():
-        funcs = re.findall(r"(\w+)\(", brackets[0])
-        seen = set()
-        unique = []
-        for f in funcs:
-            if f not in seen and f not in ("windowspecdefinition", "specifiedwindowframe",
-                                            "cast", "coalesce", "RowFrame", "RangeFrame",
-                                            "unboundedpreceding", "unboundedfollowing",
-                                            "currentrow", "knownfloatingpointnormalized"):
-                seen.add(f)
-                unique.append(f)
-        if unique:
-            parts.append(", ".join(unique))
-    return " | ".join(parts) if parts else ""
-
-
-def _extract_top_brackets(s: str) -> list[str]:
-    """Extract contents of top-level bracket groups from a string.
-
-    For ``Window [a, b], [c], [d]`` returns ``['a, b', 'c', 'd']``.
-    """
-    result = []
-    depth = 0
-    current: list[str] = []
-    in_bracket = False
-    for ch in s:
-        if ch == "[" and depth == 0:
-            in_bracket = True
-            depth = 1
-            current = []
-        elif ch == "[":
-            depth += 1
-            current.append(ch)
-        elif ch == "]" and depth == 1:
-            depth = 0
-            in_bracket = False
-            result.append("".join(current))
-        elif ch == "]":
-            depth -= 1
-            current.append(ch)
-        elif in_bracket:
-            current.append(ch)
-    return result
-
-
-def _parse_limit_detail(s: str) -> str:
-    """Extract limit value and optional sort keys from Limit / TakeOrderedAndProject."""
-    # TakeOrderedAndProject pattern: TakeOrderedAndProject(limit=5, [col ASC], [output_cols])
-    m = re.search(r"limit[=\s]+(\d+)", s, re.IGNORECASE)
-    limit_val = m.group(1) if m else ""
-    # Also extract sort keys if present
-    sm = re.search(r"\[([^\]]*(?:ASC|DESC)[^\]]*)\]", s)
-    sort_part = ""
-    if sm:
-        keys = sm.group(1)
-        keys = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", keys)
-        sort_part = keys
-    parts = []
-    if limit_val:
-        parts.append(f"limit {limit_val}")
-    if sort_part:
-        parts.append(f"order by {sort_part}")
-    return " | ".join(parts) if parts else ""
-
-
-def _parse_simple_node_detail(node_name: str, s: str) -> str:
-    """Extract detail for simple nodes: Union, Expand, Generate, Coalesce."""
-    lower = node_name.lower()
-    if lower == "union":
-        return "union"
-    if lower == "coalesce":
-        m = re.search(r"Coalesce\s+(\d+)", s)
-        if m:
-            return f"{m.group(1)} partitions"
-    if lower == "expand":
-        # Expand has nested brackets: [[col1, null, 0, ...], [col2, ...], ...]
-        # Count expansion groups and extract the output column names
-        groups = re.findall(r"\[([^\[\]]+)\]", s)
-        if groups:
-            # The LAST bracket group is usually the output columns
-            output_cols = [c.strip() for c in groups[-1].split(",") if c.strip() and c.strip() != "null"]
-            n_groups = len(groups) - 1  # exclude the output column list
-            parts = []
-            if n_groups > 0:
-                parts.append(f"{n_groups} groups")
-            if output_cols:
-                col_str = ", ".join(output_cols[:4])
-                if len(output_cols) > 4:
-                    col_str += f" +{len(output_cols) - 4}"
-                parts.append(col_str)
-            return " | ".join(parts) if parts else ""
-    if lower == "generate":
-        m = re.search(r"Generator\s+(\w+)", s) or re.search(r"Generate\s+(\w+)", s)
-        if m:
-            return m.group(1)
-    clean = s.replace(node_name, "").strip()
-    if clean and len(clean) > 3:
-        return clean[:80] + ("..." if len(clean) > 80 else "")
-    return ""
-
-
-def _parse_project_detail(s: str) -> str:
-    """Extract output columns from Project."""
-    m = re.search(r"Project\s*\[(.+)\]", s)
-    if m:
-        cols = [_balance_parens(c.strip().split(" AS ")[-1].strip()) for c in _split_top_level(m.group(1))]
-        col_str = ", ".join(cols[:5])
-        if len(cols) > 5:
-            col_str += f" +{len(cols) - 5}"
-        return col_str
-    return ""
-
-
-# ── Full (untruncated) detail parsers for expanded/modal view ────
-
-def _parse_join_full(s: str) -> str:
-    """Full join detail with all keys."""
-    m = re.search(r"\[([^\]]+)\].*?\[([^\]]+)\].*?(Inner|Left|Right|LeftOuter|RightOuter|FullOuter|LeftSemi|LeftAnti|Cross)", s, re.IGNORECASE)
-    if m:
-        left_keys = m.group(1).strip()
-        right_keys = m.group(2).strip()
-        join_type = m.group(3).lower().replace("outer", " outer").replace("semi", " semi").replace("anti", " anti")
-        return f"{join_type} on [{left_keys}] = [{right_keys}]"
-    for jtype in ("Inner", "LeftOuter", "RightOuter", "FullOuter", "LeftSemi", "LeftAnti", "Cross", "Left", "Right"):
-        if jtype in s:
-            return jtype.lower().replace("outer", " outer").replace("semi", " semi").replace("anti", " anti")
-    return s
-
-
-def _parse_filter_full(s: str) -> str:
-    """Full filter predicate without truncation."""
-    m = re.search(r"Filter\s*\((.+)\)", s, re.DOTALL)
-    if m:
-        pred = _balance_parens(m.group(1).strip())
-        pred = pred.replace("isnotnull", "notnull")
-        return pred
-    return s
-
-
-def _parse_aggregate_full(s: str) -> str:
-    """Full aggregate detail with all keys and functions."""
-    parts = []
-    km = re.search(r"keys=\[([^\]]*)\]", s)
-    if km and km.group(1).strip():
-        keys = [k.strip() for k in km.group(1).split(",")]
-        parts.append("by " + ", ".join(keys))
-    fm = re.search(r"functions=\[([^\]]*)\]", s)
-    if fm and fm.group(1).strip():
-        funcs = re.findall(r"(\w+)\(", fm.group(1))
-        seen = set()
-        unique = []
-        for f in funcs:
-            if f not in seen and f not in ("cast", "coalesce", "knownfloatingpointnormalized"):
-                seen.add(f)
-                unique.append(f)
-        if unique:
-            parts.append(", ".join(unique))
-    return " | ".join(parts) if parts else ""
-
-
-def _parse_scan_full(s: str) -> str:
-    """Full scan detail with namespace, all columns, and filters."""
-    parts = []
-
-    # Extract table + namespace + columns
-    m = re.search(r"(?:Scan|BatchScan)\s+iceberg\.(\w+)\.(\w+)\[([^\]]*)\]", s)
-    if m:
-        namespace, table, cols_str = m.group(1), m.group(2), m.group(3)
-        cols = [c.strip() for c in cols_str.split(",")]
-        parts.append(f"{table} [{', '.join(cols)}]")
-        parts.append(f"namespace: {namespace}")
-    else:
-        # Legacy pattern without namespace
-        m = re.search(r"(?:Scan|BatchScan)\s+(\w+)\[([^\]]*)\]", s)
-        if m:
-            cols = [c.strip() for c in m.group(2).split(",")]
-            parts.append(f"{m.group(1)} [{', '.join(cols)}]")
-        else:
-            m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.\w+\.)?(\w+)", s)
-            if m:
-                parts.append(m.group(1))
-            else:
-                return s
-
-    # Extract filters
-    fm = re.search(r"\[filters=([^\]]*)\]", s)
-    if fm:
-        raw_filters = fm.group(1).strip()
-        # Remove trailing ", groupedBy=" and other noise
-        raw_filters = re.sub(r",?\s*groupedBy=\s*$", "", raw_filters).strip()
-        if raw_filters:
-            parts.append(f"filters: {raw_filters}")
-
-    return "\n".join(parts) if parts else s
-
-
-def _parse_sort_full(s: str) -> str:
-    """Full sort keys without truncation."""
-    m = re.search(r"Sort\s*\[([^\]]+)\]", s)
-    if m:
-        keys = m.group(1)
-        keys = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", keys)
-        return keys
-    return ""
-
-
-def _parse_project_full(s: str) -> str:
-    """Full project columns without truncation."""
-    m = re.search(r"Project\s*\[(.+)\]", s)
-    if m:
-        cols = [_balance_parens(c.strip().split(" AS ")[-1].strip()) for c in _split_top_level(m.group(1))]
-        return ", ".join(cols)
-    return ""
-
-
-# ── Metric extraction ─────────────────────────────────────────────
-
-_METRIC_DISPLAY = {
-    "number of output rows": "rows",
-    "numOutputRows": "rows",
-    "number of files read": "files",
-    "number of file splits read": "files",
-    "number of result data files": "data files",
-    "total data file size (bytes)": "data size",
-    "total planning duration (ms)": "plan time",
-    "metadata time": "metadata",
-    "scan time": "scan time",
-    "peak memory": "peak mem",
-    "spill size": "spill",
-    "avg hash probe bucket list iters": "avg probe",
-    "time to build hash map": "build time",
-    "time to update rows": "stream time",
-    "data size": "data size",
-    "number of partitions": "partitions",
-    "shuffle records written": "shuffle rows",
-    "sort time": "sort time",
-    "time in aggregation build": "agg time",
-    "shuffle bytes written": "shuffle bytes",
-    "time to build": "build time",
-    "build data size": "build size",
-}
-
-# Metrics that aren't useful to show in the frontend cards
-_METRIC_SKIP = {
-    "number of scanned data manifests",
-    "number of skipped data manifests",
-    "total data manifests",
-    "total delete manifests",
-    "number of scanned delete manifests",
-    "number of skipped delete manifests",
-    "number of result delete files",
-    "total delete file size (bytes)",
-}
-
-
-def _clean_metric_value(raw: str) -> str:
-    """Extract the total value from Spark's aggregated metric format.
-
-    Spark returns aggregated metrics as:
-      "total (min, med, max (stageId: taskId))\\n9 ms (0 ms, 9 ms, ...)"
-    We extract just "9 ms" — the total value.
-    """
-    if not raw:
-        return raw
-    if "\n" in raw:
-        # Multi-line aggregate: total is the first token on the second line
-        second_line = raw.split("\n")[1].strip()
-        # Take everything before the first "(" which starts the breakdown
-        paren_idx = second_line.find("(")
-        if paren_idx > 0:
-            return second_line[:paren_idx].strip()
-        return second_line
-    return raw.strip()
-
-
-def _is_zero_metric(val: str) -> bool:
-    """Check if a metric value is effectively zero and should be hidden."""
-    return val in ("0", "0.0", "0 B", "0.0 B", "0 ms", "0 ns", "0 s",
-                   "0 KiB", "0 MiB", "0 GiB")
-
-
-def _format_metric_value(metric_name: str, value: str) -> str:
-    """Format metric value based on its type: rows, bytes, or time."""
-    lower = metric_name.lower()
-    # Try to parse as number
-    try:
-        num = int(value.replace(",", "").replace(" ", ""))
-    except (ValueError, AttributeError):
-        return value
-
-    if "row" in lower or "records" in lower or "output" in lower or "partitions" in lower or "files" in lower:
-        return _format_rows(str(num))
-    if "size" in lower or "bytes" in lower or "memory" in lower:
-        return _format_bytes(num)
-    if "time" in lower or "duration" in lower:
-        if "(ms)" in lower:
-            # Value is already in milliseconds
-            if num >= 60_000:
-                return f"{num / 60_000:.1f}m"
-            if num >= 1_000:
-                return f"{num / 1_000:.1f}s"
-            return f"{num}ms"
-        return _format_time_ns(num)
-
-    return _format_rows(str(num))
-
-
-def _format_rows(value: str) -> str:
-    """Format row count as human-readable (K/M)."""
-    try:
-        num = int(value.replace(",", ""))
-    except (ValueError, AttributeError):
-        return value
-    if num >= 1_000_000:
-        return f"{num / 1_000_000:.1f}M"
-    if num >= 1_000:
-        return f"{num / 1_000:.1f}K"
-    return str(num)
-
-
-def _format_bytes(num_bytes: int) -> str:
-    """Format byte count as human-readable (KB/MB/GB)."""
-    if num_bytes >= 1_073_741_824:
-        return f"{num_bytes / 1_073_741_824:.1f} GB"
-    if num_bytes >= 1_048_576:
-        return f"{num_bytes / 1_048_576:.1f} MB"
-    if num_bytes >= 1024:
-        return f"{num_bytes / 1024:.0f} KB"
-    return f"{num_bytes} B"
-
-
-def _format_time_ns(ns: int) -> str:
-    """Format nanosecond timing as human-readable (ms/s/m)."""
-    ms = ns / 1_000_000
-    if ms >= 60_000:
-        return f"{ms / 60_000:.1f}m"
-    if ms >= 1_000:
-        return f"{ms / 1_000:.1f}s"
-    if ms >= 1:
-        return f"{ms:.0f}ms"
-    return f"{ns}ns"
+        logger.exception("Spark task %s failed", etl_name)
+        raise
+    finally:
+        spark.stop()
+
+
+def _create_spark_session(etl_name: str, config: dict):
+    """Create a SparkSession configured from the resource allocation dict."""
+    from pyspark.sql import SparkSession
+
+    builder = SparkSession.builder.appName(etl_name)
+
+    if config.get("spark_driver_memory"):
+        builder = builder.config("spark.driver.memory", config["spark_driver_memory"])
+    if config.get("spark_executor_memory"):
+        builder = builder.config("spark.executor.memory", config["spark_executor_memory"])
+    if config.get("spark_executor_cores"):
+        builder = builder.config("spark.executor.cores", str(config["spark_executor_cores"]))
+    if config.get("spark_num_executors"):
+        builder = builder.config("spark.executor.instances", str(config["spark_num_executors"]))
+
+    builder = builder.config(
+        "spark.jars",
+        "/opt/airflow/jars/iceberg-spark-runtime.jar,"
+        "/opt/airflow/jars/spark-measure.jar",
+    )
+    builder = builder.config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog")
+    builder = builder.config("spark.sql.catalog.iceberg.type", "rest")
+    builder = builder.config("spark.sql.catalog.iceberg.uri", "http://iceberg-rest:8181")
+    builder = builder.config(
+        "spark.sql.extensions",
+        "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",
+    )
+    builder = builder.config("spark.eventLog.enabled", "true")
+    builder = builder.config("spark.eventLog.dir", "/tmp/spark-events")
+    builder = builder.master("local[*]")
+
+    return builder.getOrCreate()

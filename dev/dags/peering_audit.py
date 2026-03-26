@@ -41,6 +41,7 @@ with DAG(
     schedule="0 0 * * *",
     start_date=datetime(2026, 3, 24),
     catchup=True,
+    tags=["category:Audit"],
 ) as dag:
 
     # --- Single Relay group (bouncers + ETLs) ---

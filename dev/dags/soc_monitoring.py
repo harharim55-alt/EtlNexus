@@ -36,6 +36,7 @@ with DAG(
     schedule="0 * * * *",
     start_date=datetime(2026, 3, 24),
     catchup=False,
+    tags=["category:Monitoring"],
 ) as dag:
 
     # --- Bouncers group (data ingestion) ---

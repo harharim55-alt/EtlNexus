@@ -29,6 +29,7 @@ class Settings(BaseSettings):
     # App
     cors_origins: list[str] = ["http://localhost:5173"]
     debug: bool = False
+    log_format: str = "auto"  # "json", "text", or "auto" (json unless debug)
 
     # Tuning
     airflow_semaphore_limit: int = 6
@@ -43,6 +44,7 @@ class Settings(BaseSettings):
 
     # Airflow Auto-Discovery
     airflow_exclude_operator_types: str = "EmptyOperator,DummyOperator,BranchPythonOperator,TriggerDagRunOperator,ShortCircuitOperator"
+    infer_lineage_from_dag_graph: bool = False  # Infer reads_from edges from DAG task dependencies
 
     # Cache TTLs (seconds) and page limits
     cache_ttl_short: int = 30

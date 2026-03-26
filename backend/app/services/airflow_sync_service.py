@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import logging
 import uuid
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -33,6 +34,7 @@ from app.services.airflow_service import _STATUS_PRIORITY, KNOWN_AIRFLOW_STATES
 from app.services.sync.task_classifier import (
     extract_category_from_task_group,
     extract_dag_schedule,
+    extract_team_from_dag_tags,
     extract_team_from_task_group,
     is_api,
     is_bouncer,
@@ -52,6 +54,42 @@ _EXCLUDE_OPERATOR_TYPES: set[str] = {
     for t in settings.airflow_exclude_operator_types.split(",")
     if t.strip()
 }
+
+
+@dataclass
+class _FullSyncFetchResult:
+    """Intermediate state from Airflow API fetching (Phases A-B)."""
+
+    all_dag_ids: list[str]
+    dag_defs_by_id: dict[str, dict]
+    tasks_results: list[list]
+    tg_results: list[list]
+    runs_results: list[list]
+    operator_by_dag: dict[str, dict[str, str]]
+    instances_results: list[list]
+    dags_with_runs: list[tuple]
+
+
+@dataclass
+class _TaskDiscoveryResult:
+    """Intermediate state from task classification (Phase C)."""
+
+    seen_tasks: dict[str, dict] = field(default_factory=dict)
+    seen_bouncers: dict[str, dict] = field(default_factory=dict)
+    resource_by_dag: dict[str, dict] = field(default_factory=dict)
+    dag_task_graph: list[dict] = field(default_factory=list)
+    log_requests: list[tuple] = field(default_factory=list)
+    # dag_processed is built alongside Phase C and consumed when building dag_task_graph
+    dag_processed: list[dict] = field(default_factory=list)
+
+
+@dataclass
+class _SingleSyncTargets:
+    """Target DAGs identified for single-pipeline sync."""
+
+    target_dag_ids: list[str]
+    cached_dag_ids: list[str]
+    new_dag_ids: list[str]
 
 
 class AirflowSyncService:
@@ -75,6 +113,10 @@ class AirflowSyncService:
         self.bouncer_repo = bouncer_repo or BouncerRepository(session)
         self.team_repo = team_repo or TeamRepository(session)
 
+    # ──────────────────────────────────────────────────────────────────────────
+    # Public API
+    # ──────────────────────────────────────────────────────────────────────────
+
     async def sync_pipelines_from_airflow(self) -> int:
         """Discover all tasks across all DAGs and register as pipelines + lineage.
 
@@ -93,23 +135,116 @@ class AirflowSyncService:
             logger.warning("No DAGs found in Airflow — skipping pipeline sync")
             return 0
 
-        # Collect unique task metadata across all DAGs.
-        # A task can appear in multiple DAGs — we take the first occurrence's metadata.
-        seen_tasks: dict[str, dict] = {}
-        # Bouncer metadata (keyed by bouncer name)
-        seen_bouncers: dict[str, dict] = {}
-        # Resource configs per task per DAG (collected before dedup — need all occurrences)
-        resource_by_dag: dict[str, dict[str, dict]] = {}
-        # DAG task graph data: (dag_id, task_id) -> {downstream_task_ids, needs, prefers}
-        dag_task_graph: list[dict] = []
+        fetch = await self._fetch_airflow_data(all_dags)
+        discovery = await self._discover_tasks(fetch)
 
-        # ── Phased parallel fetch of Airflow API data ──
+        if not discovery.seen_tasks and not discovery.seen_bouncers:
+            logger.info("No tasks discovered in Airflow")
+            return 0
+
+        await self._fetch_and_parse_logs(discovery, fetch)
+
+        task_id_map, synced = await self._persist_pipelines_and_lineage(discovery, fetch)
+        resource_count = await self._persist_resources(discovery, task_id_map)
+        bouncer_id_map = await self._persist_bouncers(discovery)
+        await self._persist_dag_tasks(discovery, task_id_map, bouncer_id_map)
+
+        await self.session.commit()
+        logger.info(
+            "Synced %d pipelines, %d bouncers, %d resource configs, %d dag_task entries from Airflow",
+            synced,
+            len(discovery.seen_bouncers),
+            resource_count,
+            len(discovery.dag_task_graph),
+        )
+        return synced
+
+    async def sync_single_pipeline(self, pipeline_id: uuid.UUID) -> dict:
+        """Re-sync a single pipeline's metadata, lineage, resources, and status from Airflow.
+
+        Uses the dag_tasks DB cache to avoid scanning all DAGs, with a differential
+        check to discover newly-added DAGs. Airflow API calls are parallelized via
+        asyncio.gather with a semaphore to respect connection pool limits.
+        """
+        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            raise ValueError(f"Pipeline {pipeline_id} not found")
+
+        task_id = pipeline.task_id
+        if not task_id:
+            raise ValueError(f"Pipeline {pipeline_id} has no task_id")
+        display_name = pipeline.name
+        logger.info("Manual sync started for pipeline %s (task_id=%s)", display_name, task_id)
+
+        # Gather known DAG IDs from cache and full list from Airflow
+        cached_dag_tasks = await self.dag_task_repo.get_dags_for_task(task_id)
+        cached_dag_ids = list({dt.dag_id for dt in cached_dag_tasks})
+
+        all_dags = await airflow_client.get_all_dags()
+        if not all_dags:
+            raise ValueError("No DAGs found in Airflow")
+
+        all_dag_ids = list({d["dag_id"] for d in all_dags})
+
+        targets = await self._identify_target_dags(task_id, cached_dag_ids, all_dag_ids)
+        if not targets.target_dag_ids:
+            raise ValueError(f"Task {task_id} not found in any Airflow DAG")
+
+        meta = await self._fetch_single_pipeline_metadata(task_id, targets, all_dags)
+
+        resource_by_dag: dict[str, dict] = meta.pop("_resource_by_dag")
+        best_status: str | None = meta.pop("_best_status")
+        best_dag_id: str | None = meta.pop("_best_dag_id")
+        best_exec_date = meta.pop("_best_exec_date")
+        found_dags: list[str] = meta.pop("_found_dags")
+        run_dag_ids: list[str] = meta.pop("_run_dag_ids")
+        instances_results: list[list] = meta.pop("_instances_results")
+
+        await self._persist_single_pipeline_data(
+            task_id, pipeline_id, display_name, meta, resource_by_dag
+        )
+        await self._sync_run_history(
+            pipeline_id, task_id, found_dags, run_dag_ids, instances_results
+        )
+
+        # ── Phase 5: Status upsert + commit ──
+
+        if best_status and best_dag_id:
+            clean_exec_date = None
+            if best_exec_date:
+                if isinstance(best_exec_date, str):
+                    with contextlib.suppress(ValueError):
+                        clean_exec_date = datetime.fromisoformat(best_exec_date.replace("Z", "+00:00"))
+                elif isinstance(best_exec_date, datetime):
+                    clean_exec_date = best_exec_date
+
+            await self.airflow_repo.upsert({
+                "pipeline_id": pipeline_id,
+                "dag_id": best_dag_id,
+                "status": best_status,
+                "execution_date": clean_exec_date,
+                "last_checked_at": datetime.now(UTC),
+            })
+
+        await self.session.commit()
+        logger.info("Manual sync completed for pipeline %s", display_name)
+        return {"synced": True, "pipeline_name": display_name}
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # sync_pipelines_from_airflow — private helpers
+    # ──────────────────────────────────────────────────────────────────────────
+
+    async def _fetch_airflow_data(self, all_dags: list[dict]) -> _FullSyncFetchResult:
+        """Phase A + B: parallel fetch of task defs, task groups, runs, and instances.
+
+        Returns a fully-populated _FullSyncFetchResult containing all raw API
+        data needed for subsequent discovery and persistence phases.
+        """
         async def _limited(coro):
             async with _AIRFLOW_SEMAPHORE:
                 return await coro
 
         all_dag_ids = [d["dag_id"] for d in all_dags]
-        # Build DAG defs lookup for schedule extraction
         dag_defs_by_id = {d["dag_id"]: d for d in all_dags}
 
         # Phase A: Parallel fetch task definitions + task group maps + dag runs
@@ -144,11 +279,26 @@ class AirflowSyncService:
         else:
             instances_results = []
 
-        # Phase C: Process instances — auto-discover all tasks by task_id
-        dag_processed: list[dict] = []  # parallel to dags_with_runs
-        log_requests: list[tuple[str, str, str, str, str]] = []  # (dag_id, run_id, airflow_tid, kind, key)
+        return _FullSyncFetchResult(
+            all_dag_ids=all_dag_ids,
+            dag_defs_by_id=dag_defs_by_id,
+            tasks_results=tasks_results,
+            tg_results=tg_results,
+            runs_results=runs_results,
+            operator_by_dag=operator_by_dag,
+            instances_results=instances_results,
+            dags_with_runs=dags_with_runs,
+        )
 
-        for idx, (dag_id, dag_run_id, tasks_def, task_group_map) in enumerate(dags_with_runs):
+    async def _discover_tasks(self, fetch: _FullSyncFetchResult) -> _TaskDiscoveryResult:
+        """Phase C: iterate instances, classify tasks, build resource configs and dag task graph.
+
+        Returns a _TaskDiscoveryResult containing all discovered tasks, bouncers,
+        resource configs, and the dag_processed list consumed by _persist_dag_tasks.
+        """
+        discovery = _TaskDiscoveryResult()
+
+        for idx, (dag_id, dag_run_id, tasks_def, task_group_map) in enumerate(fetch.dags_with_runs):
             downstream_map = {
                 t["task_id"]: t.get("downstream_task_ids", []) for t in tasks_def
             }
@@ -156,7 +306,7 @@ class AirflowSyncService:
                 t["task_id"]: unwrap_params(t.get("params", {}))
                 for t in tasks_def
             }
-            instances = instances_results[idx]
+            instances = fetch.instances_results[idx]
             canonical_by_airflow_tid: dict[str, str] = {}
 
             for inst in instances:
@@ -164,7 +314,7 @@ class AirflowSyncService:
                 canonical_tid = strip_group_prefix(airflow_task_id)
 
                 # Skip infrastructure operators
-                op_class = operator_by_dag.get(dag_id, {}).get(airflow_task_id, "")
+                op_class = fetch.operator_by_dag.get(dag_id, {}).get(airflow_task_id, "")
                 if op_class in _EXCLUDE_OPERATOR_TYPES:
                     continue
 
@@ -176,31 +326,35 @@ class AirflowSyncService:
 
                 if is_bouncer(canonical_tid):
                     # ── Bouncer task ──
-                    if canonical_tid not in seen_bouncers:
+                    if canonical_tid not in discovery.seen_bouncers:
                         description = op_kwargs.get("description")
-                        log_requests.append((dag_id, dag_run_id, airflow_task_id, "bouncer", canonical_tid))
-                        seen_bouncers[canonical_tid] = {
+                        discovery.log_requests.append(
+                            (dag_id, dag_run_id, airflow_task_id, "bouncer", canonical_tid)
+                        )
+                        discovery.seen_bouncers[canonical_tid] = {
                             "bouncer_name": canonical_tid,
                             "description": description,
                             "dag_ids": [dag_id],
                             "task_group": task_group_map.get(canonical_tid) or None,
                         }
                     else:
-                        if dag_id not in seen_bouncers[canonical_tid]["dag_ids"]:
-                            seen_bouncers[canonical_tid]["dag_ids"].append(dag_id)
+                        if dag_id not in discovery.seen_bouncers[canonical_tid]["dag_ids"]:
+                            discovery.seen_bouncers[canonical_tid]["dag_ids"].append(dag_id)
                 else:
                     # ── Pipeline task ──
                     raw_resources = op_kwargs.get("resources")
                     if raw_resources and isinstance(raw_resources, dict):
-                        resource_by_dag.setdefault(canonical_tid, {})[dag_id] = raw_resources
+                        discovery.resource_by_dag.setdefault(canonical_tid, {})[dag_id] = raw_resources
 
-                    if canonical_tid not in seen_tasks:
-                        log_requests.append((dag_id, dag_run_id, airflow_task_id, "etl", canonical_tid))
+                    if canonical_tid not in discovery.seen_tasks:
+                        discovery.log_requests.append(
+                            (dag_id, dag_run_id, airflow_task_id, "etl", canonical_tid)
+                        )
                         task_group = task_group_map.get(canonical_tid) or None
-                        seen_tasks[canonical_tid] = {
+                        discovery.seen_tasks[canonical_tid] = {
                             "task_id": canonical_tid,
                             "category": extract_category_from_task_group(task_group),
-                            "schedule": extract_dag_schedule(dag_defs_by_id.get(dag_id, {})),
+                            "schedule": extract_dag_schedule(fetch.dag_defs_by_id.get(dag_id, {})),
                             "destination_tables": [],
                             "description": "",
                             "needs": params.get("needs", []),
@@ -208,7 +362,7 @@ class AirflowSyncService:
                             "task_group": task_group,
                         }
 
-            dag_processed.append({
+            discovery.dag_processed.append({
                 "dag_id": dag_id,
                 "task_group_map": task_group_map,
                 "downstream_map": downstream_map,
@@ -216,29 +370,50 @@ class AirflowSyncService:
                 "canonical_by_airflow_tid": canonical_by_airflow_tid,
             })
 
+        logger.info(
+            "Collected %d pipeline tasks and %d bouncers from %d DAGs",
+            len(discovery.seen_tasks), len(discovery.seen_bouncers), len(fetch.all_dag_ids),
+        )
+
+        return discovery
+
+    async def _fetch_and_parse_logs(
+        self,
+        discovery: _TaskDiscoveryResult,
+        fetch: _FullSyncFetchResult,
+    ) -> None:
+        """Phase D + E: parallel log fetch and parse; also builds dag_task_graph.
+
+        Mutates discovery in place — populates destination_tables and description on
+        seen_tasks entries, description on seen_bouncers, and builds dag_task_graph.
+        """
+        async def _limited(coro):
+            async with _AIRFLOW_SEMAPHORE:
+                return await coro
+
         # Phase D: Parallel fetch all needed logs
-        if log_requests:
+        if discovery.log_requests:
             log_results = await asyncio.gather(*[
                 _limited(airflow_client.get_task_log(dag_id, run_id, tid))
-                for dag_id, run_id, tid, _, _ in log_requests
+                for dag_id, run_id, tid, _, _ in discovery.log_requests
             ])
         else:
             log_results = []
 
         # Phase E: Process log results
-        for (_dag_id, _, _, kind, key), log_content in zip(log_requests, log_results):
+        for (_dag_id, _, _, kind, key), log_content in zip(discovery.log_requests, log_results):
             if kind == "bouncer":
-                meta = seen_bouncers[key]
+                meta = discovery.seen_bouncers[key]
                 # Use op_kwargs description if available, otherwise parse from logs
                 if not meta.get("description"):
                     meta["description"] = parse_bouncer_description(log_content, task_id_to_display_name(key))
             elif kind == "etl":
-                meta = seen_tasks[key]
+                meta = discovery.seen_tasks[key]
                 meta["destination_tables"] = parse_writes(log_content, key)
                 meta["description"] = parse_description(log_content, task_id_to_display_name(key))
 
         # Build dag_task_graph from all discovered tasks
-        for proc in dag_processed:
+        for proc in discovery.dag_processed:
             dag_id = proc["dag_id"]
             task_group_map = proc["task_group_map"]
             downstream_map = proc["downstream_map"]
@@ -247,7 +422,7 @@ class AirflowSyncService:
                 task_is_bouncer = is_bouncer(canonical_tid)
                 raw_downstream = downstream_map.get(airflow_tid, [])
                 params = params_by_task.get(airflow_tid, {})
-                dag_task_graph.append({
+                discovery.dag_task_graph.append({
                     "dag_id": dag_id,
                     "task_id": canonical_tid,
                     "downstream_task_ids": [strip_group_prefix(d) for d in raw_downstream],
@@ -257,23 +432,24 @@ class AirflowSyncService:
                     "bouncer_name": canonical_tid if task_is_bouncer else None,
                 })
 
-        logger.info(
-            "Collected %d pipeline tasks and %d bouncers from %d DAGs",
-            len(seen_tasks), len(seen_bouncers), len(all_dags),
-        )
+    async def _persist_pipelines_and_lineage(
+        self,
+        discovery: _TaskDiscoveryResult,
+        fetch: _FullSyncFetchResult | None = None,
+    ) -> tuple[dict[str, uuid.UUID], int]:
+        """Pass 1 + 2 + 3: upsert pipelines, assign teams, build lineage edges, resolve source IDs.
 
-        if not seen_tasks and not seen_bouncers:
-            logger.info("No tasks discovered in Airflow")
-            return 0
-
+        Returns a tuple of (task_id -> pipeline UUID mapping, synced_count) where
+        synced_count is the number of pipelines whose lineage was saved successfully.
+        """
         # Load known teams for task_group prefix matching
         known_teams = await self.team_repo.get_all_names()
 
-        # Pass 1: Upsert pipelines and lineage
         synced = 0
         task_id_to_pipeline_id: dict[str, uuid.UUID] = {}
 
-        for task_id, meta in seen_tasks.items():
+        # Pass 1: Upsert pipelines and lineage
+        for task_id, meta in discovery.seen_tasks.items():
             display_name = task_id_to_display_name(task_id)
 
             pipeline = await self.pipeline_repo.upsert({
@@ -285,9 +461,18 @@ class AirflowSyncService:
             })
             task_id_to_pipeline_id[task_id] = pipeline.id
 
-            # Assign team from task_group prefix
+            # Assign team from task_group prefix, fall back to DAG tags
             task_group = meta.get("task_group")
             team_name = extract_team_from_task_group(task_group, known_teams)
+            if not team_name and fetch is not None:
+                # Fall back to DAG tags (e.g., "team:Dagger")
+                for proc in discovery.dag_processed:
+                    if task_id in proc["canonical_by_airflow_tid"].values():
+                        dag_def = fetch.dag_defs_by_id.get(proc["dag_id"], {})
+                        dag_tags = dag_def.get("tags")
+                        team_name = extract_team_from_dag_tags(dag_tags, known_teams)
+                        if team_name:
+                            break
             if team_name:
                 team = await self.team_repo.get_or_create(team_name, source="airflow")
                 known_teams.add(team_name)
@@ -327,11 +512,13 @@ class AirflowSyncService:
                 logger.exception("Failed to sync lineage for pipeline %s", display_name)
 
         # Pass 2: Resolve source_pipeline_id on reads_from edges
-        for task_id, meta in seen_tasks.items():
+        pipelines_with_reads: set[str] = set()
+        for task_id, meta in discovery.seen_tasks.items():
             pipeline_id = task_id_to_pipeline_id.get(task_id)
             if not pipeline_id:
                 continue
             for upstream_task_id in meta["needs"]:
+                pipelines_with_reads.add(task_id)
                 source_pid = task_id_to_pipeline_id.get(upstream_task_id)
                 if source_pid:
                     await self.lineage_repo.upsert_edge({
@@ -342,9 +529,49 @@ class AirflowSyncService:
                         "edge_type": "reads_from",
                     })
 
-        # Pass 3: Sync resource configs (per pipeline per DAG)
+        # Pass 3: Infer reads_from edges from DAG task graph (opt-in)
+        if settings.infer_lineage_from_dag_graph:
+            # Build reverse map: for each task, which tasks are upstream of it
+            upstream_map: dict[str, set[str]] = {}
+            for entry in discovery.dag_task_graph:
+                source_tid = entry["task_id"]
+                for downstream_tid in entry.get("downstream_task_ids", []):
+                    upstream_map.setdefault(downstream_tid, set()).add(source_tid)
+
+            inferred_count = 0
+            for task_id in discovery.seen_tasks:
+                if task_id in pipelines_with_reads:
+                    continue  # Already has explicit reads_from edges
+                pipeline_id = task_id_to_pipeline_id.get(task_id)
+                if not pipeline_id:
+                    continue
+                for upstream_tid in upstream_map.get(task_id, set()):
+                    source_pid = task_id_to_pipeline_id.get(upstream_tid)
+                    if source_pid:
+                        await self.lineage_repo.upsert_edge({
+                            "target_pipeline_id": pipeline_id,
+                            "source_pipeline_id": source_pid,
+                            "source_table": upstream_tid,
+                            "target_table": task_id,
+                            "edge_type": "reads_from",
+                        })
+                        inferred_count += 1
+            if inferred_count:
+                logger.info("Inferred %d reads_from edges from DAG task graph", inferred_count)
+
+        return task_id_to_pipeline_id, synced
+
+    async def _persist_resources(
+        self,
+        discovery: _TaskDiscoveryResult,
+        task_id_to_pipeline_id: dict[str, uuid.UUID],
+    ) -> int:
+        """Pass 3: sync resource configs (per pipeline per DAG).
+
+        Returns the number of resource config rows upserted.
+        """
         resource_count = 0
-        for task_id, dag_map in resource_by_dag.items():
+        for task_id, dag_map in discovery.resource_by_dag.items():
             pipeline_id = task_id_to_pipeline_id.get(task_id)
             if not pipeline_id:
                 continue
@@ -375,9 +602,22 @@ class AirflowSyncService:
                         "Failed to sync resource config for %s in %s", task_id, dag_id
                     )
 
-        # Pass 4: Upsert bouncers (volume_per_day preserved in DB — not overwritten)
+        return resource_count
+
+    async def _persist_bouncers(
+        self,
+        discovery: _TaskDiscoveryResult,
+    ) -> dict[str, uuid.UUID]:
+        """Pass 4: upsert bouncers (volume_per_day preserved in DB — not overwritten).
+
+        Returns bouncer_name -> bouncer UUID mapping for use in dag_task persistence.
+        """
+        # Load all known teams — includes any created during _persist_pipelines_and_lineage
+        # since they are flushed to the same session.
+        known_teams = await self.team_repo.get_all_names()
+
         bouncer_name_to_id: dict[str, uuid.UUID] = {}
-        for bouncer_name, meta in seen_bouncers.items():
+        for bouncer_name, meta in discovery.seen_bouncers.items():
             display_name = task_id_to_display_name(bouncer_name)
             task_group = meta.get("task_group")
             team_name = extract_team_from_task_group(task_group, known_teams)
@@ -390,11 +630,18 @@ class AirflowSyncService:
             })
             bouncer_name_to_id[bouncer_name] = bouncer.id
 
-        logger.info("Synced %d bouncers from Airflow", len(seen_bouncers))
+        logger.info("Synced %d bouncers from Airflow", len(discovery.seen_bouncers))
+        return bouncer_name_to_id
 
-        # Pass 5: Sync DAG task graph (membership + downstream edges)
+    async def _persist_dag_tasks(
+        self,
+        discovery: _TaskDiscoveryResult,
+        task_id_to_pipeline_id: dict[str, uuid.UUID],
+        bouncer_name_to_id: dict[str, uuid.UUID],
+    ) -> None:
+        """Pass 5: sync DAG task graph (membership + downstream edges), delete stale entries."""
         current_pairs: set[tuple[str, str]] = set()
-        for entry in dag_task_graph:
+        for entry in discovery.dag_task_graph:
             entry["pipeline_id"] = task_id_to_pipeline_id.get(entry["task_id"])
             # Link bouncer entries to bouncer records
             s_name = entry.get("bouncer_name")
@@ -407,48 +654,24 @@ class AirflowSyncService:
         if stale_deleted:
             logger.info("Deleted %d stale dag_task entries", stale_deleted)
 
-        await self.session.commit()
-        logger.info(
-            "Synced %d pipelines, %d bouncers, %d resource configs, %d dag_task entries from Airflow",
-            synced,
-            len(seen_bouncers),
-            resource_count,
-            len(dag_task_graph),
-        )
-        return synced
+    # ──────────────────────────────────────────────────────────────────────────
+    # sync_single_pipeline — private helpers
+    # ──────────────────────────────────────────────────────────────────────────
 
-    async def sync_single_pipeline(self, pipeline_id: uuid.UUID) -> dict:
-        """Re-sync a single pipeline's metadata, lineage, resources, and status from Airflow.
-
-        Uses the dag_tasks DB cache to avoid scanning all DAGs, with a differential
-        check to discover newly-added DAGs. Airflow API calls are parallelized via
-        asyncio.gather with a semaphore to respect connection pool limits.
-        """
-        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
-        if not pipeline:
-            raise ValueError(f"Pipeline {pipeline_id} not found")
-
-        task_id = pipeline.task_id
-        if not task_id:
-            raise ValueError(f"Pipeline {pipeline_id} has no task_id")
-        display_name = pipeline.name
-        logger.info("Manual sync started for pipeline %s (task_id=%s)", display_name, task_id)
-
+    async def _identify_target_dags(
+        self,
+        task_id: str,
+        known_dag_ids: list[str],
+        all_dag_ids: list[str],
+    ) -> _SingleSyncTargets:
+        """Phase 1: identify target DAGs via cache + differential check for new DAGs."""
         async def _limited(coro):
             async with _AIRFLOW_SEMAPHORE:
                 return await coro
 
-        # ── Phase 1: Identify target DAGs via cache + differential check ──
-
-        cached_dag_tasks = await self.dag_task_repo.get_dags_for_task(task_id)
-        cached_dag_ids = {dt.dag_id for dt in cached_dag_tasks}
-
-        all_dags = await airflow_client.get_all_dags()
-        if not all_dags:
-            raise ValueError("No DAGs found in Airflow")
-
-        all_dag_ids = {d["dag_id"] for d in all_dags}
-        uncached_dag_ids = all_dag_ids - cached_dag_ids
+        cached_set = set(known_dag_ids)
+        all_set = set(all_dag_ids)
+        uncached_dag_ids = all_set - cached_set
 
         # Check uncached DAGs for our task_id (handles new DAG edge case)
         new_dag_ids: set[str] = set()
@@ -462,19 +685,37 @@ class AirflowSyncService:
                 if any(strip_group_prefix(t.get("task_id", "")) == task_id for t in tasks_def):
                     new_dag_ids.add(dag_id)
 
-        target_dag_ids = list(cached_dag_ids | new_dag_ids)
-        if not target_dag_ids:
-            raise ValueError(f"Task {task_id} not found in any Airflow DAG")
+        target_dag_ids = list(cached_set | new_dag_ids)
+        return _SingleSyncTargets(
+            target_dag_ids=target_dag_ids,
+            cached_dag_ids=known_dag_ids,
+            new_dag_ids=list(new_dag_ids),
+        )
 
-        # ── Phase 2: Fetch latest run + instances for all target DAGs in parallel ──
+    async def _fetch_single_pipeline_metadata(
+        self,
+        task_id: str,
+        targets: _SingleSyncTargets,
+        all_dags: list[dict],
+    ) -> dict:
+        """Phase 2: fetch latest run + instances for all target DAGs in parallel.
+
+        Returns a metadata dict with well-known keys for the caller plus private
+        underscore-prefixed keys carrying ancillary data:
+          _resource_by_dag, _best_status, _best_dag_id, _best_exec_date,
+          _found_dags, _run_dag_ids, _instances_results
+        """
+        async def _limited(coro):
+            async with _AIRFLOW_SEMAPHORE:
+                return await coro
 
         dag_runs_results = await asyncio.gather(*[
             _limited(airflow_client.get_dag_runs(dag_id, limit=1))
-            for dag_id in target_dag_ids
+            for dag_id in targets.target_dag_ids
         ])
 
         dag_latest_run: dict[str, dict] = {}
-        for dag_id, runs in zip(target_dag_ids, dag_runs_results):
+        for dag_id, runs in zip(targets.target_dag_ids, dag_runs_results):
             if runs and runs[0].get("dag_run_id"):
                 dag_latest_run[dag_id] = runs[0]
 
@@ -562,8 +803,26 @@ class AirflowSyncService:
         if meta is None:
             raise ValueError(f"Task {task_id} not found in any Airflow DAG")
 
-        # ── Phase 3: DB writes ──
+        # Attach ancillary data as private keys for the caller
+        meta["_resource_by_dag"] = resource_by_dag
+        meta["_best_status"] = best_status
+        meta["_best_dag_id"] = best_dag_id
+        meta["_best_exec_date"] = best_exec_date
+        meta["_found_dags"] = list(found_dags)
+        meta["_run_dag_ids"] = run_dag_ids
+        meta["_instances_results"] = instances_results
 
+        return meta
+
+    async def _persist_single_pipeline_data(
+        self,
+        task_id: str,
+        pipeline_id: uuid.UUID,
+        display_name: str,
+        meta: dict,
+        resource_by_dag: dict[str, dict],
+    ) -> None:
+        """Phase 3: pipeline upsert, lineage edges, and resource configs for a single pipeline."""
         await self.pipeline_repo.upsert({
             "name": display_name,
             "task_id": task_id,
@@ -626,20 +885,30 @@ class AirflowSyncService:
                     "Failed to sync resource config for %s in %s", task_id, dag_id
                 )
 
-        # ── Phase 4: Run history — parallel fetch, sequential DB writes ──
+    async def _sync_run_history(
+        self,
+        pipeline_id: uuid.UUID,
+        task_id: str,
+        found_dags: list[str],
+        run_dag_ids: list[str],
+        instances_results: list[list],
+    ) -> None:
+        """Phase 4: fetch run history, write history rows, and update resource actuals from logs."""
+        async def _limited(coro):
+            async with _AIRFLOW_SEMAPHORE:
+                return await coro
 
         history_count = 0
-        found_dag_list = list(found_dags)
 
         # Fetch 5 runs per DAG in parallel
         history_runs_results = await asyncio.gather(*[
             _limited(airflow_client.get_dag_runs(dag_id, limit=5))
-            for dag_id in found_dag_list
+            for dag_id in found_dags
         ])
 
         # Collect all (dag_id, dag_run_id) pairs
         all_run_pairs: list[tuple[str, str]] = []
-        for dag_id, runs in zip(found_dag_list, history_runs_results):
+        for dag_id, runs in zip(found_dags, history_runs_results):
             for run in runs:
                 dag_run_id = run.get("dag_run_id")
                 if dag_run_id:
@@ -721,29 +990,4 @@ class AirflowSyncService:
                         dag_id, dag_run_id, task_id,
                     )
 
-        logger.info("Recorded %d new run history entries for %s", history_count, display_name)
-
-        # ── Phase 5: Status upsert + commit ──
-
-        if best_status and best_dag_id:
-            clean_exec_date = None
-            if best_exec_date:
-                if isinstance(best_exec_date, str):
-                    with contextlib.suppress(ValueError):
-                        clean_exec_date = datetime.fromisoformat(best_exec_date.replace("Z", "+00:00"))
-                elif isinstance(best_exec_date, datetime):
-                    clean_exec_date = best_exec_date
-
-            await self.airflow_repo.upsert({
-                "pipeline_id": pipeline_id,
-                "dag_id": best_dag_id,
-                "status": best_status,
-                "execution_date": clean_exec_date,
-                "last_checked_at": datetime.now(UTC),
-            })
-
-        await self.session.commit()
-        logger.info("Manual sync completed for pipeline %s", display_name)
-        return {"synced": True, "pipeline_name": display_name}
-
-
+        logger.info("Recorded %d new run history entries for %s", history_count, task_id_to_display_name(task_id))
