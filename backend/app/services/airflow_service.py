@@ -16,7 +16,15 @@ from app.repositories.resource_repo import ResourceRepository
 logger = logging.getLogger(__name__)
 
 # Limits concurrent Airflow API calls during poll (mirrors sync semaphore)
-_POLL_SEMAPHORE = asyncio.Semaphore(6)
+from app.config import settings
+_POLL_SEMAPHORE = asyncio.Semaphore(settings.airflow_semaphore_limit)
+
+
+async def _poll_limited(coro):
+    """Run a coroutine with the poll concurrency semaphore."""
+    async with _POLL_SEMAPHORE:
+        return await coro
+
 
 KNOWN_AIRFLOW_STATES = {
     "success", "failed", "upstream_failed", "running", "queued",
@@ -34,12 +42,19 @@ _STATUS_PRIORITY = {
 
 
 class AirflowService:
-    def __init__(self, session: AsyncSession):
+    def __init__(
+        self,
+        session: AsyncSession,
+        airflow_repo: AirflowRepository,
+        pipeline_repo: PipelineRepository,
+        resource_repo: ResourceRepository,
+        bouncer_repo: BouncerRepository,
+    ):
         self.session = session
-        self.airflow_repo = AirflowRepository(session)
-        self.pipeline_repo = PipelineRepository(session)
-        self.resource_repo = ResourceRepository(session)
-        self.bouncer_repo = BouncerRepository(session)
+        self.airflow_repo = airflow_repo
+        self.pipeline_repo = pipeline_repo
+        self.resource_repo = resource_repo
+        self.bouncer_repo = bouncer_repo
 
     async def poll_all_statuses(self) -> int:
         """Poll Airflow network DAGs for task-level statuses and update database.
@@ -53,8 +68,9 @@ class AirflowService:
 
         Returns the number of pipelines updated.
         """
-        pipelines = await self.pipeline_repo.get_all()
-        if not pipelines:
+        # Lightweight loading — only columns needed for status polling
+        task_to_pipeline = await self.pipeline_repo.get_task_id_map()
+        if not task_to_pipeline:
             logger.info("No pipelines to poll Airflow for")
             return 0
 
@@ -63,19 +79,8 @@ class AirflowService:
             logger.warning("Could not fetch DAGs from Airflow")
             return 0
 
-        async def _limited(coro):
-            async with _POLL_SEMAPHORE:
-                return await coro
-
-        # Build map: task_id → pipeline
-        task_to_pipeline = {}
-        for pipeline in pipelines:
-            if pipeline.task_id:
-                task_to_pipeline[pipeline.task_id] = pipeline
-
-        # Build bouncer name set for quick lookup
-        all_bouncers = await self.bouncer_repo.get_all()
-        bouncer_name_set = {s.bouncer_name for s in all_bouncers}
+        # Lightweight bouncer name set — no ORM hydration
+        bouncer_name_set = await self.bouncer_repo.get_all_names()
         bouncer_best_status: dict[str, str] = {}
 
         best: dict[str, dict] = {}
@@ -86,7 +91,7 @@ class AirflowService:
 
         # Phase 1: Parallel fetch dag_runs (5 per DAG)
         runs_results = await asyncio.gather(*[
-            _limited(airflow_client.get_dag_runs(did, limit=5))
+            _poll_limited(airflow_client.get_dag_runs(did, limit=5))
             for did in all_dag_ids
         ])
 
@@ -100,13 +105,14 @@ class AirflowService:
                     run_entries.append((dag_id, run, i == 0))
 
         instances_results = await asyncio.gather(*[
-            _limited(airflow_client.get_task_instances(dag_id, run["dag_run_id"]))
+            _poll_limited(airflow_client.get_task_instances(dag_id, run["dag_run_id"]))
             for dag_id, run, _ in run_entries
         ])
 
-        # Phase 3: Process instances, record history, collect log-fetch needs
-        log_fetch_requests: list[tuple[str, str, str, object, str]] = []
-        # (dag_id, dag_run_id, airflow_task_id, pipeline, status)
+        # Phase 3: Process instances, collect run history entries for batch upsert
+        run_history_entries: list[dict] = []
+        success_run_keys: list[tuple] = []  # (pipeline_id, dag_id, dag_run_id)
+        success_log_info: dict[tuple[str, str], tuple[str, object]] = {}  # (dag_id,dag_run_id) -> (airflow_tid, pipeline)
 
         for (dag_id, run, is_latest), tasks in zip(run_entries, instances_results):
             dag_run_id = run["dag_run_id"]
@@ -139,7 +145,7 @@ class AirflowService:
                 end_date = self._parse_datetime(task.get("end_date"))
 
                 if duration is not None:
-                    await self.resource_repo.upsert_run({
+                    run_history_entries.append({
                         "pipeline_id": pipeline.id,
                         "dag_id": dag_id,
                         "dag_run_id": dag_run_id,
@@ -148,18 +154,10 @@ class AirflowService:
                         "end_date": end_date,
                         "status": status,
                     })
-                    history_recorded += 1
 
-                    # Upsert clears actuals on re-run, so always
-                    # re-fetch for successful runs
                     if status == "success":
-                        needs_actuals = await self.resource_repo.has_null_actuals(
-                            pipeline.id, dag_id, dag_run_id
-                        )
-                        if needs_actuals:
-                            log_fetch_requests.append(
-                                (dag_id, dag_run_id, airflow_task_id, pipeline, status)
-                            )
+                        success_run_keys.append((pipeline.id, dag_id, dag_run_id))
+                        success_log_info[(dag_id, dag_run_id)] = (airflow_task_id, pipeline)
 
                 if is_latest:
                     if pid in best:
@@ -179,10 +177,26 @@ class AirflowService:
                         "last_checked_at": datetime.now(UTC),
                     }
 
+        # Phase 3b: Batch upsert all run history entries
+        if run_history_entries:
+            history_recorded = await self.resource_repo.bulk_upsert_runs(run_history_entries)
+
+        # Phase 3c: Batch check which successful runs need log fetching
+        log_fetch_requests: list[tuple[str, str, str, object, str]] = []
+        if success_run_keys:
+            needs_actuals_set = await self.resource_repo.bulk_has_null_actuals(success_run_keys)
+            for dag_id, dag_run_id in needs_actuals_set:
+                info = success_log_info.get((dag_id, dag_run_id))
+                if info:
+                    airflow_task_id, pipeline = info
+                    log_fetch_requests.append(
+                        (dag_id, dag_run_id, airflow_task_id, pipeline, "success")
+                    )
+
         # Phase 4: Parallel fetch all needed logs
         if log_fetch_requests:
             log_results = await asyncio.gather(*[
-                _limited(airflow_client.get_task_log(dag_id, run_id, tid))
+                _poll_limited(airflow_client.get_task_log(dag_id, run_id, tid))
                 for dag_id, run_id, tid, _, _ in log_fetch_requests
             ])
 
@@ -205,17 +219,19 @@ class AirflowService:
                         dag_id, dag_run_id, airflow_task_id,
                     )
 
-        # Phase 5: Upsert all collected statuses
-        for entry in best.values():
-            await self.airflow_repo.upsert(entry)
-            updated += 1
+        # Phase 5: Batch upsert all collected statuses
+        if best:
+            updated = await self.airflow_repo.bulk_upsert(list(best.values()))
 
+        # Batch bouncer status update — single query instead of N+1
         bouncer_updated = 0
-        for bouncer_name, status in bouncer_best_status.items():
-            bouncer = await self.bouncer_repo.get_by_name(bouncer_name)
-            if bouncer:
-                bouncer.status = status
-                bouncer_updated += 1
+        if bouncer_best_status:
+            bouncers = await self.bouncer_repo.get_by_names(list(bouncer_best_status))
+            for bouncer in bouncers:
+                new_status = bouncer_best_status.get(bouncer.bouncer_name)
+                if new_status:
+                    bouncer.status = new_status
+                    bouncer_updated += 1
 
         await self.session.commit()
         logger.info(

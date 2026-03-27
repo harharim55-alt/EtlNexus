@@ -3,8 +3,6 @@
 import uuid
 from collections import defaultdict
 
-from sqlalchemy.ext.asyncio import AsyncSession
-
 from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.pipeline_repo import PipelineRepository
@@ -26,11 +24,17 @@ from app.services.graph_builder import (
 
 
 class TopologyService:
-    def __init__(self, session: AsyncSession):
-        self.pipeline_repo = PipelineRepository(session)
-        self.dag_task_repo = DagTaskRepository(session)
-        self.bouncer_repo = BouncerRepository(session)
-        self.resource_repo = ResourceRepository(session)
+    def __init__(
+        self,
+        pipeline_repo: PipelineRepository,
+        dag_task_repo: DagTaskRepository,
+        bouncer_repo: BouncerRepository,
+        resource_repo: ResourceRepository,
+    ):
+        self.pipeline_repo = pipeline_repo
+        self.dag_task_repo = dag_task_repo
+        self.bouncer_repo = bouncer_repo
+        self.resource_repo = resource_repo
 
     async def build_pipeline_topology(
         self, pipeline_id: uuid.UUID, dag_id: str | None = None,
@@ -69,9 +73,8 @@ class TopologyService:
         else:
             active_entries = dag_entries
 
-        # Build pipeline lookup from DB
-        all_pipelines = await self.pipeline_repo.get_all()
-        task_id_to_pipeline = {p.task_id: p for p in all_pipelines if p.task_id}
+        # Build pipeline lookup from DB (lightweight projection, no ORM relationships)
+        task_id_to_pipeline = await self.pipeline_repo.get_task_id_map()
 
         # Build task_group_id lookup from all active dag_task entries
         task_group_lookup: dict[tuple[str, str], str | None] = {}
@@ -108,15 +111,21 @@ class TopologyService:
         if dag_run_id:
             run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
             status_map: dict[str, str] = dict(run_statuses)
+            # Fill gaps from live AirflowRunStatus for tasks without a run
+            # history entry yet (e.g. running/queued/scheduled tasks)
+            for tid, p in task_id_to_pipeline.items():
+                if tid not in status_map and p.status and p.status != "unknown":
+                    status_map[tid] = p.status
             pipeline_status = status_map.get(my_task_id, "unknown")
         else:
             pipeline_status = "unknown"
             if pipeline.airflow_status:
                 pipeline_status = pipeline.airflow_status.status
+            # Build status map from lightweight task_id_map (status is a direct attribute)
             status_map = {}
-            for p in all_pipelines:
-                if p.task_id and p.airflow_status:
-                    status_map[p.task_id] = p.airflow_status.status
+            for tid, p in task_id_to_pipeline.items():
+                if p.status and p.status != "unknown":
+                    status_map[tid] = p.status
 
         merged_needs: dict[str, TopologyTask] = {}
         merged_prefers: dict[str, TopologyTask] = {}
@@ -177,6 +186,9 @@ class TopologyService:
             run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
             _run_status_map = dict(run_statuses)
             pipeline_status = _run_status_map.get(my_task_id, "unknown")
+            # Fall back to live AirflowRunStatus if no run history entry yet
+            if pipeline_status == "unknown" and pipeline.airflow_status:
+                pipeline_status = pipeline.airflow_status.status
         else:
             pipeline_status = "unknown"
             if pipeline.airflow_status:
@@ -225,22 +237,24 @@ class TopologyService:
                 for downstream_tid in dt.downstream_task_ids or []:
                     reverse_adj[downstream_tid].add(dt.task_id)
 
-        # Build pipeline lookup for enrichment
-        all_pipelines = await self.pipeline_repo.get_all()
-        task_id_to_pipeline = {}
-        for p in all_pipelines:
-            if p.task_id:
-                task_id_to_pipeline[p.task_id] = p
+        # Build pipeline lookup for enrichment (lightweight projection, no ORM relationships)
+        task_id_to_pipeline = await self.pipeline_repo.get_task_id_map()
 
         # Status map — historical or current
         if dag_run_id:
             run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
             status_map: dict[str, str] = dict(run_statuses)
+            # Fill gaps from live AirflowRunStatus for tasks without a run
+            # history entry yet (e.g. running/queued/scheduled tasks)
+            for tid, p in task_id_to_pipeline.items():
+                if tid not in status_map and p.status and p.status != "unknown":
+                    status_map[tid] = p.status
         else:
+            # Build status map from lightweight task_id_map (status is a direct attribute)
             status_map = {}
-            for p in all_pipelines:
-                if p.task_id and p.airflow_status:
-                    status_map[p.task_id] = p.airflow_status.status
+            for tid, p in task_id_to_pipeline.items():
+                if p.status and p.status != "unknown":
+                    status_map[tid] = p.status
 
         # BFS through needs/prefers (semantic data dependencies)
         visited, raw_edges = bfs_upstream_semantic(
