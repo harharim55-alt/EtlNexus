@@ -3,14 +3,26 @@ import { parseScanDetail } from "../plan-parsers";
 import { MetricsBar } from "./MetricsBar";
 import type { ExecutionPlanNode } from "@/types/execution-plan";
 
+const FORMAT_STYLES: Record<string, string> = {
+  parquet: "text-sky-300 bg-sky-500/10 border-sky-500/20",
+  csv: "text-orange-300 bg-orange-500/10 border-orange-500/20",
+  json: "text-green-300 bg-green-500/10 border-green-500/20",
+  orc: "text-purple-300 bg-purple-500/10 border-purple-500/20",
+  text: "text-slate-300 bg-slate-500/10 border-slate-500/20",
+};
+
 export function ScanFormatter({ node }: { node: ExecutionPlanNode }) {
   const detail = node.full_detail || node.detail;
-  const { table, namespace, columns, filters } = parseScanDetail(detail);
+  const { table, namespace, columns, filters, format, location } =
+    parseScanDetail(detail);
+  const fmtStyle =
+    FORMAT_STYLES[format.toLowerCase()] ||
+    "text-slate-400 bg-white/5 border-white/10";
 
   return (
     <div className="space-y-4">
-      {/* Table name + namespace */}
-      <div className="flex items-center gap-2.5">
+      {/* Table name + namespace + format badge */}
+      <div className="flex items-center gap-2.5 flex-wrap">
         <Table2 className="w-4 h-4 text-blue-400 shrink-0" />
         <span className="text-sm font-semibold text-blue-300 font-mono">
           {table}
@@ -20,7 +32,24 @@ export function ScanFormatter({ node }: { node: ExecutionPlanNode }) {
             {namespace}
           </span>
         )}
+        {format && (
+          <span
+            className={`text-[9px] font-mono uppercase tracking-wider font-bold border rounded-md px-1.5 py-0.5 ${fmtStyle}`}
+          >
+            {format}
+          </span>
+        )}
       </div>
+
+      {/* Location path */}
+      {location && (
+        <div
+          className="text-[11px] font-mono text-slate-500 truncate px-3 py-1.5 bg-black/20 rounded-lg border border-white/[0.04]"
+          title={location}
+        >
+          {location}
+        </div>
+      )}
 
       {/* Columns */}
       {columns.length > 0 && (

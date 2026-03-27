@@ -4,10 +4,23 @@ import type { ExecutionPlanNode } from "@/types/execution-plan";
 
 export function AggregateFormatter({ node }: { node: ExecutionPlanNode }) {
   const detail = node.full_detail || node.detail;
-  const { groupBy, functions } = parseAggregateDetail(detail);
+  const { groupBy, functions, phase } = parseAggregateDetail(detail);
 
   return (
     <div className="space-y-4">
+      {phase && (
+        <div className="flex items-center gap-2">
+          <span
+            className={`text-[9px] font-mono font-bold uppercase tracking-wider rounded-md px-1.5 py-0.5 border ${
+              phase === "partial"
+                ? "text-slate-400 bg-white/5 border-white/10"
+                : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+            }`}
+          >
+            {phase}
+          </span>
+        </div>
+      )}
       {groupBy.length > 0 && (
         <div>
           <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">

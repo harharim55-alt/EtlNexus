@@ -6,6 +6,11 @@ import {
   Sparkles,
   ChevronUp,
   ChevronDown,
+  Search,
+  Eye,
+  HardDrive,
+  FlipVertical,
+  MapPin,
 } from "lucide-react";
 import { MetricsBar } from "./MetricsBar";
 import type { ExecutionPlanNode } from "@/types/execution-plan";
@@ -163,17 +168,135 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
     );
   }
 
-  // Generate (explode, etc.)
+  // Generate (explode, etc.) — enhanced with input/output/outer
   if (lower === "generate") {
+    const sections = detail.split("|").map((s) => s.trim());
+    const funcPart = sections[0] || "";
+    const isOuter = sections.some((s) => s === "outer");
+    const outputPart = sections.find((s) => s.startsWith("→"));
+
     return (
       <div className="space-y-4">
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 flex-wrap">
           <Sparkles className="w-4 h-4 text-pink-400 shrink-0" />
           <span className="text-sm font-semibold text-pink-300 font-mono">
             Generate
           </span>
-          {detail && (
+          {funcPart && (
             <span className="text-[10px] font-mono text-pink-300 bg-pink-500/10 border border-pink-500/20 rounded-md px-2 py-0.5">
+              {funcPart}
+            </span>
+          )}
+          {isOuter && (
+            <span className="text-[9px] font-mono text-slate-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+              OUTER
+            </span>
+          )}
+        </div>
+        {outputPart && (
+          <div className="text-[11px] font-mono text-slate-400 px-3 py-1.5 bg-black/20 rounded-lg border border-white/[0.04]">
+            output: {outputPart.replace("→", "").trim()}
+          </div>
+        )}
+        <MetricsBar metrics={node.metrics} />
+      </div>
+    );
+  }
+
+  // Subquery
+  if (lower.includes("subquery")) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2.5">
+          <Search className="w-4 h-4 text-slate-400 shrink-0" />
+          <span className="text-sm font-semibold text-slate-300 font-mono">
+            Subquery
+          </span>
+          {detail && (
+            <span className="text-[10px] font-mono text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
+              {detail}
+            </span>
+          )}
+        </div>
+        <MetricsBar metrics={node.metrics} />
+      </div>
+    );
+  }
+
+  // CollectMetrics (observe)
+  if (lower === "collectmetrics") {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2.5">
+          <Eye className="w-4 h-4 text-cyan-400 shrink-0" />
+          <span className="text-sm font-semibold text-cyan-300 font-mono">
+            Observe
+          </span>
+          {detail && (
+            <span className="text-[10px] font-mono text-cyan-300 bg-cyan-500/10 border border-cyan-500/20 rounded-md px-2 py-0.5">
+              {detail}
+            </span>
+          )}
+        </div>
+        <MetricsBar metrics={node.metrics} />
+      </div>
+    );
+  }
+
+  // MapPartitions / MapElements
+  if (lower === "mappartitions" || lower === "mapelements") {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2.5">
+          <MapPin className="w-4 h-4 text-orange-400 shrink-0" />
+          <span className="text-sm font-semibold text-orange-300 font-mono">
+            {node.name.replace(/([a-z])([A-Z])/g, "$1 $2")}
+          </span>
+          {detail && (
+            <span className="text-[10px] font-mono text-orange-300 bg-orange-500/10 border border-orange-500/20 rounded-md px-2 py-0.5">
+              {detail}
+            </span>
+          )}
+        </div>
+        <MetricsBar metrics={node.metrics} />
+      </div>
+    );
+  }
+
+  // Unpivot
+  if (lower === "unpivot") {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2.5">
+          <FlipVertical className="w-4 h-4 text-violet-400 shrink-0" />
+          <span className="text-sm font-semibold text-violet-300 font-mono">
+            Unpivot
+          </span>
+        </div>
+        {detail && (
+          <div className="text-[11px] font-mono text-slate-300 px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]">
+            {detail}
+          </div>
+        )}
+        <MetricsBar metrics={node.metrics} />
+      </div>
+    );
+  }
+
+  // Write operations (OverwritePartitionsDynamic, WriteFiles)
+  if (
+    lower === "overwritepartitionsdynamic" ||
+    lower === "writefiles"
+  ) {
+    return (
+      <div className="space-y-4">
+        <div className="flex items-center gap-2.5">
+          <HardDrive className="w-4 h-4 text-emerald-400 shrink-0" />
+          <span className="text-sm font-semibold text-emerald-300 font-mono">
+            {node.name.replace(/([a-z])([A-Z])/g, "$1 $2")}
+          </span>
+          {detail && (
+            <span className="text-[10px] font-mono text-emerald-300 bg-emerald-500/10 border border-emerald-500/20 rounded-md px-2 py-0.5">
               {detail}
             </span>
           )}

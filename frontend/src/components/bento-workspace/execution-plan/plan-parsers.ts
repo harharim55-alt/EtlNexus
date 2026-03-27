@@ -5,10 +5,14 @@ export function parseScanDetail(detail: string): {
   namespace: string;
   columns: string[];
   filters: string[];
+  format: string;
+  location: string;
 } {
   // Full detail may be multi-line:
   //   TableName [col1, col2, ...]
   //   namespace: vault
+  //   format: parquet
+  //   location: s3a://bucket/path
   //   filters: date IS NOT NULL, date >= 20535
   const lines = detail.split("\n").map((l) => l.trim());
 
@@ -16,6 +20,8 @@ export function parseScanDetail(detail: string): {
   let namespace = "";
   let columns: string[] = [];
   let filters: string[] = [];
+  let format = "";
+  let location = "";
 
   // First line: table [columns]
   const first = lines[0] || detail;
@@ -30,6 +36,10 @@ export function parseScanDetail(detail: string): {
   for (const line of lines.slice(1)) {
     if (line.startsWith("namespace:")) {
       namespace = line.replace("namespace:", "").trim();
+    } else if (line.startsWith("format:")) {
+      format = line.replace("format:", "").trim();
+    } else if (line.startsWith("location:")) {
+      location = line.replace("location:", "").trim();
     } else if (line.startsWith("filters:")) {
       const raw = line.replace("filters:", "").trim();
       if (raw) {
@@ -39,18 +49,51 @@ export function parseScanDetail(detail: string): {
     }
   }
 
-  return { table, namespace, columns, filters };
+  return { table, namespace, columns, filters, format, location };
 }
 
 export function parseJoinDetail(
   detail: string,
   name: string,
-): { joinType: string; leftKey: string; rightKey: string; strategy: string } {
-  const strategy = name
-    .replace("Join", "")
-    .replace(/([a-z])([A-Z])/g, "$1 $2")
-    .trim();
-  const m = detail.match(
+): {
+  joinType: string;
+  leftKey: string;
+  rightKey: string;
+  strategy: string;
+  buildSide: string;
+  condition: string;
+} {
+  // Parse pipe-separated sections from full_detail:
+  // "inner on [key] = [key] | strategy: Broadcast Hash | build: left"
+  const sections = detail.split("|").map((s) => s.trim());
+  const mainPart = sections[0] || "";
+  let strategy = "";
+  let buildSide = "";
+  let condition = "";
+
+  for (const section of sections.slice(1)) {
+    if (section.startsWith("strategy:")) {
+      strategy = section.replace("strategy:", "").trim();
+    } else if (section.startsWith("build:")) {
+      buildSide = section.replace("build:", "").trim();
+    } else if (section.startsWith("condition:")) {
+      condition = section.replace("condition:", "").trim();
+    } else if (!section.startsWith("strategy") && !section.startsWith("build")) {
+      // Legacy: strategy was in short detail after pipe
+      strategy = section;
+    }
+  }
+
+  // Fallback strategy from node name if not in detail
+  if (!strategy) {
+    strategy = name
+      .replace("Join", "")
+      .replace("CartesianProduct", "Cartesian")
+      .replace(/([a-z])([A-Z])/g, "$1 $2")
+      .trim();
+  }
+
+  const m = mainPart.match(
     /^(\w[\w\s]*?)\s+on\s+\[([^\]]*)\]\s*=\s*\[([^\]]*)\]$/,
   );
   if (m) {
@@ -59,18 +102,29 @@ export function parseJoinDetail(
       leftKey: m[2].trim(),
       rightKey: m[3].trim(),
       strategy,
+      buildSide,
+      condition,
     };
   }
-  const simple = detail.match(/^(\w[\w\s]*?)\s+on\s+(.+)$/);
+  const simple = mainPart.match(/^(\w[\w\s]*?)\s+on\s+(.+)$/);
   if (simple) {
     return {
       joinType: simple[1].toUpperCase(),
       leftKey: simple[2].trim(),
       rightKey: "",
       strategy,
+      buildSide,
+      condition,
     };
   }
-  return { joinType: detail.toUpperCase(), leftKey: "", rightKey: "", strategy };
+  return {
+    joinType: mainPart.toUpperCase() || "JOIN",
+    leftKey: "",
+    rightKey: "",
+    strategy,
+    buildSide,
+    condition,
+  };
 }
 
 export function parseFilterPredicates(detail: string): string[] {
@@ -148,50 +202,128 @@ export function splitTopLevel(s: string): string[] {
   return parts.filter(Boolean);
 }
 
-export function parseProjectColumns(
-  detail: string,
-): { columns: string[]; expressions: string[] } {
-  const items = splitTopLevel(detail);
-  const columns: string[] = [];
-  const expressions: string[] = [];
-  for (const item of items) {
-    if (item.includes("(")) {
-      expressions.push(item);
-    } else {
-      columns.push(item);
+export function parseProjectColumns(detail: string): {
+  columns: string[];
+  expressions: string[];
+  passthrough: string[];
+  renamed: { from: string; to: string }[];
+  computed: { expression: string; alias: string }[];
+} {
+  // Try structured format: "passthrough: ...\nrenamed: ...\ncomputed: ..."
+  const lines = detail.split("\n").map((l) => l.trim());
+  const passthrough: string[] = [];
+  const renamed: { from: string; to: string }[] = [];
+  const computed: { expression: string; alias: string }[] = [];
+  let hasStructured = false;
+
+  for (const line of lines) {
+    if (line.startsWith("passthrough:")) {
+      hasStructured = true;
+      passthrough.push(
+        ...line
+          .replace("passthrough:", "")
+          .trim()
+          .split(",")
+          .map((s) => s.trim())
+          .filter(Boolean),
+      );
+    } else if (line.startsWith("renamed:")) {
+      hasStructured = true;
+      const items = splitTopLevel(line.replace("renamed:", "").trim());
+      for (const item of items) {
+        const m = item.match(/^(.+?)\s+AS\s+(.+)$/);
+        if (m) {
+          renamed.push({ from: m[1].trim(), to: m[2].trim() });
+        }
+      }
+    } else if (line.startsWith("computed:")) {
+      hasStructured = true;
+      const items = splitTopLevel(line.replace("computed:", "").trim());
+      for (const item of items) {
+        const m = item.match(/^(.+?)\s+AS\s+(\S+)$/);
+        if (m) {
+          computed.push({ expression: m[1].trim(), alias: m[2].trim() });
+        } else {
+          computed.push({ expression: item, alias: "" });
+        }
+      }
     }
   }
-  return { columns, expressions };
+
+  if (hasStructured) {
+    // Build legacy columns/expressions for backward compat
+    const columns = [...passthrough, ...renamed.map((r) => r.to)];
+    const expressions = computed.map((c) =>
+      c.alias ? `${c.expression} AS ${c.alias}` : c.expression,
+    );
+    return { columns, expressions, passthrough, renamed, computed };
+  }
+
+  // Fallback: old comma-separated format
+  const items = splitTopLevel(detail);
+  const oldColumns: string[] = [];
+  const oldExpressions: string[] = [];
+  for (const item of items) {
+    if (item.includes("(")) {
+      oldExpressions.push(item);
+    } else {
+      oldColumns.push(item);
+    }
+  }
+  return {
+    columns: oldColumns,
+    expressions: oldExpressions,
+    passthrough: oldColumns,
+    renamed: [],
+    computed: oldExpressions.map((e) => ({ expression: e, alias: "" })),
+  };
 }
 
 export function parseAggregateDetail(
   detail: string,
-): { groupBy: string[]; functions: string[] } {
+): { groupBy: string[]; functions: string[]; phase: string } {
   const parts = detail.split("|").map((s) => s.trim());
   let groupBy: string[] = [];
   let functions: string[] = [];
-  if (parts.length >= 2) {
-    const byStr = parts[0].replace(/^by\s+/i, "");
+  let phase = "";
+
+  // Check for phase prefix: "partial | by col | sum" or "phase: partial | by col | sum"
+  const filtered: string[] = [];
+  for (const part of parts) {
+    if (part === "partial" || part === "final") {
+      phase = part;
+    } else if (part.startsWith("phase:")) {
+      phase = part.replace("phase:", "").trim();
+    } else {
+      filtered.push(part);
+    }
+  }
+
+  if (filtered.length >= 2) {
+    const byStr = filtered[0].replace(/^by\s+/i, "");
     groupBy = byStr
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-    functions = parts[1]
+    functions = filtered[1]
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean);
-  } else if (detail.startsWith("by ")) {
-    groupBy = detail
-      .replace(/^by\s+/, "")
-      .split(",")
-      .map((s) => s.trim());
-  } else {
-    functions = detail
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+  } else if (filtered.length === 1) {
+    const single = filtered[0];
+    if (single.startsWith("by ")) {
+      groupBy = single
+        .replace(/^by\s+/, "")
+        .split(",")
+        .map((s) => s.trim());
+    } else {
+      functions = single
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
+    }
   }
-  return { groupBy, functions };
+  return { groupBy, functions, phase };
 }
 
 export function parseSortKeys(
@@ -510,4 +642,99 @@ export function parseWindowDetail(detail: string): {
   }
 
   return { partitionBy, orderBy, functions };
+}
+
+// ── Phase 1A: Set Operations, Dedup, Sample ──────────────────────
+
+export function parseSetOpDetail(
+  detail: string,
+  name: string,
+): { operation: string; isAll: boolean } {
+  const lower = name.toLowerCase();
+  const operation = lower.includes("except") ? "EXCEPT" : "INTERSECT";
+  const isAll = detail.includes("all") || lower.includes("all");
+  return { operation, isAll };
+}
+
+export function parseDeduplicateDetail(detail: string): { columns: string[] } {
+  const columns = detail
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  return { columns };
+}
+
+export function parseSampleDetail(detail: string): {
+  fraction: string;
+  withReplacement: boolean;
+  seed: string | null;
+} {
+  // Short detail: "50% | with replacement | seed=42"
+  // Full detail: "fraction: 50%\nwith replacement: yes\nseed: 42"
+  const lines = detail.split("\n").map((l) => l.trim());
+
+  // Try structured format first
+  let fraction = "";
+  let withReplacement = false;
+  let seed: string | null = null;
+
+  for (const line of lines) {
+    if (line.startsWith("fraction:")) {
+      fraction = line.replace("fraction:", "").trim();
+    } else if (line.startsWith("with replacement:")) {
+      withReplacement = line.includes("yes");
+    } else if (line.startsWith("seed:")) {
+      seed = line.replace("seed:", "").trim();
+    }
+  }
+
+  // Fallback to pipe-separated short format
+  if (!fraction) {
+    const parts = detail.split("|").map((s) => s.trim());
+    fraction = parts[0] || "";
+    withReplacement = parts.some((p) => p.includes("replacement"));
+    const seedPart = parts.find((p) => p.startsWith("seed="));
+    seed = seedPart ? seedPart.replace("seed=", "") : null;
+  }
+
+  return { fraction, withReplacement, seed };
+}
+
+// ── Phase 1B: Data Source Nodes ──────────────────────────────────
+
+export function parseRangeDetail(detail: string): {
+  start: string;
+  end: string;
+  step: string;
+  partitions: string;
+} {
+  // Full detail: "start: 0\nend: 1000000\nstep: 1\npartitions: 8"
+  const lines = detail.split("\n").map((l) => l.trim());
+
+  let start = "";
+  let end = "";
+  let step = "";
+  let partitions = "";
+
+  for (const line of lines) {
+    if (line.startsWith("start:")) start = line.replace("start:", "").trim();
+    else if (line.startsWith("end:")) end = line.replace("end:", "").trim();
+    else if (line.startsWith("step:")) step = line.replace("step:", "").trim();
+    else if (line.startsWith("partitions:"))
+      partitions = line.replace("partitions:", "").trim();
+  }
+
+  // Fallback to short format: "0 to 1,000,000 (step 1) | 8 parts"
+  if (!start) {
+    const m = detail.match(/^(.+?)\s+to\s+(.+?)(?:\s+\(step\s+(.+?)\))?/);
+    if (m) {
+      start = m[1];
+      end = m[2];
+      step = m[3] || "1";
+    }
+    const pm = detail.match(/(\d+)\s+parts/);
+    if (pm) partitions = pm[1];
+  }
+
+  return { start, end, step, partitions };
 }

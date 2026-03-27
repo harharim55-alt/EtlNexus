@@ -424,7 +424,10 @@ def _build_tree_from_initial_plan(spark, result_df) -> dict | None:
 _SKIP_NODES = {
     "AdaptiveSparkPlan", "WholeStageCodegen", "InputAdapter",
     "ColumnarToRow", "BroadcastQueryStage", "ShuffleQueryStage",
-    "CommandResult", "Execute", "OverwritePartitionsDynamic", "WriteFiles",
+    "CommandResult", "Execute",
+    # AQE wrappers and serialization nodes
+    "AQEShuffleRead", "CustomShuffleReader",
+    "DeserializeToObject", "SerializeFromObject",
 }
 
 _COL_ID_RE = re.compile(r"#\d+[L]?")
@@ -436,11 +439,15 @@ def _strip_col_ids(s: str) -> str:
 
 def _classify_node(name: str) -> str:
     lower = name.lower()
+    if lower == "range":
+        return "read"
     if "scan" in lower or "datasource" in lower:
         return "read"
     if "write" in lower or "insert" in lower or "overwrite" in lower or "append" in lower:
         return "write"
     if "join" in lower or "exchange" in lower or "sort" in lower or "shuffle" in lower:
+        return "shuffle"
+    if lower == "cartesianproduct":
         return "shuffle"
     return "transform"
 
@@ -512,8 +519,8 @@ def _extract_detail(node_name: str, simple_str: str) -> str:
     clean = _strip_col_ids(simple_str)
     lower = node_name.lower()
     try:
-        if "join" in lower:
-            return _parse_join_detail(clean)
+        if "join" in lower or lower == "cartesianproduct":
+            return _parse_join_detail(node_name, clean)
         if "filter" in lower:
             return _parse_filter_detail(clean)
         if "aggregate" in lower:
@@ -532,6 +539,39 @@ def _extract_detail(node_name: str, simple_str: str) -> str:
             return _parse_limit_detail(clean)
         if lower in ("union", "expand", "generate", "coalesce"):
             return _parse_simple_node_detail(node_name, clean)
+        # Phase 1A: set operations, dedup, sample
+        if lower in ("except", "exceptall"):
+            return _parse_set_op_detail(node_name, clean)
+        if lower in ("intersect", "intersectall"):
+            return _parse_set_op_detail(node_name, clean)
+        if lower == "deduplicate":
+            return _parse_deduplicate_detail(clean)
+        if lower == "sample":
+            return _parse_sample_detail(clean)
+        # Phase 1B: data source nodes
+        if lower == "range":
+            return _parse_range_detail(clean)
+        if lower == "localtablescan":
+            return _parse_local_table_scan_detail(clean)
+        if lower.startswith("inmemory"):
+            return _parse_inmemory_scan_detail(clean)
+        # Phase 1C: infrastructure nodes
+        if lower in ("subqueryexec", "subquerybroadcast"):
+            return _parse_subquery_detail(clean)
+        if lower == "collectmetrics":
+            return _parse_collect_metrics_detail(clean)
+        if lower in ("mappartitions", "mapelements"):
+            return _parse_map_partitions_detail(clean)
+        if lower == "unpivot":
+            return _parse_unpivot_detail(clean)
+        # Phase 1D: Python/Pandas UDF nodes
+        if "python" in lower or "flatmapgroups" in lower:
+            return _parse_python_udf_detail(node_name, clean)
+        # Phase 3B: write operations (un-skipped)
+        if lower == "overwritepartitionsdynamic":
+            return _parse_overwrite_dynamic_detail(clean)
+        if lower == "writefiles":
+            return _parse_write_files_detail(clean)
     except Exception:
         pass
     if clean and clean != node_name and len(clean) > len(node_name) + 3:
@@ -544,8 +584,8 @@ def _extract_full_detail(node_name: str, simple_str: str) -> str:
     clean = _strip_col_ids(simple_str)
     lower = node_name.lower()
     try:
-        if "join" in lower:
-            return _parse_join_full(clean)
+        if "join" in lower or lower == "cartesianproduct":
+            return _parse_join_full(node_name, clean)
         if "filter" in lower:
             return _parse_filter_full(clean)
         if "aggregate" in lower:
@@ -564,6 +604,39 @@ def _extract_full_detail(node_name: str, simple_str: str) -> str:
             return _parse_limit_detail(clean)
         if lower in ("union", "expand", "generate", "coalesce"):
             return _parse_simple_node_detail(node_name, clean)
+        # Phase 1A: set operations, dedup, sample
+        if lower in ("except", "exceptall"):
+            return _parse_set_op_full(node_name, clean)
+        if lower in ("intersect", "intersectall"):
+            return _parse_set_op_full(node_name, clean)
+        if lower == "deduplicate":
+            return _parse_deduplicate_full(clean)
+        if lower == "sample":
+            return _parse_sample_full(clean)
+        # Phase 1B: data source nodes
+        if lower == "range":
+            return _parse_range_full(clean)
+        if lower == "localtablescan":
+            return _parse_local_table_scan_full(clean)
+        if lower.startswith("inmemory"):
+            return _parse_inmemory_scan_full(clean)
+        # Phase 1C: infrastructure nodes
+        if lower in ("subqueryexec", "subquerybroadcast"):
+            return _parse_subquery_detail(clean)
+        if lower == "collectmetrics":
+            return _parse_collect_metrics_detail(clean)
+        if lower in ("mappartitions", "mapelements"):
+            return _parse_map_partitions_detail(clean)
+        if lower == "unpivot":
+            return _parse_unpivot_full(clean)
+        # Phase 1D: Python/Pandas UDF nodes
+        if "python" in lower or "flatmapgroups" in lower:
+            return _parse_python_udf_detail(node_name, clean)
+        # Phase 3B: write operations (un-skipped)
+        if lower == "overwritepartitionsdynamic":
+            return _parse_overwrite_dynamic_detail(clean)
+        if lower == "writefiles":
+            return _parse_write_files_detail(clean)
     except Exception:
         pass
     if clean and clean != node_name and len(clean) > len(node_name) + 3:
@@ -573,22 +646,66 @@ def _extract_full_detail(node_name: str, simple_str: str) -> str:
 
 # ── Node-type detail parsers ──────────────────────────────────────────
 
-def _parse_join_detail(s: str) -> str:
+def _extract_join_strategy(node_name: str) -> str:
+    """Extract the join strategy from the physical node name.
+
+    E.g. BroadcastHashJoin → 'Broadcast Hash', SortMergeJoin → 'Sort Merge'.
+    """
+    strategies = {
+        "broadcasthashjoin": "Broadcast Hash",
+        "sortmergejoin": "Sort Merge",
+        "shuffledhashjoin": "Shuffled Hash",
+        "broadcastnestedloopjoin": "Broadcast Nested Loop",
+        "cartesianproduct": "Cartesian",
+    }
+    return strategies.get(node_name.lower(), "")
+
+
+def _format_join_type(jtype: str) -> str:
+    return jtype.lower().replace("outer", " outer").replace("semi", " semi").replace("anti", " anti")
+
+
+def _parse_join_detail(node_name: str, s: str) -> str:
+    strategy = _extract_join_strategy(node_name)
+
+    # CartesianProduct has no keys
+    if node_name.lower() == "cartesianproduct":
+        return "cross" + (f" | {strategy}" if strategy else "")
+
     m = re.search(
         r"\[([^\]]+)\].*?\[([^\]]+)\].*?(Inner|Left|Right|LeftOuter|RightOuter|FullOuter|LeftSemi|LeftAnti|Cross)",
         s, re.IGNORECASE,
     )
     if m:
         left_key = m.group(1).strip().split(",")[0].strip()
-        join_type = m.group(3).lower().replace("outer", " outer").replace("semi", " semi").replace("anti", " anti")
-        return f"{join_type} on {left_key}"
+        join_type = _format_join_type(m.group(3))
+        result = f"{join_type} on {left_key}"
+        if strategy:
+            result += f" | {strategy}"
+        return result
     for jtype in ("Inner", "LeftOuter", "RightOuter", "FullOuter", "LeftSemi", "LeftAnti", "Cross", "Left", "Right"):
         if jtype in s:
-            return jtype.lower().replace("outer", " outer").replace("semi", " semi").replace("anti", " anti")
+            result = _format_join_type(jtype)
+            if strategy:
+                result += f" | {strategy}"
+            return result
     return s[:80] if len(s) > 80 else s
 
 
-def _parse_join_full(s: str) -> str:
+def _parse_join_full(node_name: str, s: str) -> str:
+    strategy = _extract_join_strategy(node_name)
+    build_side = ""
+    bm = re.search(r"Build(Left|Right)", s)
+    if bm:
+        build_side = bm.group(1).lower()
+
+    # CartesianProduct
+    if node_name.lower() == "cartesianproduct":
+        parts = ["cross"]
+        if strategy:
+            parts.append(f"strategy: {strategy}")
+        return " | ".join(parts)
+
     m = re.search(
         r"\[([^\]]+)\].*?\[([^\]]+)\].*?(Inner|Left|Right|LeftOuter|RightOuter|FullOuter|LeftSemi|LeftAnti|Cross)",
         s, re.IGNORECASE,
@@ -596,11 +713,37 @@ def _parse_join_full(s: str) -> str:
     if m:
         left_keys = m.group(1).strip()
         right_keys = m.group(2).strip()
-        join_type = m.group(3).lower().replace("outer", " outer").replace("semi", " semi").replace("anti", " anti")
-        return f"{join_type} on [{left_keys}] = [{right_keys}]"
+        join_type = _format_join_type(m.group(3))
+        result = f"{join_type} on [{left_keys}] = [{right_keys}]"
+        if strategy:
+            result += f" | strategy: {strategy}"
+        if build_side:
+            result += f" | build: {build_side}"
+        return result
+
+    # BroadcastNestedLoopJoin with non-equi condition
+    if "nestedloop" in node_name.lower():
+        cond_m = re.search(r"condition\s*=\s*(.+)", s, re.IGNORECASE)
+        for jtype in ("Inner", "LeftOuter", "RightOuter", "FullOuter", "LeftSemi", "LeftAnti", "Cross", "Left", "Right"):
+            if jtype in s:
+                result = _format_join_type(jtype)
+                if cond_m:
+                    cond = _balance_parens(cond_m.group(1).strip())
+                    result += f" | condition: {cond}"
+                if strategy:
+                    result += f" | strategy: {strategy}"
+                if build_side:
+                    result += f" | build: {build_side}"
+                return result
+
     for jtype in ("Inner", "LeftOuter", "RightOuter", "FullOuter", "LeftSemi", "LeftAnti", "Cross", "Left", "Right"):
         if jtype in s:
-            return jtype.lower().replace("outer", " outer").replace("semi", " semi").replace("anti", " anti")
+            result = _format_join_type(jtype)
+            if strategy:
+                result += f" | strategy: {strategy}"
+            if build_side:
+                result += f" | build: {build_side}"
+            return result
     return s
 
 
@@ -624,8 +767,23 @@ def _parse_filter_full(s: str) -> str:
     return s
 
 
+def _detect_agg_phase(s: str) -> str:
+    """Detect partial vs final aggregate phase from mode= in description."""
+    pm = re.search(r"mode=(\w+)", s, re.IGNORECASE)
+    if pm:
+        mode = pm.group(1).lower()
+        if mode == "partial":
+            return "partial"
+        if mode == "final":
+            return "final"
+    return ""
+
+
 def _parse_aggregate_detail(s: str) -> str:
     parts = []
+    phase = _detect_agg_phase(s)
+    if phase:
+        parts.append(phase)
     km = re.search(r"keys=\[([^\]]*)\]", s)
     if km and km.group(1).strip():
         keys = [k.strip() for k in km.group(1).split(",")]
@@ -646,6 +804,9 @@ def _parse_aggregate_detail(s: str) -> str:
 
 def _parse_aggregate_full(s: str) -> str:
     parts = []
+    phase = _detect_agg_phase(s)
+    if phase:
+        parts.append(f"phase: {phase}")
     km = re.search(r"keys=\[([^\]]*)\]", s)
     if km and km.group(1).strip():
         keys = [k.strip() for k in km.group(1).split(",")]
@@ -665,6 +826,7 @@ def _parse_aggregate_full(s: str) -> str:
 
 
 def _parse_scan_detail(s: str) -> str:
+    # Iceberg: Scan iceberg.namespace.Table[cols]
     m = re.search(r"(?:Scan|BatchScan)\s+iceberg\.(\w+)\.(\w+)\[([^\]]*)\]", s)
     if m:
         table = m.group(2)
@@ -673,6 +835,16 @@ def _parse_scan_detail(s: str) -> str:
         if len(cols) > 4:
             col_str += f" +{len(cols) - 4}"
         return f"{table} [{col_str}]"
+    # FileScan: FileScan parquet/csv/json/orc [cols]
+    m = re.search(r"FileScan\s+(\w+)\s*\[([^\]]*)\]", s)
+    if m:
+        fmt = m.group(1)
+        cols = [c.strip() for c in m.group(2).split(",")]
+        col_str = ", ".join(cols[:4])
+        if len(cols) > 4:
+            col_str += f" +{len(cols) - 4}"
+        return f"{fmt} [{col_str}]"
+    # Generic: Scan/BatchScan Table[cols]
     m = re.search(r"(?:Scan|BatchScan)\s+(\w+)\[([^\]]*)\]", s)
     if m:
         table = m.group(1)
@@ -681,7 +853,7 @@ def _parse_scan_detail(s: str) -> str:
         if len(cols) > 4:
             col_str += f" +{len(cols) - 4}"
         return f"{table} [{col_str}]"
-    m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.\w+\.)?(\w+)", s)
+    m = re.search(r"(?:Scan|BatchScan|FileScan)\s+(?:iceberg\.\w+\.)?(\w+)", s)
     if m:
         return m.group(1)
     return s[:80] if len(s) > 80 else s
@@ -689,6 +861,7 @@ def _parse_scan_detail(s: str) -> str:
 
 def _parse_scan_full(s: str) -> str:
     parts = []
+    # Iceberg: Scan iceberg.namespace.Table[cols]
     m = re.search(r"(?:Scan|BatchScan)\s+iceberg\.(\w+)\.(\w+)\[([^\]]*)\]", s)
     if m:
         namespace, table, cols_str = m.group(1), m.group(2), m.group(3)
@@ -696,55 +869,130 @@ def _parse_scan_full(s: str) -> str:
         parts.append(f"{table} [{', '.join(cols)}]")
         parts.append(f"namespace: {namespace}")
     else:
-        m = re.search(r"(?:Scan|BatchScan)\s+(\w+)\[([^\]]*)\]", s)
-        if m:
-            cols = [c.strip() for c in m.group(2).split(",")]
-            parts.append(f"{m.group(1)} [{', '.join(cols)}]")
+        # FileScan: FileScan parquet/csv/json/orc [cols]
+        fm = re.search(r"FileScan\s+(\w+)\s*\[([^\]]*)\]", s)
+        if fm:
+            fmt, cols_str = fm.group(1), fm.group(2)
+            cols = [c.strip() for c in cols_str.split(",")]
+            parts.append(f"{fmt} [{', '.join(cols)}]")
+            parts.append(f"format: {fmt}")
         else:
-            m = re.search(r"(?:Scan|BatchScan)\s+(?:iceberg\.\w+\.)?(\w+)", s)
+            m = re.search(r"(?:Scan|BatchScan)\s+(\w+)\[([^\]]*)\]", s)
             if m:
-                parts.append(m.group(1))
+                cols = [c.strip() for c in m.group(2).split(",")]
+                parts.append(f"{m.group(1)} [{', '.join(cols)}]")
             else:
-                return s
-    fm = re.search(r"\[filters=([^\]]*)\]", s)
-    if fm:
-        raw_filters = fm.group(1).strip()
-        raw_filters = re.sub(r",?\s*groupedBy=\s*$", "", raw_filters).strip()
-        if raw_filters:
-            parts.append(f"filters: {raw_filters}")
+                m = re.search(r"(?:Scan|BatchScan|FileScan)\s+(?:iceberg\.\w+\.)?(\w+)", s)
+                if m:
+                    parts.append(m.group(1))
+                else:
+                    return s
+    # Location: InMemoryFileIndex[path] or InMemoryFileIndex(N paths)[path]
+    loc_m = re.search(r"Location:\s*\w+\[([^\]]+)\]", s)
+    if loc_m:
+        raw_loc = loc_m.group(1).strip()
+        # Shorten to last path segments for readability
+        if len(raw_loc) > 100:
+            raw_loc = "..." + raw_loc[-97:]
+        parts.append(f"location: {raw_loc}")
+    # PushedFilters: [IsNotNull(col), GreaterThan(col, 10)]
+    pf_m = re.search(r"PushedFilters:\s*\[([^\]]*)\]", s)
+    if pf_m and pf_m.group(1).strip():
+        parts.append(f"filters: {pf_m.group(1).strip()}")
+    else:
+        # Iceberg-style filters
+        ff_m = re.search(r"\[filters=([^\]]*)\]", s)
+        if ff_m:
+            raw_filters = ff_m.group(1).strip()
+            raw_filters = re.sub(r",?\s*groupedBy=\s*$", "", raw_filters).strip()
+            if raw_filters:
+                parts.append(f"filters: {raw_filters}")
     return "\n".join(parts) if parts else s
 
 
+def _clean_sort_key(key: str) -> str | None:
+    """Clean a single sort key expression.
+
+    Strips Spark internal wrappers: isnull(col) used for null ordering,
+    coalesce(col, default) used for null-safe comparison. Returns None
+    for keys that are purely null-ordering helpers (isnull).
+    """
+    stripped = key.strip()
+    stripped = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", stripped)
+
+    # isnull(col) ASC/DESC — null ordering helper, skip entirely
+    if re.match(r"^isnull\(", stripped, re.IGNORECASE):
+        return None
+
+    # coalesce(col, literal) ASC/DESC — extract the actual column
+    cm = re.match(r"^coalesce\((.+)\)\s*(ASC|DESC)?$", stripped, re.IGNORECASE)
+    if cm:
+        inner_parts = _split_top_level(cm.group(1))
+        if inner_parts:
+            col = inner_parts[0].strip()
+            direction = cm.group(2) or "ASC"
+            return f"{col} {direction}"
+
+    return stripped if stripped else None
+
+
 def _parse_sort_detail(s: str) -> str:
-    m = re.search(r"Sort\s*\[([^\]]+)\]", s)
-    if m:
-        keys = m.group(1)
-        keys = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", keys)
-        if len(keys) > 60:
-            keys = keys[:57] + "..."
-        return keys
-    return ""
+    brackets = _extract_top_brackets(s)
+    if not brackets:
+        m = re.search(r"Sort\s*\[([^\]]+)\]", s)
+        if m:
+            brackets = [m.group(1)]
+    if not brackets:
+        return ""
+    raw_keys = _split_top_level(brackets[0])
+    clean_keys = [k for raw in raw_keys if (k := _clean_sort_key(raw)) is not None]
+    result = ", ".join(clean_keys[:4])
+    if len(clean_keys) > 4:
+        result += f" +{len(clean_keys) - 4}"
+    return result
 
 
 def _parse_sort_full(s: str) -> str:
-    m = re.search(r"Sort\s*\[([^\]]+)\]", s)
-    if m:
-        keys = m.group(1)
-        keys = re.sub(r"\s+NULLS\s+(FIRST|LAST)", "", keys)
-        return keys
-    return ""
+    brackets = _extract_top_brackets(s)
+    if not brackets:
+        m = re.search(r"Sort\s*\[([^\]]+)\]", s)
+        if m:
+            brackets = [m.group(1)]
+    if not brackets:
+        return ""
+    raw_keys = _split_top_level(brackets[0])
+    clean_keys = [k for raw in raw_keys if (k := _clean_sort_key(raw)) is not None]
+    return ", ".join(clean_keys)
 
 
 def _parse_exchange_detail(s: str) -> str:
+    # HashPartitioning(col, numPartitions)
     m = re.search(r"Exchange\s+(\w+)\(([^,)]+)(?:,\s*(\d+))?\)", s)
     if m:
-        strategy = m.group(1).replace("partitioning", "")
+        strategy = m.group(1).replace("partitioning", "").replace("Partitioning", "")
         col = m.group(2).strip()
-        parts = m.group(3)
+        parts_count = m.group(3)
         result = f"{strategy} on {col}"
-        if parts:
-            result += f" ({parts} parts)"
+        if parts_count:
+            result += f" ({parts_count} parts)"
         return result
+    # RangePartitioning with sort: RangePartitioning [col ASC, 200]
+    rm = re.search(r"Exchange\s+RangePartitioning\[([^\]]+)\]", s, re.IGNORECASE)
+    if rm:
+        return f"Range {rm.group(1).strip()}"
+    # RoundRobinPartitioning(numPartitions)
+    rrm = re.search(r"RoundRobinPartitioning\((\d+)\)", s)
+    if rrm:
+        return f"RoundRobin ({rrm.group(1)} parts)"
+    # SinglePartition
+    if "SinglePartition" in s:
+        return "single partition"
+    # BroadcastExchange
+    if "Broadcast" in s:
+        bm = re.search(r"HashedRelationBroadcastMode\(([^)]+)\)", s)
+        if bm:
+            return f"broadcast hashed on {bm.group(1).strip()}"
+        return "broadcast"
     m = re.search(r"Exchange\s+(\w+)", s)
     if m:
         return m.group(1).lower()
@@ -806,23 +1054,71 @@ def _parse_window_full(s: str) -> str:
     return " | ".join(parts) if parts else ""
 
 
+def _classify_project_expr(raw: str) -> tuple[str, str, str]:
+    """Classify a single Project expression into (category, display, full).
+
+    Returns (category, short_display, full_display) where category is
+    'passthrough', 'renamed', or 'computed'.
+    """
+    stripped = raw.strip()
+    if " AS " in stripped:
+        before_as, alias = stripped.rsplit(" AS ", 1)
+        before_as = before_as.strip()
+        alias = alias.strip()
+        # Simple rename: bare column name AS new_name
+        if re.match(r"^\w+$", before_as):
+            return ("renamed", f"{alias}={before_as}", f"{before_as} AS {alias}")
+        # Computed expression AS alias
+        return ("computed", alias, _balance_parens(stripped))
+    # No AS — passthrough column
+    return ("passthrough", stripped, stripped)
+
+
 def _parse_project_detail(s: str) -> str:
     m = re.search(r"Project\s*\[(.+)\]", s)
-    if m:
-        cols = [_balance_parens(c.strip().split(" AS ")[-1].strip()) for c in _split_top_level(m.group(1))]
-        col_str = ", ".join(cols[:5])
-        if len(cols) > 5:
-            col_str += f" +{len(cols) - 5}"
-        return col_str
-    return ""
+    if not m:
+        return ""
+    items = _split_top_level(m.group(1))
+    parts = []
+    count = 0
+    for raw in items:
+        cat, short, _ = _classify_project_expr(raw)
+        count += 1
+        if count <= 5:
+            parts.append(short)
+    rest = count - 5
+    result = ", ".join(parts)
+    if rest > 0:
+        result += f" +{rest}"
+    return result
 
 
 def _parse_project_full(s: str) -> str:
     m = re.search(r"Project\s*\[(.+)\]", s)
-    if m:
-        cols = [_balance_parens(c.strip().split(" AS ")[-1].strip()) for c in _split_top_level(m.group(1))]
-        return ", ".join(cols)
-    return ""
+    if not m:
+        return ""
+    items = _split_top_level(m.group(1))
+    passthrough = []
+    renamed = []
+    computed = []
+    for raw in items:
+        cat, _, full = _classify_project_expr(raw)
+        if cat == "passthrough":
+            passthrough.append(full)
+        elif cat == "renamed":
+            renamed.append(full)
+        else:
+            computed.append(full)
+    lines = []
+    if passthrough:
+        lines.append(f"passthrough: {', '.join(passthrough)}")
+    if renamed:
+        lines.append(f"renamed: {', '.join(renamed)}")
+    if computed:
+        lines.append(f"computed: {', '.join(computed)}")
+    return "\n".join(lines) if lines else ", ".join(
+        _balance_parens(c.strip().split(" AS ")[-1].strip()) for c in items
+    )
 
 
 def _parse_limit_detail(s: str) -> str:
@@ -865,13 +1161,301 @@ def _parse_simple_node_detail(node_name: str, s: str) -> str:
                 parts.append(col_str)
             return " | ".join(parts) if parts else ""
     if lower == "generate":
-        m = re.search(r"Generator\s+(\w+)", s) or re.search(r"Generate\s+(\w+)", s)
-        if m:
-            return m.group(1)
+        parts = []
+        # Extract generator function name: explode, posexplode, inline, stack, etc.
+        gm = re.search(r"Generator\s+(\w+)", s) or re.search(r"Generate\s+(\w+)", s)
+        if gm:
+            func = gm.group(1)
+            # Extract input column from the function argument
+            arg_m = re.search(rf"{func}\((\w+)", s)
+            if arg_m:
+                parts.append(f"{func}({arg_m.group(1)})")
+            else:
+                parts.append(func)
+        # Check for outer flag
+        if "outer=true" in s.lower() or "outer, true" in s.lower():
+            parts.append("outer")
+        # Extract output columns if present in brackets after Generator
+        out_m = re.search(r"output:\s*\[([^\]]+)\]", s, re.IGNORECASE)
+        if out_m:
+            out_cols = [c.strip() for c in out_m.group(1).split(",")]
+            parts.append(f"→ {', '.join(out_cols[:3])}")
+        return " | ".join(parts) if parts else ""
     clean = s.replace(node_name, "").strip()
     if clean and len(clean) > 3:
         return clean[:80] + ("..." if len(clean) > 80 else "")
     return ""
+
+
+# ── Phase 1A: Set operations, Dedup, Sample ──────────────────────────
+
+def _parse_set_op_detail(node_name: str, s: str) -> str:
+    lower = node_name.lower()
+    op = "except" if "except" in lower else "intersect"
+    is_all = "true" in s.lower().split("All")[-1] if "All" in s else ("all" in lower)
+    return f"{op} all" if is_all else op
+
+
+def _parse_set_op_full(node_name: str, s: str) -> str:
+    lower = node_name.lower()
+    op = "except" if "except" in lower else "intersect"
+    is_all = "true" in s.lower().split("All")[-1] if "All" in s else ("all" in lower)
+    return f"{op} all" if is_all else op
+
+
+def _parse_deduplicate_detail(s: str) -> str:
+    brackets = _extract_top_brackets(s)
+    if brackets:
+        cols = [c.strip() for c in brackets[0].split(",") if c.strip()]
+        col_str = ", ".join(cols[:5])
+        if len(cols) > 5:
+            col_str += f" +{len(cols) - 5}"
+        return col_str
+    return ""
+
+
+def _parse_deduplicate_full(s: str) -> str:
+    brackets = _extract_top_brackets(s)
+    if brackets:
+        cols = [c.strip() for c in brackets[0].split(",") if c.strip()]
+        return ", ".join(cols)
+    return ""
+
+
+def _parse_sample_detail(s: str) -> str:
+    # Sample node format: Sample <lowerBound>, <upperBound>, <withReplacement>, <seed>
+    m = re.search(r"Sample\s+([\d.]+),?\s*([\d.]+),?\s*(true|false)(?:,?\s*(-?\d+))?", s, re.IGNORECASE)
+    if m:
+        lower_bound = float(m.group(1))
+        upper_bound = float(m.group(2))
+        fraction = upper_bound - lower_bound
+        pct = f"{fraction * 100:.0f}%"
+        with_replacement = m.group(3).lower() == "true"
+        seed = m.group(4)
+        parts = [pct]
+        if with_replacement:
+            parts.append("with replacement")
+        if seed and seed != "-1":
+            parts.append(f"seed={seed}")
+        return " | ".join(parts)
+    return ""
+
+
+def _parse_sample_full(s: str) -> str:
+    m = re.search(r"Sample\s+([\d.]+),?\s*([\d.]+),?\s*(true|false)(?:,?\s*(-?\d+))?", s, re.IGNORECASE)
+    if m:
+        lower_bound = float(m.group(1))
+        upper_bound = float(m.group(2))
+        fraction = upper_bound - lower_bound
+        pct = f"{fraction * 100:.0f}%"
+        with_replacement = m.group(3).lower() == "true"
+        seed = m.group(4)
+        parts = [f"fraction: {pct}"]
+        parts.append(f"with replacement: {'yes' if with_replacement else 'no'}")
+        if seed and seed != "-1":
+            parts.append(f"seed: {seed}")
+        return "\n".join(parts)
+    return ""
+
+
+# ── Phase 1B: Data source nodes ──────────────────────────────────────
+
+def _parse_range_detail(s: str) -> str:
+    # Range (start, end, step, numPartitions)
+    m = re.search(r"Range\s*\(?\s*(-?\d+),?\s*(-?\d+),?\s*(-?\d+)(?:,?\s*(\d+))?\)?", s)
+    if m:
+        start, end, step = int(m.group(1)), int(m.group(2)), int(m.group(3))
+        parts_count = m.group(4)
+        result = f"{_format_rows(str(start))} to {_format_rows(str(end))}"
+        if step != 1:
+            result += f" (step {step})"
+        if parts_count:
+            result += f" | {parts_count} parts"
+        return result
+    return ""
+
+
+def _parse_range_full(s: str) -> str:
+    m = re.search(r"Range\s*\(?\s*(-?\d+),?\s*(-?\d+),?\s*(-?\d+)(?:,?\s*(\d+))?\)?", s)
+    if m:
+        start, end, step = m.group(1), m.group(2), m.group(3)
+        parts_count = m.group(4)
+        lines = [f"start: {start}", f"end: {end}", f"step: {step}"]
+        if parts_count:
+            lines.append(f"partitions: {parts_count}")
+        return "\n".join(lines)
+    return ""
+
+
+def _parse_local_table_scan_detail(s: str) -> str:
+    brackets = _extract_top_brackets(s)
+    if brackets:
+        cols = [c.strip() for c in brackets[0].split(",") if c.strip()]
+        col_str = ", ".join(cols[:5])
+        if len(cols) > 5:
+            col_str += f" +{len(cols) - 5}"
+        return col_str
+    return ""
+
+
+def _parse_local_table_scan_full(s: str) -> str:
+    brackets = _extract_top_brackets(s)
+    if brackets:
+        cols = [c.strip() for c in brackets[0].split(",") if c.strip()]
+        return ", ".join(cols)
+    return ""
+
+
+def _parse_inmemory_scan_detail(s: str) -> str:
+    brackets = _extract_top_brackets(s)
+    if brackets:
+        cols = [c.strip() for c in brackets[0].split(",") if c.strip()]
+        col_str = ", ".join(cols[:4])
+        if len(cols) > 4:
+            col_str += f" +{len(cols) - 4}"
+        return f"cached [{col_str}]"
+    return "cached"
+
+
+def _parse_inmemory_scan_full(s: str) -> str:
+    parts = ["cached"]
+    brackets = _extract_top_brackets(s)
+    if brackets:
+        cols = [c.strip() for c in brackets[0].split(",") if c.strip()]
+        if cols:
+            parts.append(f"columns: {', '.join(cols)}")
+    if len(brackets) >= 2 and brackets[1].strip():
+        parts.append(f"filters: {brackets[1].strip()}")
+    return "\n".join(parts)
+
+
+# ── Phase 1C: Infrastructure nodes ───────────────────────────────────
+
+def _parse_subquery_detail(s: str) -> str:
+    m = re.search(r"[Ss]ubquery\s*#?(\d+)", s)
+    if m:
+        return f"subquery #{m.group(1)}"
+    return "subquery"
+
+
+def _parse_collect_metrics_detail(s: str) -> str:
+    m = re.search(r"CollectMetrics\s+(\w+)", s)
+    name = m.group(1) if m else ""
+    funcs = re.findall(r"(\w+)\(", s)
+    func_str = ", ".join(f for f in funcs[:4] if f not in ("CollectMetrics",))
+    parts = []
+    if name:
+        parts.append(f"observe: {name}")
+    if func_str:
+        parts.append(func_str)
+    return " | ".join(parts) if parts else "observe"
+
+
+def _parse_map_partitions_detail(s: str) -> str:
+    # Try to extract class/function info
+    m = re.search(r"MapPartitions\s+(\w+)", s) or re.search(r"MapElements\s+(\w+)", s)
+    if m:
+        return f"map: {m.group(1)}"
+    return "map partitions"
+
+
+def _parse_unpivot_detail(s: str) -> str:
+    brackets = _extract_top_brackets(s)
+    if len(brackets) >= 2:
+        id_cols = [c.strip() for c in brackets[0].split(",") if c.strip()]
+        val_cols = [c.strip() for c in brackets[1].split(",") if c.strip()]
+        parts = []
+        if id_cols:
+            id_str = ", ".join(id_cols[:3])
+            if len(id_cols) > 3:
+                id_str += f" +{len(id_cols) - 3}"
+            parts.append(f"id: {id_str}")
+        if val_cols:
+            val_str = ", ".join(val_cols[:3])
+            if len(val_cols) > 3:
+                val_str += f" +{len(val_cols) - 3}"
+            parts.append(f"values: {val_str}")
+        return " | ".join(parts) if parts else ""
+    return ""
+
+
+def _parse_unpivot_full(s: str) -> str:
+    brackets = _extract_top_brackets(s)
+    if len(brackets) >= 2:
+        id_cols = [c.strip() for c in brackets[0].split(",") if c.strip()]
+        val_cols = [c.strip() for c in brackets[1].split(",") if c.strip()]
+        lines = []
+        if id_cols:
+            lines.append(f"id columns: {', '.join(id_cols)}")
+        if val_cols:
+            lines.append(f"value columns: {', '.join(val_cols)}")
+        # Variable and value column names may be after the brackets
+        vm = re.search(r"variableColumnName=(\w+)", s)
+        if vm:
+            lines.append(f"variable column: {vm.group(1)}")
+        vvm = re.search(r"valueColumnName=(\w+)", s)
+        if vvm:
+            lines.append(f"value column: {vvm.group(1)}")
+        return "\n".join(lines) if lines else ""
+    return ""
+
+
+# ── Phase 1D: Python/Pandas UDF nodes ────────────────────────────────
+
+def _parse_python_udf_detail(node_name: str, s: str) -> str:
+    lower = node_name.lower()
+    parts = []
+    if "flatmapgroups" in lower:
+        # applyInPandas / applyInArrow: FlatMapGroupsInPandas
+        kind = "arrow" if "arrow" in lower else "pandas"
+        parts.append(f"apply ({kind})")
+        # Try to extract group columns
+        gm = re.search(r"keys=\[([^\]]*)\]", s)
+        if gm and gm.group(1).strip():
+            cols = [c.strip() for c in gm.group(1).split(",")]
+            parts.append(f"group by {', '.join(cols[:3])}")
+    elif "arroweval" in lower:
+        parts.append("pandas udf")
+        # Extract function names if visible
+        fm = re.findall(r"(\w+)\(", s)
+        funcs = [f for f in fm[:3] if f not in ("ArrowEvalPython", "cast")]
+        if funcs:
+            parts.append(", ".join(funcs))
+    elif "batcheval" in lower:
+        parts.append("python udf")
+        fm = re.findall(r"(\w+)\(", s)
+        funcs = [f for f in fm[:3] if f not in ("BatchEvalPython", "cast")]
+        if funcs:
+            parts.append(", ".join(funcs))
+    else:
+        parts.append("python")
+    return " | ".join(parts) if parts else "python"
+
+
+# ── Phase 3B: Write operations (un-skipped) ─────────────────────────
+
+def _parse_overwrite_dynamic_detail(s: str) -> str:
+    # Try to extract target table name
+    m = re.search(r"iceberg\.(\w+)\.(\w+)", s)
+    if m:
+        return f"overwrite partitions: {m.group(2)}"
+    m = re.search(r"OverwritePartitionsDynamic\s+(\w+)", s)
+    if m:
+        return f"overwrite partitions: {m.group(1)}"
+    return "overwrite partitions"
+
+
+def _parse_write_files_detail(s: str) -> str:
+    # Try to extract format/path
+    fm = re.search(r"WriteFiles\s+(\w+)", s)
+    if fm:
+        return f"write {fm.group(1)}"
+    # Check for iceberg or parquet indicators
+    if "iceberg" in s.lower():
+        return "write iceberg"
+    if "parquet" in s.lower():
+        return "write parquet"
+    return "write"
 
 
 # ── Metric formatting ─────────────────────────────────────────────────
