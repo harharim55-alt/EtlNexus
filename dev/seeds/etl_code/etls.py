@@ -122,3 +122,27 @@ def raw_syslog_events(s, e):
 
 def rpt_incident_analytics(s, e):
     return TableReader("oasis", "IncidentForensicsRollup", s, e)
+
+
+# --- Relay team tables ---
+
+def asset_inventory_records(s, e):
+    return TableReader("relay", "AssetInventorySnapshot", s, e)
+
+def schema_compliance_results(s, e):
+    return TableReader("relay", "SchemaComplianceChecker", s, e)
+
+def field_frequency_profiles(s, e):
+    return TableReader("relay", "FieldFrequencyProfiler", s, e)
+
+def cross_team_audit_results(s, e):
+    return TableReader("relay", "CrossTeamJoinAuditor", s, e)
+
+def compliance_metrics_pivoted(s, e):
+    return TableReader("relay", "ComplianceMetricsPivot", s, e)
+
+def anomaly_pattern_results(s, e):
+    return TableReader("relay", "AnomalyPatternMiner", s, e)
+
+def quality_scorecard_results(s, e):
+    return TableReader("relay", "DataQualityScorecard", s, e)

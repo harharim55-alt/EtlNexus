@@ -1088,6 +1088,200 @@ def gen_unified_network_assessment():
 # Main
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Relay team — data quality audit
+# ---------------------------------------------------------------------------
+
+ASSET_TAGS = ["server", "switch", "router", "firewall", "printer", "iot",
+              "voip", "camera", "sensor", "workstation", "laptop", "mobile"]
+
+QUALITY_STATUSES = ["matched", "orphan"]
+ISSUE_TYPES = ["none", "missing_fingerprint", "stale_record", "duplicate_mac"]
+
+
+def gen_asset_inventory_snapshot():
+    schema = StructType([
+        StructField("mac_address", StringType()),
+        StructField("subnet_id", LongType()),
+        StructField("asset_type", StringType()),
+        StructField("hostname", StringType()),
+        StructField("ip_address", StringType()),
+        StructField("last_seen", TimestampType()),
+        StructField("os_fingerprint", StringType()),
+        StructField("tags_csv", StringType()),
+        StructField("days_since_seen", LongType()),
+        StructField("date", DateType()),
+    ])
+    rows = []
+    for d in DATES:
+        for _ in range(600):
+            ts = rand_ts(d)
+            tags = ",".join(random.sample(ASSET_TAGS, random.randint(1, 4)))
+            rows.append((
+                rand_mac(),
+                random.choice(VLANS),
+                random.choice(DEVICE_CLASSES),
+                random.choice(HOSTNAMES) if random.random() > 0.2 else None,
+                rand_ip(),
+                ts,
+                random.choice(OS_FINGERPRINTS) if random.random() > 0.3 else None,
+                tags,
+                random.randint(0, 90),
+                d,
+            ))
+    return schema, rows
+
+
+def gen_schema_compliance_checker():
+    schema = StructType([
+        StructField("field_name", StringType()),
+        StructField("field_type", StringType()),
+        StructField("is_required", BooleanType()),
+        StructField("status", StringType()),
+        StructField("checked_at", TimestampType()),
+        StructField("date", DateType()),
+    ])
+    field_names = ["device_id", "mac_address", "ip_address", "hostname", "subnet_id",
+                   "vlan_id", "device_class", "os_fingerprint", "last_seen",
+                   "compliance_status", "extra_field_1", "extra_field_2"]
+    field_types = ["string", "string", "string", "string", "integer",
+                   "integer", "string", "string", "timestamp",
+                   "string", "string", "double"]
+    rows = []
+    for d in DATES:
+        ts = rand_ts(d)
+        for fn, ft in zip(field_names, field_types):
+            status = random.choice(["matched", "matched", "matched", "missing", "extra"])
+            rows.append((fn, ft, random.random() > 0.4, status, ts, d))
+    return schema, rows
+
+
+def gen_field_frequency_profiler():
+    schema = StructType([
+        StructField("subnet_id", LongType()),
+        StructField("tag", StringType()),
+        StructField("occurrence_count", LongType()),
+        StructField("unique_devices", LongType()),
+        StructField("profiled_at", TimestampType()),
+        StructField("date", DateType()),
+    ])
+    rows = []
+    for d in DATES:
+        ts = rand_ts(d)
+        for vlan in VLANS:
+            for tag in random.sample(ASSET_TAGS, random.randint(3, 8)):
+                occ = random.randint(1, 500)
+                rows.append((vlan, tag, occ, random.randint(1, occ), ts, d))
+    return schema, rows
+
+
+def gen_cross_team_join_auditor():
+    schema = StructType([
+        StructField("mac_address", StringType()),
+        StructField("ip_address", StringType()),
+        StructField("subnet_id", LongType()),
+        StructField("audit_status", StringType()),
+        StructField("issue_type", StringType()),
+        StructField("audited_at", TimestampType()),
+        StructField("date", DateType()),
+    ])
+    rows = []
+    for d in DATES:
+        ts = rand_ts(d)
+        for _ in range(400):
+            status = random.choice(QUALITY_STATUSES)
+            issue = "none" if status == "matched" else random.choice(ISSUE_TYPES[1:])
+            rows.append((rand_mac(), rand_ip(), random.choice(VLANS),
+                         status, issue, ts, d))
+    return schema, rows
+
+
+def gen_compliance_metrics_pivot():
+    schema = StructType([
+        StructField("subnet_id", LongType()),
+        StructField("status_type", StringType()),
+        StructField("device_count", LongType()),
+        StructField("computed_at", TimestampType()),
+        StructField("date", DateType()),
+    ])
+    rows = []
+    for d in DATES:
+        ts = rand_ts(d)
+        for vlan in VLANS:
+            for status in QUALITY_STATUSES:
+                rows.append((vlan, status, random.randint(5, 200), ts, d))
+    return schema, rows
+
+
+def gen_anomaly_pattern_miner():
+    schema = StructType([
+        StructField("subnet_id", LongType()),
+        StructField("anomaly_count", LongType()),
+        StructField("mean_occurrences", DoubleType()),
+        StructField("std_occurrences", DoubleType()),
+        StructField("max_zscore", DoubleType()),
+        StructField("pattern_label", StringType()),
+        StructField("mined_at", TimestampType()),
+        StructField("date", DateType()),
+    ])
+    rows = []
+    for d in DATES:
+        ts = rand_ts(d)
+        for vlan in VLANS:
+            anom = random.randint(0, 15)
+            label = "high_anomaly" if anom > 5 else ("low_anomaly" if anom > 0 else "normal")
+            rows.append((vlan, anom, random.uniform(10, 300),
+                         random.uniform(5, 100), random.uniform(0, 5),
+                         label, ts, d))
+    return schema, rows
+
+
+def gen_data_quality_scorecard():
+    schema = StructType([
+        StructField("subnet_id", LongType()),
+        StructField("join_integrity_score", DoubleType()),
+        StructField("anomaly_count", LongType()),
+        StructField("anomaly_pattern", StringType()),
+        StructField("composite_score", DoubleType()),
+        StructField("quality_tier", StringType()),
+        StructField("alert_level", StringType()),
+        StructField("scored_at", TimestampType()),
+        StructField("date", DateType()),
+    ])
+    rows = []
+    tiers = ["platinum", "gold", "silver", "bronze"]
+    alerts = ["info", "warning", "critical"]
+    for d in DATES:
+        ts = rand_ts(d)
+        for vlan in VLANS:
+            score = random.uniform(40, 100)
+            tier = "platinum" if score >= 95 else "gold" if score >= 80 else "silver" if score >= 60 else "bronze"
+            alert = "critical" if score < 60 else "warning" if score < 80 else "info"
+            rows.append((vlan, score, random.randint(0, 15),
+                         random.choice(["normal", "low_anomaly", "high_anomaly"]),
+                         score * random.uniform(0.7, 1.0), tier, alert, ts, d))
+    return schema, rows
+
+
+def gen_quality_alert_api_dummy():
+    schema = StructType([
+        StructField("subnet_id", LongType()),
+        StructField("composite_score", DoubleType()),
+        StructField("anomaly_count", LongType()),
+        StructField("quality_tier", StringType()),
+        StructField("alert_level", StringType()),
+        StructField("published_at", TimestampType()),
+        StructField("date", DateType()),
+    ])
+    rows = []
+    for d in DATES:
+        ts = rand_ts(d)
+        for _ in range(random.randint(1, 5)):
+            rows.append((random.choice(VLANS), random.uniform(20, 55),
+                         random.randint(6, 20), "bronze", "critical", ts, d))
+    return schema, rows
+
+
 NAMESPACE_TABLES = {
     "dagger": {
         "PortScanCollector": gen_switch_port_collector,
@@ -1119,6 +1313,16 @@ NAMESPACE_TABLES = {
         "PeeringIntelCalculator": gen_peering_roi_calculator,
         "CapacityThreatForecast": gen_capacity_planning_forecast,
         "WeeklyThreatDigest": gen_weekly_network_digest,
+    },
+    "relay": {
+        "AssetInventorySnapshot": gen_asset_inventory_snapshot,
+        "SchemaComplianceChecker": gen_schema_compliance_checker,
+        "FieldFrequencyProfiler": gen_field_frequency_profiler,
+        "CrossTeamJoinAuditor": gen_cross_team_join_auditor,
+        "ComplianceMetricsPivot": gen_compliance_metrics_pivot,
+        "AnomalyPatternMiner": gen_anomaly_pattern_miner,
+        "DataQualityScorecard": gen_data_quality_scorecard,
+        "QualityAlertApiDummy": gen_quality_alert_api_dummy,
     },
     "oasis": {
         "DnsIntelSync": gen_dns_record_sync,
