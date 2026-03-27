@@ -3,7 +3,6 @@
 from etls import switch_interface_snapshot, stg_bgp_announcements, dns_zone_records
 from base_etl import BaseETL
 
-SUFFIXES = ["os_types", "vendors", "protocols_used", "risk_profiles"]
 
 
 class DeviceFingerprinter(BaseETL):

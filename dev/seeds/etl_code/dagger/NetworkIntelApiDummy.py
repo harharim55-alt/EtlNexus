@@ -3,7 +3,6 @@
 from etls import ml_link_failure_features
 from base_etl import BaseETL
 
-SUFFIXES = []
 
 
 class NetworkIntelApi(BaseETL):

@@ -2,7 +2,6 @@
 
 from base_etl import BaseETL
 
-SUFFIXES = ["sessions", "error_codes"]
 
 
 class AccessLogCollector(BaseETL):

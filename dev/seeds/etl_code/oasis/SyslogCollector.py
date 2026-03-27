@@ -2,7 +2,6 @@
 
 from base_etl import BaseETL
 
-SUFFIXES = ["severity_scores", "facility_tags"]
 
 
 class SyslogCollector(BaseETL):

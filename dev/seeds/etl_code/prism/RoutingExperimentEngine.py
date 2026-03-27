@@ -3,7 +3,6 @@
 from etls import fact_packet_inspection, rpt_protocol_adoption
 from base_etl import BaseETL
 
-SUFFIXES = ["path_variants", "convergence"]
 
 
 class RoutingExperimentEngine(BaseETL):

@@ -2,7 +2,6 @@
 
 from base_etl import BaseETL
 
-SUFFIXES = ["pools", "reservations"]
 
 
 class DhcpLeaseRecon(BaseETL):

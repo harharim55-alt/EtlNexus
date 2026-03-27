@@ -6,7 +6,7 @@ but never break the ETL.
 
 Emitted markers:
   ETL_DESCRIPTION:      Relative file path of the ETL class
-  ETL_WRITES_TO:        Iceberg table names written during load()
+  ETL_WRITES_TO:        Iceberg table names intercepted from DataFrame.writeTo() calls
   ETL_RESOURCE_ACTUAL:  Spark resource usage metrics (JSON)
   ETL_EXECUTION_PLAN:   Spark execution plan tree (JSON)
 """
@@ -14,7 +14,6 @@ Emitted markers:
 import inspect
 import json
 import logging
-import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -33,8 +32,8 @@ class EtlNexusMixin:
     The mixin overrides ``run()`` to:
 
     1. Emit ``ETL_DESCRIPTION:`` (relative file path of the ETL class)
-    2. Emit ``ETL_WRITES_TO:`` from module-level ``SUFFIXES`` + intercepted writes
-    3. Call the original ``extract() → transform() → load()``
+    2. Call the original ``extract() → transform() → load()``
+    3. Emit ``ETL_WRITES_TO:`` from intercepted ``DataFrame.writeTo()`` calls
     4. Emit ``ETL_RESOURCE_ACTUAL:`` from Spark metrics
     5. Emit ``ETL_EXECUTION_PLAN:`` from Spark's status store
     """
@@ -47,12 +46,6 @@ class EtlNexusMixin:
         description = _get_etl_description(self.__class__)
         if description:
             print(f"ETL_DESCRIPTION: {description}")
-
-        # ── Pre-run: emit known SUFFIXES writes ──
-        suffixes = _get_module_suffixes(self.__class__)
-        print(f"ETL_WRITES_TO: {etl_name}")
-        for suffix in suffixes:
-            print(f"ETL_WRITES_TO: {etl_name}_{suffix}")
 
         # ── Install write interceptor ──
         spark = getattr(self, "spark", None)
@@ -98,14 +91,14 @@ class EtlNexusMixin:
             except Exception:
                 pass
 
-        # ── Post-run: emit additionally captured writes ──
-        already_emitted = {etl_name} | {f"{etl_name}_{s}" for s in suffixes}
+        # ── Post-run: emit dynamically captured writes ──
+        emitted: set[str] = set()
         for table in captured_tables:
             from etlnexus_hooks.spark_introspect import parse_table_name
             short_name = parse_table_name(table)
-            if short_name not in already_emitted:
+            if short_name not in emitted:
                 print(f"ETL_WRITES_TO: {short_name}")
-                already_emitted.add(short_name)
+                emitted.add(short_name)
 
         if spark is None:
             return
@@ -175,14 +168,3 @@ def _get_etl_description(cls: type) -> str:
         return cls.__name__
 
 
-def _get_module_suffixes(cls: type) -> list[str]:
-    """Extract the module-level SUFFIXES list from the ETL class's module."""
-    try:
-        module = sys.modules.get(cls.__module__)
-        if module is not None:
-            suffixes = getattr(module, "SUFFIXES", None)
-            if isinstance(suffixes, (list, tuple)):
-                return list(suffixes)
-    except Exception:
-        pass
-    return []

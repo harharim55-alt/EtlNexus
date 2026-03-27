@@ -3,7 +3,6 @@
 from etls import fact_packet_inspection, rpt_protocol_adoption, ml_endpoint_activity_scores
 from base_etl import BaseETL
 
-SUFFIXES = []
 
 
 class CapacityIntelApi(BaseETL):

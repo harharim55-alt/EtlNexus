@@ -3,7 +3,6 @@
 from etls import fact_packet_inspection
 from base_etl import BaseETL
 
-SUFFIXES = ["phases", "batches"]
 
 
 class ProvisioningAuditor(BaseETL):

@@ -3,8 +3,6 @@
 from etls import switch_interface_snapshot
 from base_etl import BaseETL
 
-SUFFIXES = ["circuits", "metered_usage", "credits"]
-
 
 class BandwidthAnalyzer(BaseETL):
     def __init__(self, start_date, end_date=None):
@@ -43,5 +41,17 @@ class BandwidthAnalyzer(BaseETL):
             .withColumn("date", F.lit(self.start_date).cast("date"))
         )
 
+        # Tier summary — aggregate billing totals per tier
+        self.tier_summary = (
+            self.result
+            .groupBy("billing_tier")
+            .agg(
+                F.count("*").alias("circuit_count"),
+                F.sum("bandwidth_allocated_mbps").alias("total_allocated_mbps"),
+                F.sum("bandwidth_used_mbps").alias("total_used_mbps"),
+            )
+        )
+
     def load(self):
         self.result.writeTo(f"iceberg.dagger.{self.etl_name}").overwritePartitions()
+        self.tier_summary.writeTo(f"iceberg.dagger.{self.etl_name}_tier_summary").overwritePartitions()

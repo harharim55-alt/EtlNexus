@@ -3,7 +3,6 @@
 from etls import bandwidth_invoices, fact_netflow_records
 from base_etl import BaseETL
 
-SUFFIXES = ["daily", "variances"]
 
 
 class BandwidthAuditReconciler(BaseETL):

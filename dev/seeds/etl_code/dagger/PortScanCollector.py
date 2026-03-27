@@ -2,7 +2,6 @@
 
 from base_etl import BaseETL
 
-SUFFIXES = ["interfaces", "vlans", "uplinks", "configs"]
 
 
 class PortScanCollector(BaseETL):

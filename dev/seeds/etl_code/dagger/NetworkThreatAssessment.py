@@ -14,13 +14,6 @@ from etls import (
 )
 from base_etl import BaseETL
 
-SUFFIXES = [
-    "ip_health_scores",
-    "threat_enriched",
-    "activity_tiers",
-    "anomaly_summary",
-    "billing_correlation",
-]
 
 
 class NetworkThreatAssessment(BaseETL):

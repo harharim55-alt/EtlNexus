@@ -3,7 +3,6 @@
 from etls import switch_interface_snapshot
 from base_etl import BaseETL
 
-SUFFIXES = []
 
 
 class FlowInterceptor(BaseETL):

@@ -3,7 +3,6 @@
 from etls import rpt_traffic_attribution
 from base_etl import BaseETL
 
-SUFFIXES = ["by_peer"]
 
 
 class PeeringIntelCalculator(BaseETL):

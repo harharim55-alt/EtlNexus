@@ -3,7 +3,6 @@
 from etls import stg_http_access_logs
 from base_etl import BaseETL
 
-SUFFIXES = ["by_provider", "discrepancies"]
 
 
 class CdnAuditReconciler(BaseETL):

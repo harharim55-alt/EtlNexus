@@ -3,7 +3,6 @@
 from etls import raw_syslog_events
 from base_etl import BaseETL
 
-SUFFIXES = ["responder_performance"]
 
 
 class IncidentForensicsRollup(BaseETL):

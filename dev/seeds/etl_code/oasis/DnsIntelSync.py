@@ -2,7 +2,6 @@
 
 from base_etl import BaseETL
 
-SUFFIXES = ["a_records", "cname_records", "mx_records", "txt_records", "ptr_records"]
 
 
 class DnsIntelSync(BaseETL):

@@ -3,7 +3,6 @@
 from etls import fact_packet_inspection, ml_endpoint_activity_scores
 from base_etl import BaseETL
 
-SUFFIXES = ["transitions", "qos_profiles"]
 
 
 class TrafficClassifier(BaseETL):

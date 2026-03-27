@@ -3,7 +3,6 @@
 from etls import stg_dhcp_leases, stg_http_access_logs
 from base_etl import BaseETL
 
-SUFFIXES = ["vendor_lookups"]
 
 
 class MacIntelEnrichment(BaseETL):

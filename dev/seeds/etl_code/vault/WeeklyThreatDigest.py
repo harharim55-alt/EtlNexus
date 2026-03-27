@@ -3,7 +3,6 @@
 from etls import rpt_peering_roi, rpt_capacity_forecast, dim_enriched_mac_addresses, fact_cdn_costs
 from base_etl import BaseETL
 
-SUFFIXES = ["highlights"]
 
 
 class WeeklyThreatDigest(BaseETL):

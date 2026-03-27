@@ -3,7 +3,6 @@
 from etls import stg_dhcp_leases, raw_syslog_events
 from base_etl import BaseETL
 
-SUFFIXES = ["indicators", "scores"]
 
 
 class ThreatHunterScorer(BaseETL):

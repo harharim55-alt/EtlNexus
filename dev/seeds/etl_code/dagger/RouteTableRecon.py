@@ -3,7 +3,6 @@
 from etls import switch_interface_snapshot
 from base_etl import BaseETL
 
-SUFFIXES = ["peers", "prefixes", "as_paths", "communities", "route_maps", "dampened", "rib_entries"]
 
 
 class RouteTableRecon(BaseETL):

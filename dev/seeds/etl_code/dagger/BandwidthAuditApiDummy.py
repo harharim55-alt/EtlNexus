@@ -3,7 +3,6 @@
 from etls import fact_bandwidth_reconciled, bandwidth_invoices
 from base_etl import BaseETL
 
-SUFFIXES = []
 
 
 class BandwidthAuditApi(BaseETL):

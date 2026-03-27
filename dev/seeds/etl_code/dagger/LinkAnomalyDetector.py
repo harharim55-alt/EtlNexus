@@ -3,7 +3,6 @@
 from etls import switch_interface_snapshot, stg_bgp_announcements
 from base_etl import BaseETL
 
-SUFFIXES = ["health_scores", "risk_tiers", "weekly"]
 
 
 class LinkAnomalyDetector(BaseETL):

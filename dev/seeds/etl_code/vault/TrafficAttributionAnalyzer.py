@@ -3,7 +3,6 @@
 from etls import stg_http_access_logs, stg_dhcp_leases
 from base_etl import BaseETL
 
-SUFFIXES = ["interfaces", "hop_points"]
 
 
 class TrafficAttributionAnalyzer(BaseETL):

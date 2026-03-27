@@ -3,7 +3,6 @@
 from etls import fact_netflow_records, switch_interface_snapshot
 from base_etl import BaseETL
 
-SUFFIXES = ["flows", "payload_summaries"]
 
 
 class DeepPacketInspector(BaseETL):

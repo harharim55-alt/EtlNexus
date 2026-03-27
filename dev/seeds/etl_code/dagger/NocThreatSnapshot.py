@@ -3,7 +3,6 @@
 from etls import fact_bandwidth_reconciled, ml_link_failure_features
 from base_etl import BaseETL
 
-SUFFIXES = ["bandwidth_daily", "bandwidth_weekly", "bandwidth_monthly", "throughput", "capacity_total", "outage_daily", "outage_weekly", "latency", "jitter", "uptime", "mttr", "packets_per_second", "endpoints_active", "endpoints_total", "failover_7d", "failover_30d", "handshake_funnel", "traffic_cohort_analysis", "noc_board_summary"]
 
 
 class NocThreatSnapshot(BaseETL):

@@ -3,7 +3,6 @@
 from etls import ml_threat_scores, rpt_traffic_attribution
 from base_etl import BaseETL
 
-SUFFIXES = ["monthly"]
 
 
 class CapacityThreatForecast(BaseETL):
