@@ -168,9 +168,24 @@ def setup_scheduler() -> AsyncIOScheduler:
         next_run_time=now + timedelta(hours=1),
     )
 
+    # Run history retention (daily)
+    if settings.run_history_retention_days > 0:
+        from app.tasks.run_history_retention import cleanup_run_history
+
+        scheduler.add_job(
+            cleanup_run_history,
+            "interval",
+            hours=24,
+            id="run_history_retention",
+            name="Run History Retention Cleanup",
+            replace_existing=True,
+            next_run_time=now + timedelta(hours=6),
+        )
+
     logger.info(
-        "Scheduler configured: airflow_sync=%dmin, airflow_poll=%dmin, catalog_sync=2h",
+        "Scheduler configured: airflow_sync=%dmin, airflow_poll=%dmin, catalog_sync=2h, retention=%dd",
         settings.airflow_poll_interval_minutes,
         settings.airflow_poll_interval_minutes,
+        settings.run_history_retention_days,
     )
     return scheduler

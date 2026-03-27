@@ -23,9 +23,11 @@ class PipelineService:
         self,
         pipeline_repo: PipelineRepository,
         lineage_repo: LineageRepository,
+        revision_repo: RevisionRepository | None = None,
     ):
         self.pipeline_repo = pipeline_repo
         self.lineage_repo = lineage_repo
+        self.revision_repo = revision_repo
 
     async def list_pipelines(
         self,
@@ -94,10 +96,13 @@ class PipelineService:
         if not pipeline:
             return None
 
+        # Use explicitly passed revision_repo, fall back to injected instance
+        effective_revision_repo = revision_repo or self.revision_repo
+
         # Snapshot previous values before applying changes
-        if revision_repo:
+        if effective_revision_repo:
             if update.description is not None and update.description != pipeline.description:
-                await revision_repo.create(
+                await effective_revision_repo.create(
                     pipeline_id=pipeline_id,
                     field_name="description",
                     content=pipeline.description,
@@ -105,7 +110,7 @@ class PipelineService:
                     change_source="user",
                 )
             if update.documentation is not None and update.documentation != pipeline.documentation:
-                await revision_repo.create(
+                await effective_revision_repo.create(
                     pipeline_id=pipeline_id,
                     field_name="documentation",
                     content=pipeline.documentation,
@@ -137,20 +142,24 @@ class PipelineService:
         pipeline_id: uuid.UUID,
         revision_id: uuid.UUID,
         restored_by: str,
-        revision_repo: RevisionRepository,
+        revision_repo: RevisionRepository | None = None,
     ) -> PipelineUpdateResponse | None:
+        effective_revision_repo = revision_repo or self.revision_repo
+        if not effective_revision_repo:
+            return None
+
         pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
         if not pipeline:
             return None
 
-        revision = await revision_repo.get_by_id(revision_id)
+        revision = await effective_revision_repo.get_by_id(revision_id)
         if not revision or revision.pipeline_id != pipeline_id:
             return None
 
         # Snapshot current state before restoring
         field_name = revision.field_name
         current_content = getattr(pipeline, field_name)
-        await revision_repo.create(
+        await effective_revision_repo.create(
             pipeline_id=pipeline_id,
             field_name=field_name,
             content=current_content,
@@ -304,7 +313,7 @@ class PipelineService:
             ``JoinSuggestionsResponse`` when the pipeline is visible and found,
             ``None`` otherwise (callers should raise 404).
         """
-        cache_key = str(pipeline_id)
+        cache_key = f"{pipeline_id}:{user_id}:{is_admin}"
         cached = join_suggestions_cache.get(cache_key)
         if cached is not None:
             return cached

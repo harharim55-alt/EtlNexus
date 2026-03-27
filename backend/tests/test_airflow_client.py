@@ -37,6 +37,8 @@ def client():
         c._cache = MagicMock()
         c._cache.get.return_value = None  # no cache hits by default
         c._client = AsyncMock()
+        c._consecutive_failures = 0
+        c._circuit_open_until = 0.0
         return c
 
 
@@ -72,9 +74,9 @@ class TestRequest:
         assert result == {"ok": True}
         assert client._client.request.await_count == 2
 
-    async def test_returns_none_after_two_failures(self, client):
+    async def test_returns_none_after_three_failures(self, client):
         fail_resp = make_response({}, 500)
-        client._client.request = AsyncMock(side_effect=[fail_resp, fail_resp])
+        client._client.request = AsyncMock(side_effect=[fail_resp, fail_resp, fail_resp])
 
         result = await client._request("GET", "/health")
         assert result is None

@@ -212,7 +212,7 @@ Teams (Dagger, Vault, Prism, Relay, Oasis) own pipelines and control visibility.
 | **Catalog** | PySpark 3.5.1, Apache Iceberg (REST catalog), sparkmeasure 0.24 |
 | **Auth** | Keycloak OIDC, PyJWT, oidc-client-ts + react-oidc-context |
 | **Integrations** | Airflow REST API (pipeline discovery + status), OpenAPI-compatible LLM |
-| **Database** | PostgreSQL 16 (29 Alembic migrations) |
+| **Database** | PostgreSQL 16 (31 Alembic migrations) |
 | **Packages** | uv (Python), pnpm (Node) |
 | **Infrastructure** | Docker Compose with Watch (dev), nginx (prod) |
 
@@ -250,12 +250,12 @@ That's it. The dev environment includes all 12 services and starts with:
 
 #### Dev SSO Users (Keycloak realm: `etlnexus`)
 
-| Username | Password | Role | Team |
-|----------|----------|------|------|
-| `alice` | `alice123` | admin | Dagger |
-| `bob` | `bob123` | member | Vault |
-| `carol` | `carol123` | member | Prism |
-| `dave` | `dave123` | viewer | Relay |
+| Username | Password | Role | Team(s) |
+|----------|----------|------|---------|
+| `alice` | `password` | admin | Dagger |
+| `bob` | `password` | member | Vault, Prism |
+| `charlie` | `password` | member | Relay |
+| `diana` | `password` | member | Oasis |
 
 > If you want to skip SSO during local development, set `SSO_ENABLED=false` in `.env` and the backend returns a stable `default-admin` user automatically — no login screen required.
 
@@ -484,7 +484,7 @@ PostgreSQL 16
 | `POST /api/visibility/grants` | Create a new grant (admin only) | DB |
 | `DELETE /api/visibility/grants/{id}` | Revoke a grant (admin only) | DB |
 
-### Database Schema (29 Migrations)
+### Database Schema (31 Migrations)
 
 ```
 pipelines ──────┬── pipeline_fields         (Iceberg schema columns)
@@ -506,7 +506,7 @@ users ──────────┬── user_teams (M2M join)
 visibility_grants   (per-pipeline or per-source-team, viewer or editor level)
 ```
 
-Key migration milestones: `007` (resources + run history), `009` (dag_tasks), `012-013` (sparkMeasure metrics + execution plan), `014` (documentation), `015-017` (users, teams, visibility grants), `027` (pipeline revisions), `028-029` (bouncers table + rename).
+Key migration milestones: `007` (resources + run history), `009` (dag_tasks), `012-013` (sparkMeasure metrics + execution plan), `014` (documentation), `015-017` (users, teams, visibility grants), `027` (pipeline revisions), `028-031` (bouncers table + rename).
 
 ### Integration Clients
 
@@ -811,7 +811,7 @@ keycloak ─── (independent, backend polls JWKS on demand)
 frontend ─── (depends on backend healthy for proxy)
 ```
 
-- Backend auto-runs `alembic upgrade head` (29 migrations) then starts uvicorn
+- Backend auto-runs `alembic upgrade head` (31 migrations) then starts uvicorn
 - DAGs bind-mounted from `./dev/dags` — changes take effect without container rebuild
 - `iceberg-data-seed` runs as root with `umask 000` so Spark-written warehouse files are world-writable for the `iceberg-rest` service (uid 1000)
 - Airflow scheduler uses `umask 000` so PySpark JVM-created warehouse dirs are writable
@@ -865,7 +865,7 @@ EtlNexus/
                                 #   airflow_poll_task.py, catalog_sync_task.py,
                                 #   scheduler.py, seed_usage_data.py, seed_bouncer_volumes.py
     alembic/
-      versions/                 # 29 migration files (001 → 029)
+      versions/                 # 31 migration files (001 → 031)
 
   frontend/
     src/

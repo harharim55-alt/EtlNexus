@@ -239,3 +239,117 @@ def require_team_membership_or_editor_grant(pipeline_id_param: str = "pipeline_i
         )
 
     return _check
+
+
+def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
+    """Return a dependency that checks the caller can *see* the pipeline.
+
+    Admins bypass the check.  Unassigned pipelines (no team) are visible to
+    everyone.  For other pipelines the caller must satisfy the visibility
+    grant rules (own team, direct grant, or source-team grant).
+
+    The loaded pipeline is stored on ``request.state.pipeline`` so downstream
+    handlers can reuse it without a second DB round-trip.
+
+    Uses HTTP 404 (not 403) when access is denied to prevent pipeline UUID
+    enumeration.
+
+    Args:
+        pipeline_id_param: Name of the path parameter that carries the
+            pipeline UUID (default ``"pipeline_id"``).
+
+    Returns:
+        Async dependency function.
+    """
+
+    async def _check(
+        request: Request,
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_db_session),
+    ) -> User:
+        if user.role == "admin":
+            return user
+
+        pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
+
+        if pipeline_uuid is None:
+            return user
+
+        if pipeline is None:
+            raise HTTPException(status_code=404, detail="Pipeline not found")
+
+        # Store for downstream reuse
+        request.state.pipeline = pipeline
+
+        # Unassigned pipeline — visible to everyone
+        if not pipeline.team_id:
+            return user
+
+        user_team_ids = {ut.team_id for ut in user.team_memberships}
+        can_see = await VisibilityGrantRepository(session).user_can_see_pipeline(
+            pipeline_id=pipeline_uuid,
+            pipeline_team_id=pipeline.team_id,
+            user_id=user.id,
+            user_team_ids=user_team_ids,
+        )
+        if not can_see:
+            raise HTTPException(status_code=404, detail="Pipeline not found")
+
+        return user
+
+    return _check
+
+
+def require_pipeline_visibility_by_name(param_name: str = "etl_name"):
+    """Return a dependency that checks pipeline visibility for name-keyed endpoints.
+
+    Looks up the pipeline by ``task_id`` matching the path parameter, then
+    performs the same visibility check as ``require_pipeline_visibility``.
+
+    If no pipeline is found for the given name the check is skipped and the
+    endpoint is allowed to handle "not found" gracefully.
+
+    Args:
+        param_name: Name of the path parameter carrying the ETL task name
+            (default ``"etl_name"``).
+
+    Returns:
+        Async dependency function.
+    """
+
+    async def _check(
+        request: Request,
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_db_session),
+    ) -> User:
+        if user.role == "admin":
+            return user
+
+        etl_name: str | None = request.path_params.get(param_name)
+        if not etl_name:
+            return user
+
+        pipeline = await PipelineRepository(session).get_by_task_id(etl_name)
+        if not pipeline:
+            # Let the endpoint handle "not found" gracefully
+            return user
+
+        request.state.pipeline = pipeline
+
+        # Unassigned pipeline — visible to everyone
+        if not pipeline.team_id:
+            return user
+
+        user_team_ids = {ut.team_id for ut in user.team_memberships}
+        can_see = await VisibilityGrantRepository(session).user_can_see_pipeline(
+            pipeline_id=pipeline.id,
+            pipeline_team_id=pipeline.team_id,
+            user_id=user.id,
+            user_team_ids=user_team_ids,
+        )
+        if not can_see:
+            raise HTTPException(status_code=404, detail="Pipeline not found")
+
+        return user
+
+    return _check

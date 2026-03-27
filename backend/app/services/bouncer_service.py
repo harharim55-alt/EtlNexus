@@ -1,7 +1,7 @@
 """Bouncer service — business logic for bouncer listing and topology traversal."""
 
 import logging
-from collections import defaultdict
+from collections import defaultdict, deque
 
 from app.cache import bouncer_cache, bouncer_topology_cache
 from app.repositories.bouncer_repo import BouncerRepository
@@ -67,8 +67,16 @@ class BouncerService:
         if cached is not None:
             return cached
 
-        # Build full dag_task graph for BFS traversal
-        all_dag_tasks = await self.dag_task_repo.get_all_entries()
+        # Collect DAG IDs relevant to the selected bouncers
+        bouncer_records = await self.bouncer_repo.get_by_names(bouncer_names)
+        relevant_dag_ids: set[str] = set()
+        for br in bouncer_records:
+            relevant_dag_ids.update(br.dag_ids or [])
+
+        # Load dag_task entries only for the relevant DAGs (not the full table)
+        all_dag_tasks = await self.dag_task_repo.get_entries_for_dags(
+            list(relevant_dag_ids)
+        )
 
         # Index: (dag_id, task_id) -> dag_task entry
         task_index: dict[tuple[str, str], object] = {}
@@ -100,11 +108,11 @@ class BouncerService:
             for entry in bouncer_entries:
                 dag_id = entry.dag_id
                 # BFS from this bouncer task in this DAG
-                queue = list(entry.downstream_task_ids or [])
+                queue: deque[str] = deque(entry.downstream_task_ids or [])
                 visited: set[str] = set()
 
                 while queue:
-                    tid = queue.pop(0)
+                    tid = queue.popleft()
                     if tid in visited:
                         continue
                     visited.add(tid)

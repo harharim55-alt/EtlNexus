@@ -6,7 +6,7 @@ no SQLAlchemy imports, and no schema-object construction — those concerns
 remain in topology_service.py.
 """
 
-from collections import defaultdict
+from collections import defaultdict, deque
 
 
 def bfs_find_bouncers(
@@ -42,10 +42,10 @@ def bfs_find_bouncers(
     for adid in active_dag_ids:
         tid_to_dt = {dt.task_id: dt for dt in dag_tasks_by_dag.get(adid, [])}
         visited: set[str] = set()
-        queue: list[str] = [root_task_id]
+        queue: deque[str] = deque([root_task_id])
 
         while queue:
-            tid = queue.pop(0)
+            tid = queue.popleft()
             if tid in visited:
                 continue
             visited.add(tid)
@@ -90,10 +90,10 @@ def bfs_upstream_semantic(
     """
     visited: dict[str, int] = {}
     edges: list[tuple[str, str, str]] = []
-    queue: list[tuple[str, int]] = [(root_task_id, 0)]
+    queue: deque[tuple[str, int]] = deque([(root_task_id, 0)])
 
     while queue:
-        tid, depth = queue.pop(0)
+        tid, depth = queue.popleft()
         if tid in visited:
             continue
         visited[tid] = depth
@@ -145,10 +145,10 @@ def bfs_bouncer_discovery(
     """
     found_bouncers: dict[str, set[str]] = {}
     bouncer_visited: set[str] = set()
-    bouncer_queue: list[str] = list(visited.keys())
+    bouncer_queue: deque[str] = deque(visited.keys())
 
     while bouncer_queue:
-        tid = bouncer_queue.pop(0)
+        tid = bouncer_queue.popleft()
         if tid in bouncer_visited:
             continue
         bouncer_visited.add(tid)
@@ -197,11 +197,11 @@ def connect_bouncers_forward(
         if not bouncer_dt:
             continue
 
-        fwd_queue: list[str] = list(bouncer_dt.downstream_task_ids or [])
+        fwd_queue: deque[str] = deque(bouncer_dt.downstream_task_ids or [])
         fwd_seen: set[str] = set()
 
         while fwd_queue:
-            next_tid = fwd_queue.pop(0)
+            next_tid = fwd_queue.popleft()
             if next_tid in fwd_seen:
                 continue
             fwd_seen.add(next_tid)

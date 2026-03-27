@@ -1,6 +1,6 @@
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
-import { useNavigationStore } from "@/stores/navigation-store";
+import { useNavigationStore, getTabFromHash } from "@/stores/navigation-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { isAdmin } from "@/lib/permissions";
 import { PipelineRegistry } from "@/components/pipeline-registry/PipelineRegistry";
@@ -49,7 +49,17 @@ function TabSkeleton() {
 
 function AppContent() {
   const activeTab = useNavigationStore((s) => s.activeTab);
+  const setActiveTab = useNavigationStore((s) => s.setActiveTab);
   const user = useAuthStore((s) => s.user);
+
+  useEffect(() => {
+    const onHashChange = () => {
+      const tab = getTabFromHash();
+      if (tab !== activeTab) setActiveTab(tab);
+    };
+    window.addEventListener("hashchange", onHashChange);
+    return () => window.removeEventListener("hashchange", onHashChange);
+  }, [activeTab, setActiveTab]);
 
   return (
     <>

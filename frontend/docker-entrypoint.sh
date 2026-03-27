@@ -1,9 +1,17 @@
 #!/bin/sh
-# Runtime env injection — replace the build-time Airflow URL with the
-# runtime VITE_AIRFLOW_URL so exported images work on any host without
-# rebuilding the frontend.
-if [ -n "$VITE_AIRFLOW_URL" ]; then
-  find /usr/share/nginx/html/assets -name '*.js' -exec \
-    sed -i "s|http://localhost:8080|${VITE_AIRFLOW_URL}|g" {} +
-fi
+# Runtime config injection — generates a config.js with environment-specific
+# values, avoiding fragile sed replacement in compiled JS assets.
+cat <<EOF > /usr/share/nginx/html/config.js
+window.__RUNTIME_CONFIG__ = {
+  AIRFLOW_URL: "${VITE_AIRFLOW_URL:-http://localhost:8080}"
+};
+EOF
+
+# Resolve environment variables in nginx config (defaults for local dev)
+export BACKEND_HOST="${BACKEND_HOST:-backend}"
+# CSP connect-src: in dev, allow localhost; in prod, set to your Keycloak/API domains
+export CSP_CONNECT_SRC="${CSP_CONNECT_SRC:-http://localhost:* https://localhost:* ws://localhost:*}"
+envsubst '${BACKEND_HOST} ${CSP_CONNECT_SRC}' < /etc/nginx/conf.d/default.conf > /etc/nginx/conf.d/default.conf.tmp
+mv /etc/nginx/conf.d/default.conf.tmp /etc/nginx/conf.d/default.conf
+
 exec "$@"

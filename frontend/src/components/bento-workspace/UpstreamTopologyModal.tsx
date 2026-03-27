@@ -45,13 +45,16 @@ function getNodeEdgeType(node: UpstreamNode, edges: UpstreamEdge[]): "needs" | "
   return "prefers";
 }
 
-/** Check if a node is connected to the hovered node */
-function isConnectedToHovered(nodeTaskId: string, hoveredNode: string | null, edges: UpstreamEdge[]): boolean {
-  if (hoveredNode === null) return false;
-  return hoveredNode === nodeTaskId || edges.some((e) =>
-    (e.source_task_id === hoveredNode && e.target_task_id === nodeTaskId) ||
-    (e.target_task_id === hoveredNode && e.source_task_id === nodeTaskId)
-  );
+/** Build adjacency map for O(1) hover connectivity lookups */
+function buildAdjacencyMap(edges: UpstreamEdge[]): Map<string, Set<string>> {
+  const map = new Map<string, Set<string>>();
+  for (const edge of edges) {
+    if (!map.has(edge.source_task_id)) map.set(edge.source_task_id, new Set());
+    if (!map.has(edge.target_task_id)) map.set(edge.target_task_id, new Set());
+    map.get(edge.source_task_id)!.add(edge.target_task_id);
+    map.get(edge.target_task_id)!.add(edge.source_task_id);
+  }
+  return map;
 }
 
 /* ── Main Modal ────────────────────────────────────────────────────── */
@@ -125,19 +128,28 @@ export function UpstreamTopologyModal({ open, onClose, pipelineId }: UpstreamTop
     return { dagIds: dIds, etlNodes: etls, bouncerNodes: bouncers, summary: sum };
   }, [data]);
 
-  // Pre-compute highlight/dim state per node
+  // Pre-build adjacency map once when data changes — O(E) build, O(1) lookups
+  const adjacencyMap = useMemo(() => {
+    if (!data) return new Map<string, Set<string>>();
+    return buildAdjacencyMap(data.edges);
+  }, [data]);
+
+  // Pre-compute highlight/dim state per node using adjacency map
   const nodeRenderState = useMemo(() => {
     if (!data) return new Map<string, { isHighlighted: boolean; isDimmed: boolean }>();
     const map = new Map<string, { isHighlighted: boolean; isDimmed: boolean }>();
     for (const node of data.nodes) {
-      const connected = isConnectedToHovered(node.task_id, hoveredNode, data.edges);
+      const connected = hoveredNode !== null && (
+        hoveredNode === node.task_id ||
+        (adjacencyMap.get(hoveredNode)?.has(node.task_id) ?? false)
+      );
       map.set(node.task_id, {
         isHighlighted: hoveredNode !== null && connected,
         isDimmed: hoveredNode !== null && !connected,
       });
     }
     return map;
-  }, [data, hoveredNode]);
+  }, [data, hoveredNode, adjacencyMap]);
 
   if (!open) return null;
 

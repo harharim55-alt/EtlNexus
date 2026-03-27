@@ -139,6 +139,9 @@ export function Sidebar() {
                   queryClient.invalidateQueries({ queryKey: ["lineage"] });
                   queryClient.invalidateQueries({ queryKey: ["resource-metrics"] });
                   queryClient.invalidateQueries({ queryKey: ["pipeline-runs"] });
+                  queryClient.invalidateQueries({ queryKey: ["execution-plan"] });
+                  queryClient.invalidateQueries({ queryKey: ["execution-plan-runs"] });
+                  queryClient.invalidateQueries({ queryKey: ["resource-history"] });
                 } catch {
                   toast.error("Failed to sync pipelines from Airflow");
                 } finally {

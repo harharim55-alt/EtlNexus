@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+from app.exceptions import AuthorizationError
 from app.services.visibility_service import VisibilityService
 from tests.conftest import make_grant
 
@@ -65,7 +66,7 @@ class TestCreateGrant:
         grant_repo.create_pipeline_grant.assert_not_awaited()
 
     async def test_both_targets_raises(self, service):
-        with pytest.raises(ValueError, match="Exactly one"):
+        with pytest.raises((ValueError, AuthorizationError), match="Exactly one"):
             await service.create_grant(
                 pipeline_id=uuid.uuid4(),
                 source_team_id=uuid.uuid4(),
@@ -73,13 +74,13 @@ class TestCreateGrant:
             )
 
     async def test_no_target_raises(self, service):
-        with pytest.raises(ValueError, match="Exactly one"):
+        with pytest.raises((ValueError, AuthorizationError), match="Exactly one"):
             await service.create_grant(
                 grantee_team_id=uuid.uuid4(),
             )
 
     async def test_both_grantees_raises(self, service):
-        with pytest.raises(ValueError, match="Exactly one"):
+        with pytest.raises((ValueError, AuthorizationError), match="Exactly one"):
             await service.create_grant(
                 pipeline_id=uuid.uuid4(),
                 grantee_team_id=uuid.uuid4(),
@@ -87,13 +88,13 @@ class TestCreateGrant:
             )
 
     async def test_no_grantee_raises(self, service):
-        with pytest.raises(ValueError, match="Exactly one"):
+        with pytest.raises((ValueError, AuthorizationError), match="Exactly one"):
             await service.create_grant(
                 pipeline_id=uuid.uuid4(),
             )
 
     async def test_invalid_grant_level_raises(self, service):
-        with pytest.raises(ValueError, match="grant_level"):
+        with pytest.raises((ValueError, AuthorizationError), match="grant_level"):
             await service.create_grant(
                 pipeline_id=uuid.uuid4(),
                 grantee_team_id=uuid.uuid4(),

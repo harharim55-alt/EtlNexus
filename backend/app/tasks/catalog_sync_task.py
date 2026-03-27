@@ -1,4 +1,4 @@
-"""Background task: Sync pipelines from Iceberg catalog via Spark."""
+"""Background task: Sync pipelines from Iceberg catalog via PyIceberg."""
 
 import logging
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 async def sync_from_catalog() -> None:
     """Discover and sync pipelines from Iceberg catalog.
 
-    Uses PySpark to read table schemas via spark.table().schema.
+    Uses PyIceberg REST catalog to read table schemas.
     Gracefully handles unavailable catalog.
     """
     logger.info("Starting scheduled Iceberg catalog sync")

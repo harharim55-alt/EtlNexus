@@ -1,7 +1,9 @@
 """Repository for dag_tasks — cached Airflow DAG membership and task graph."""
 
+import uuid
 
 from sqlalchemy import delete, distinct, func, select, tuple_
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -84,6 +86,46 @@ class DagTaskRepository(UpsertMixin):
         stmt = select(DagTask)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_entries_for_dags(self, dag_ids: list[str]) -> list[DagTask]:
+        """Load dag_task entries only for the specified DAG IDs."""
+        if not dag_ids:
+            return []
+        stmt = select(DagTask).where(DagTask.dag_id.in_(dag_ids))
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def bulk_upsert(self, entries: list[dict]) -> int:
+        """Bulk upsert dag_task entries using INSERT ... ON CONFLICT DO UPDATE.
+
+        Processes in chunks to stay within PostgreSQL parameter limits.
+        Returns the total number of rows affected.
+        """
+        if not entries:
+            return 0
+        total = 0
+        chunk_size = 500
+        for i in range(0, len(entries), chunk_size):
+            chunk = entries[i:i + chunk_size]
+            for entry in chunk:
+                entry.setdefault("id", uuid.uuid4())
+            stmt = pg_insert(DagTask).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_dag_task",
+                set_={
+                    "pipeline_id": stmt.excluded.pipeline_id,
+                    "downstream_task_ids": stmt.excluded.downstream_task_ids,
+                    "needs": stmt.excluded.needs,
+                    "prefers": stmt.excluded.prefers,
+                    "task_group_id": stmt.excluded.task_group_id,
+                    "bouncer_name": stmt.excluded.bouncer_name,
+                    "bouncer_id": stmt.excluded.bouncer_id,
+                },
+            )
+            result = await self.session.execute(stmt)
+            total += result.rowcount
+        await self.session.flush()
+        return total
 
     async def delete_stale(self, current_dag_task_pairs: set[tuple[str, str]]) -> int:
         """Delete rows not in the current set of (dag_id, task_id) pairs."""

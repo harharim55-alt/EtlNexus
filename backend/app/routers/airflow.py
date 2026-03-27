@@ -70,12 +70,31 @@ class SyncAllResponse(BaseModel):
 async def sync_all_pipelines(
     user: User = Depends(get_current_user),
 ):
-    """Trigger a full pipeline sync from Airflow (admin only)."""
+    """Trigger a full pipeline sync + status poll from Airflow (admin only)."""
     logger.info("Admin %s triggered full Airflow sync", user.email)
     try:
         async with async_session_factory() as session:
             service = AirflowSyncService(session)
             count = await service.sync_pipelines_from_airflow()
+
+        # Poll statuses, run history, resource actuals, and execution plans
+        async with async_session_factory() as session:
+            from app.repositories.bouncer_repo import BouncerRepository
+            from app.repositories.pipeline_repo import PipelineRepository
+            from app.repositories.resource_repo import ResourceRepository
+            from app.services.airflow_service import AirflowService
+
+            poll_service = AirflowService(
+                session,
+                airflow_repo=AirflowRepository(session),
+                pipeline_repo=PipelineRepository(session),
+                resource_repo=ResourceRepository(session),
+                bouncer_repo=BouncerRepository(session),
+            )
+            await poll_service.poll_all_statuses()
+
+        from app.cache import clear_all
+        clear_all()
         return SyncAllResponse(synced=count, message=f"Synced {count} pipelines from Airflow")
     except Exception as e:
         logger.exception("Manual full sync failed")

@@ -97,6 +97,79 @@ class ResourceRepository:
         await self.session.flush()
         return result.rowcount > 0
 
+    async def bulk_upsert_runs(self, entries: list[dict]) -> int:
+        """Batch upsert run history entries. Same semantics as upsert_run but in bulk."""
+        if not entries:
+            return 0
+        total = 0
+        chunk_size = 500
+        for i in range(0, len(entries), chunk_size):
+            chunk = entries[i:i + chunk_size]
+            stmt = pg_insert(PipelineRunHistory).values(chunk)
+            stmt = stmt.on_conflict_do_update(
+                constraint="uq_run_history_pipeline_dag_run",
+                set_={
+                    "duration_seconds": stmt.excluded.duration_seconds,
+                    "start_date": stmt.excluded.start_date,
+                    "end_date": stmt.excluded.end_date,
+                    "status": stmt.excluded.status,
+                    "driver_memory_used_mb": None,
+                    "executor_memory_peak_mb": None,
+                    "cpu_utilization_pct": None,
+                    "executors_active": None,
+                    "spark_application_id": None,
+                    "executor_run_time_ms": None,
+                    "executor_cpu_time_ms": None,
+                    "jvm_gc_time_ms": None,
+                    "shuffle_read_bytes": None,
+                    "shuffle_write_bytes": None,
+                    "input_bytes": None,
+                    "output_bytes": None,
+                    "memory_bytes_spilled": None,
+                    "disk_bytes_spilled": None,
+                    "peak_execution_memory": None,
+                    "result_size_bytes": None,
+                    "num_tasks": None,
+                    "num_stages": None,
+                    "metrics_source": None,
+                    "execution_plan": None,
+                    "fields_snapshot": stmt.excluded.fields_snapshot,
+                    "source_tables_snapshot": stmt.excluded.source_tables_snapshot,
+                    "destination_tables_snapshot": stmt.excluded.destination_tables_snapshot,
+                },
+            )
+            result = await self.session.execute(stmt)
+            total += result.rowcount
+        await self.session.flush()
+        return total
+
+    async def bulk_has_null_actuals(
+        self, run_keys: list[tuple[uuid.UUID, str, str]]
+    ) -> set[tuple[str, str]]:
+        """Batch check which (dag_id, dag_run_id) tuples have null actuals.
+
+        Returns the set of (dag_id, dag_run_id) that need log fetching.
+        """
+        if not run_keys:
+            return set()
+        # Build OR conditions for all keys
+        from sqlalchemy import and_, or_, tuple_
+        conditions = tuple_(
+            PipelineRunHistory.pipeline_id,
+            PipelineRunHistory.dag_id,
+            PipelineRunHistory.dag_run_id,
+        ).in_(run_keys)
+        stmt = select(
+            PipelineRunHistory.dag_id,
+            PipelineRunHistory.dag_run_id,
+        ).where(
+            conditions,
+            PipelineRunHistory.driver_memory_used_mb.is_(None),
+            PipelineRunHistory.status == "success",
+        )
+        result = await self.session.execute(stmt)
+        return {(row.dag_id, row.dag_run_id) for row in result.all()}
+
     async def update_run_actuals(
         self,
         pipeline_id: uuid.UUID,

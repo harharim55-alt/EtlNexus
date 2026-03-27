@@ -55,6 +55,12 @@ class BouncerRepository:
         result = await self.session.execute(stmt)
         return [row[0] for row in result.all()]
 
+    async def get_all_names(self) -> set[str]:
+        """Return all bouncer names as a lightweight set (no ORM hydration)."""
+        stmt = select(Bouncer.bouncer_name)
+        result = await self.session.execute(stmt)
+        return {row[0] for row in result.all()}
+
     async def upsert(self, data: dict) -> Bouncer:
         bouncer_name = data["bouncer_name"]
         existing = await self.get_by_name(bouncer_name)

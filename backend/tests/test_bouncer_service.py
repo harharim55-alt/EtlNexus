@@ -199,7 +199,8 @@ class TestGetBouncerTopology:
         etl_a = make_dag_task(dag_id="dag1", task_id="EtlA", downstream_task_ids=[])
         etl_b = make_dag_task(dag_id="dag1", task_id="EtlB", downstream_task_ids=[])
 
-        dag_task_repo.get_all_entries.return_value = [bouncer_dt, etl_a, etl_b]
+        bouncer_repo.get_by_names.return_value = [make_bouncer_orm(bouncer_name="SwitchBouncer", dag_ids=["dag1"])]
+        dag_task_repo.get_entries_for_dags.return_value = [bouncer_dt, etl_a, etl_b]
 
         pipeline_a = make_pipeline_lightweight(task_id="EtlA", name="ETL A")
         pipeline_b = make_pipeline_lightweight(task_id="EtlB", name="ETL B")
@@ -235,7 +236,11 @@ class TestGetBouncerTopology:
         etl_b = make_dag_task(dag_id="dag1", task_id="EtlB")
         etl_c = make_dag_task(dag_id="dag1", task_id="EtlC")
 
-        dag_task_repo.get_all_entries.return_value = [b1, b2, etl_a, etl_b, etl_c]
+        bouncer_repo.get_by_names.return_value = [
+            make_bouncer_orm(bouncer_name="Bouncer1", dag_ids=["dag1"]),
+            make_bouncer_orm(bouncer_name="Bouncer2", dag_ids=["dag1"]),
+        ]
+        dag_task_repo.get_entries_for_dags.return_value = [b1, b2, etl_a, etl_b, etl_c]
 
         pipeline_b = make_pipeline_lightweight(task_id="EtlB", name="ETL B")
         pipeline_repo.get_task_id_map.return_value = {
@@ -255,7 +260,8 @@ class TestGetBouncerTopology:
     async def test_empty_bouncer_names_returns_empty_result(
         self, service, bouncer_repo, dag_task_repo, pipeline_repo
     ):
-        dag_task_repo.get_all_entries.return_value = []
+        bouncer_repo.get_by_names.return_value = []
+        dag_task_repo.get_entries_for_dags.return_value = []
         pipeline_repo.get_task_id_map.return_value = {}
 
         result = await service.get_bouncer_topology(bouncer_names=[], mode="union")
@@ -267,13 +273,14 @@ class TestGetBouncerTopology:
     async def test_topology_result_is_cached(
         self, service, bouncer_repo, dag_task_repo, pipeline_repo
     ):
-        dag_task_repo.get_all_entries.return_value = []
+        bouncer_repo.get_by_names.return_value = [make_bouncer_orm(bouncer_name="Bouncer1", dag_ids=["dag1"])]
+        dag_task_repo.get_entries_for_dags.return_value = []
         pipeline_repo.get_task_id_map.return_value = {}
 
         await service.get_bouncer_topology(bouncer_names=["Bouncer1"], mode="union")
         await service.get_bouncer_topology(bouncer_names=["Bouncer1"], mode="union")
 
-        assert dag_task_repo.get_all_entries.await_count == 1
+        assert dag_task_repo.get_entries_for_dags.await_count == 1
 
     async def test_bfs_traverses_multi_hop_downstream(
         self, service, bouncer_repo, dag_task_repo, pipeline_repo
@@ -287,7 +294,8 @@ class TestGetBouncerTopology:
         etl_a = make_dag_task(dag_id="dag1", task_id="EtlA", downstream_task_ids=["EtlB"])
         etl_b = make_dag_task(dag_id="dag1", task_id="EtlB", downstream_task_ids=[])
 
-        dag_task_repo.get_all_entries.return_value = [bouncer_dt, etl_a, etl_b]
+        bouncer_repo.get_by_names.return_value = [make_bouncer_orm(bouncer_name="DataBouncer", dag_ids=["dag1"])]
+        dag_task_repo.get_entries_for_dags.return_value = [bouncer_dt, etl_a, etl_b]
 
         pipeline_repo.get_task_id_map.return_value = {
             "EtlA": make_pipeline_lightweight(task_id="EtlA"),
@@ -311,7 +319,8 @@ class TestGetBouncerTopology:
             downstream_task_ids=["EtlX"],
         )
         etl_x = make_dag_task(dag_id="dag1", task_id="EtlX")
-        dag_task_repo.get_all_entries.return_value = [bouncer_dt, etl_x]
+        bouncer_repo.get_by_names.return_value = [make_bouncer_orm(bouncer_name="NetBouncer", dag_ids=["dag1"])]
+        dag_task_repo.get_entries_for_dags.return_value = [bouncer_dt, etl_x]
 
         pipeline_x = make_pipeline_lightweight(task_id="EtlX", name="Network Collector")
         pipeline_repo.get_task_id_map.return_value = {"EtlX": pipeline_x}
@@ -340,7 +349,8 @@ class TestGetBouncerTopology:
         etl1 = make_dag_task(dag_id="dag1", task_id="EtlShared")
         etl2 = make_dag_task(dag_id="dag2", task_id="EtlShared")
 
-        dag_task_repo.get_all_entries.return_value = [b1, b2, etl1, etl2]
+        bouncer_repo.get_by_names.return_value = [make_bouncer_orm(bouncer_name="NetBouncer", dag_ids=["dag1", "dag2"])]
+        dag_task_repo.get_entries_for_dags.return_value = [b1, b2, etl1, etl2]
 
         pipeline_repo.get_task_id_map.return_value = {
             "EtlShared": make_pipeline_lightweight(task_id="EtlShared"),

@@ -12,6 +12,7 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
+from app.exceptions import AirflowSyncError, AuthorizationError, PipelineNotFoundError
 from app.logging_config import build_log_config, request_id_var
 from app.rate_limit import limiter
 from app.routers import (
@@ -57,34 +58,41 @@ async def lifespan(app: FastAPI):
     from app.integrations.oasis_prod_client import oasis_prod_client
     await oasis_prod_client.initialize()
 
-    from app.tasks.scheduler import run_startup_sync, setup_scheduler
+    startup_task = None
+    sched = None
 
-    # Run initial syncs in background — don't block app startup.
-    # run_startup_sync waits for Airflow readiness and acquires _sync_lock.
-    startup_task = asyncio.create_task(run_startup_sync(), name="startup_sync")
+    if settings.scheduler_enabled:
+        from app.tasks.scheduler import run_startup_sync, setup_scheduler
 
-    def _on_startup_done(task: asyncio.Task) -> None:
-        if task.cancelled():
-            logger.warning("Startup sync was cancelled")
-        elif exc := task.exception():
-            logger.error("Startup sync failed: %s", exc)
-        else:
-            logger.info("Startup sync completed successfully")
+        # Run initial syncs in background — don't block app startup.
+        # run_startup_sync waits for Airflow readiness and acquires _sync_lock.
+        startup_task = asyncio.create_task(run_startup_sync(), name="startup_sync")
 
-    startup_task.add_done_callback(_on_startup_done)
+        def _on_startup_done(task: asyncio.Task) -> None:
+            if task.cancelled():
+                logger.warning("Startup sync was cancelled")
+            elif exc := task.exception():
+                logger.error("Startup sync failed: %s", exc)
+            else:
+                logger.info("Startup sync completed successfully")
 
-    # Start background scheduler
-    sched = setup_scheduler()
-    sched.start()
-    logger.info("Background scheduler started")
+        startup_task.add_done_callback(_on_startup_done)
+
+        # Start background scheduler
+        sched = setup_scheduler()
+        sched.start()
+        logger.info("Background scheduler started")
+    else:
+        logger.info("Scheduler disabled — running in API-only mode")
 
     yield
 
     # Shutdown
-    if not startup_task.done():
+    if startup_task is not None and not startup_task.done():
         startup_task.cancel()
         logger.info("Cancelled in-progress startup sync")
-    sched.shutdown(wait=False)
+    if sched is not None:
+        sched.shutdown(wait=False)
     from app.integrations.airflow_client import airflow_client
     await airflow_client.close()
     from app.integrations.oidc_client import oidc_client as _oidc
@@ -164,6 +172,21 @@ async def general_exception_handler(request: Request, exc: Exception):
         status_code=500,
         content={"detail": "Internal server error", "status_code": 500},
     )
+
+
+@app.exception_handler(PipelineNotFoundError)
+async def pipeline_not_found_handler(request: Request, exc: PipelineNotFoundError):
+    return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+
+@app.exception_handler(AirflowSyncError)
+async def airflow_sync_error_handler(request: Request, exc: AirflowSyncError):
+    return JSONResponse(status_code=502, content={"detail": "Airflow sync error"})
+
+
+@app.exception_handler(AuthorizationError)
+async def authorization_error_handler(request: Request, exc: AuthorizationError):
+    return JSONResponse(status_code=403, content={"detail": str(exc)})
 
 
 # Routers

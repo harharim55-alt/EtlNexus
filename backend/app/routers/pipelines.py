@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.auth import get_current_user, require_team_membership, require_team_membership_or_editor_grant
+from app.auth import get_current_user, require_pipeline_visibility, require_team_membership, require_team_membership_or_editor_grant
 from app.config import settings
 from app.dependencies import (
     get_airflow_sync_service,
@@ -121,12 +121,14 @@ async def sync_pipeline(
 ):
     try:
         result = await service.sync_single_pipeline(pipeline_id)
+        from app.cache import clear_all
+        clear_all()
         return result
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e)) from None
 
 
-@router.get("/{pipeline_id}/revisions", response_model=RevisionListResponse)
+@router.get("/{pipeline_id}/revisions", response_model=RevisionListResponse, dependencies=[Depends(require_pipeline_visibility())])
 async def list_revisions(
     pipeline_id: uuid.UUID,
     field: str | None = Query(None, pattern="^(description|documentation)$"),

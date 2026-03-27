@@ -1,4 +1,4 @@
-"""Catalog sync service — discovers pipelines from Iceberg catalog via Spark."""
+"""Catalog sync service — discovers pipelines from Iceberg catalog via PyIceberg."""
 
 import logging
 
@@ -17,9 +17,9 @@ class CatalogSyncService:
         self.session = session
 
     async def sync_from_catalog(self) -> int:
-        """Discover tables from Iceberg catalog via Spark and upsert as pipelines.
+        """Discover tables from Iceberg catalog via PyIceberg and upsert as pipelines.
 
-        Uses spark.table("catalog.db.table").schema to read Iceberg schemas.
+        Uses PyIceberg REST catalog to read table schemas.
         Returns the number of pipelines synced.
         """
         schemas = iceberg_client.get_all_schemas()
@@ -27,51 +27,55 @@ class CatalogSyncService:
             logger.info("No table schemas discovered from Iceberg catalog")
             return 0
 
+        # Bulk load all matching pipelines to avoid N+1 per-table SELECTs
+        task_ids = [ts.table_name for ts in schemas]
+        stmt = (
+            select(Pipeline)
+            .options(selectinload(Pipeline.fields))
+            .where(Pipeline.task_id.in_(task_ids))
+        )
+        result = await self.session.execute(stmt)
+        pipeline_by_task_id = {p.task_id: p for p in result.scalars().all()}
+
         synced = 0
+        # Collect all pipeline IDs that have fields to sync for batch DELETE
+        pipelines_to_sync: list[tuple] = []  # (pipeline, fields)
         for table_schema in schemas:
-            task_id = table_schema.table_name  # PascalCase, e.g. "PortScanCollector"
-
-            # Find existing pipeline by task_id (PascalCase match)
-            stmt = (
-                select(Pipeline)
-                .options(selectinload(Pipeline.fields))
-                .where(Pipeline.task_id == task_id)
-            )
-            result = await self.session.execute(stmt)
-            pipeline = result.scalar_one_or_none()
-
+            task_id = table_schema.table_name
+            pipeline = pipeline_by_task_id.get(task_id)
             if not pipeline:
                 logger.debug(
                     "No pipeline with task_id=%s — skipping Iceberg schema",
                     task_id,
                 )
                 continue
-
             if table_schema.fields:
-                await self._sync_fields(pipeline, table_schema.fields)
+                pipelines_to_sync.append((pipeline, table_schema.fields))
 
-            synced += 1
+        if pipelines_to_sync:
+            # Batch DELETE all existing fields for matched pipelines
+            pipeline_ids = [p.id for p, _ in pipelines_to_sync]
+            await self.session.execute(
+                delete(PipelineField).where(PipelineField.pipeline_id.in_(pipeline_ids))
+            )
+            await self.session.flush()
+
+            # Batch INSERT all new fields
+            new_fields: list[PipelineField] = []
+            for pipeline, fields in pipelines_to_sync:
+                for i, field_info in enumerate(fields):
+                    new_fields.append(PipelineField(
+                        pipeline_id=pipeline.id,
+                        name=field_info["name"],
+                        data_type=field_info["type"],
+                        ordinal_position=i,
+                    ))
+            self.session.add_all(new_fields)
+            synced = len(pipelines_to_sync)
 
         await self.session.commit()
         logger.info("Synced %d pipelines from Iceberg catalog", synced)
         return synced
-
-    async def _sync_fields(self, pipeline, fields: list[dict]) -> None:
-        """Sync schema fields from Spark StructType for a pipeline."""
-        # Delete existing fields
-        await self.session.execute(
-            delete(PipelineField).where(PipelineField.pipeline_id == pipeline.id)
-        )
-        await self.session.flush()
-
-        for i, field_info in enumerate(fields):
-            pf = PipelineField(
-                pipeline_id=pipeline.id,
-                name=field_info["name"],
-                data_type=field_info["type"],
-                ordinal_position=i,
-            )
-            self.session.add(pf)
 
     @staticmethod
     def _table_to_display_name(table_name: str) -> str:

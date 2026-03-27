@@ -1,6 +1,7 @@
 import uuid
 
 from sqlalchemy import delete, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -54,6 +55,28 @@ class LineageRepository(UpsertMixin):
             },
             data=data,
         )
+
+    async def bulk_insert_edges(self, edges: list[dict]) -> int:
+        """Insert multiple lineage edges in a single statement.
+
+        Uses INSERT ... ON CONFLICT DO NOTHING to handle duplicates from re-runs.
+        Caller should delete stale edges first. Returns the number of rows inserted.
+        """
+        if not edges:
+            return 0
+        for edge in edges:
+            edge.setdefault("id", uuid.uuid4())
+        # Chunk to stay within PG parameter limits (~7 columns per edge)
+        total = 0
+        chunk_size = 500
+        for i in range(0, len(edges), chunk_size):
+            chunk = edges[i:i + chunk_size]
+            stmt = pg_insert(LineageEdge).values(chunk)
+            stmt = stmt.on_conflict_do_nothing()
+            result = await self.session.execute(stmt)
+            total += result.rowcount
+        await self.session.flush()
+        return total
 
     async def delete_by_pipeline_id(self, pipeline_id: uuid.UUID) -> None:
         await self.session.execute(

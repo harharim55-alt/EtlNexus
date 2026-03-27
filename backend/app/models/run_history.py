@@ -17,7 +17,7 @@ class PipelineRunHistory(Base):
     pipeline_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("pipelines.id", ondelete="CASCADE"), index=True
     )
-    dag_id: Mapped[str] = mapped_column(String(255))
+    dag_id: Mapped[str] = mapped_column(String(255), index=True)
     dag_run_id: Mapped[str] = mapped_column(String(255))
     duration_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
     start_date: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -3,6 +3,7 @@
 import uuid
 
 from app.cache import grant_level_cache
+from app.exceptions import AuthorizationError
 from app.models.visibility_grant import VisibilityGrant
 from app.repositories.team_repo import TeamRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
@@ -42,15 +43,15 @@ class VisibilityService:
         grant_level must be "viewer" or "editor".
         """
         if (pipeline_id is None) == (source_team_id is None):
-            raise ValueError(
+            raise AuthorizationError(
                 "Exactly one of pipeline_id or source_team_id must be provided."
             )
         if (grantee_team_id is None) == (grantee_user_id is None):
-            raise ValueError(
+            raise AuthorizationError(
                 "Exactly one of grantee_team_id or grantee_user_id must be provided."
             )
         if grant_level not in ("viewer", "editor"):
-            raise ValueError("grant_level must be 'viewer' or 'editor'")
+            raise AuthorizationError("grant_level must be 'viewer' or 'editor'")
 
         if pipeline_id is not None:
             grant = await self.grant_repo.create_pipeline_grant(

@@ -2,7 +2,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_pipeline_visibility
 from app.dependencies import get_lineage_repo, get_pipeline_repo
 from app.models.user import User
 from app.repositories.lineage_repo import LineageRepository
@@ -12,7 +12,7 @@ from app.schemas.lineage import LineageEdgeSchema, LineageGraphSchema, LineageNo
 router = APIRouter(prefix="/api/pipelines", tags=["lineage"])
 
 
-@router.get("/{pipeline_id}/lineage", response_model=LineageGraphSchema)
+@router.get("/{pipeline_id}/lineage", response_model=LineageGraphSchema, dependencies=[Depends(require_pipeline_visibility())])
 async def get_pipeline_lineage(
     pipeline_id: uuid.UUID,
     user: User = Depends(get_current_user),

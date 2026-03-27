@@ -1,12 +1,32 @@
 """Tests for TopologyService — pipeline dependency graph construction."""
 
 import uuid
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from app.services.topology_service import TopologyService
 from tests.conftest import make_pipeline
+
+
+def _pipeline_to_ns(p):
+    """Convert a mock pipeline to a SimpleNamespace matching get_task_id_map() output."""
+    return SimpleNamespace(
+        id=p.id,
+        name=p.name,
+        task_id=p.task_id,
+        status=getattr(p, "status", "unknown"),
+        execution_date=None,
+        category=getattr(p, "category", None),
+        description=getattr(p, "description", None),
+        team=getattr(p, "team", None),
+    )
+
+
+def _make_task_id_map(*pipelines):
+    """Build a task_id_map dict from mock pipelines."""
+    return {p.task_id: _pipeline_to_ns(p) for p in pipelines if p.task_id}
 
 
 def make_dag_task(
@@ -54,6 +74,7 @@ def service(mock_session):
     svc.pipeline_repo = AsyncMock()
     svc.dag_task_repo = AsyncMock()
     svc.bouncer_repo = AsyncMock()
+    svc.resource_repo = AsyncMock()
     return svc
 
 
@@ -108,9 +129,9 @@ class TestBuildPipelineTopology:
         service.dag_task_repo.get_tasks_for_dag.return_value = [
             dag_entry, source_dt, consumer_dt,
         ]
-        service.pipeline_repo.get_all.return_value = [
+        service.pipeline_repo.get_task_id_map.return_value = _make_task_id_map(
             pipeline, upstream_pipeline, downstream_pipeline,
-        ]
+        )
         service.bouncer_repo.get_by_names.return_value = []
 
         result = await service.build_pipeline_topology(pipeline.id)
@@ -139,7 +160,7 @@ class TestBuildPipelineTopology:
         service.dag_task_repo.get_tasks_for_dag.return_value = [
             bouncer_dt, collector_dt,
         ]
-        service.pipeline_repo.get_all.return_value = [pipeline]
+        service.pipeline_repo.get_task_id_map.return_value = _make_task_id_map(pipeline)
         bouncer_obj = make_bouncer(bouncer_name="SwitchBouncer")
         service.bouncer_repo.get_by_names.return_value = [bouncer_obj]
 
@@ -164,7 +185,7 @@ class TestBuildPipelineTopology:
         service.dag_task_repo.get_tasks_for_dag.return_value = [
             dag1_entry, dag1_dep,
         ]
-        service.pipeline_repo.get_all.return_value = [pipeline]
+        service.pipeline_repo.get_task_id_map.return_value = _make_task_id_map(pipeline)
         service.bouncer_repo.get_by_names.return_value = []
 
         result = await service.build_pipeline_topology(pipeline.id, dag_id="dag1")
@@ -202,7 +223,7 @@ class TestBuildUpstreamTopology:
         service.pipeline_repo.get_by_id.return_value = pipeline
         service.dag_task_repo.get_dags_for_task.return_value = [dt_a]
         service.dag_task_repo.get_tasks_for_dag.return_value = [dt_a, dt_b, dt_c]
-        service.pipeline_repo.get_all.return_value = [pipeline]
+        service.pipeline_repo.get_task_id_map.return_value = _make_task_id_map(pipeline)
         service.bouncer_repo.get_by_names.return_value = []
 
         result = await service.build_upstream_topology(pipeline.id)

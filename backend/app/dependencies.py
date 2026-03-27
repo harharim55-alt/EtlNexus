@@ -22,6 +22,7 @@ from app.services.pipeline_service import PipelineService
 from app.services.resource_service import ResourceService
 from app.services.schema_matrix_service import SchemaMatrixService
 from app.services.team_service import TeamService
+from app.services.topology_service import TopologyService
 from app.services.usage_service import UsageService
 from app.services.visibility_service import VisibilityService
 
@@ -51,8 +52,9 @@ def get_revision_repo(session: AsyncSession = Depends(get_db_session)) -> Revisi
 def get_pipeline_service(
     pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
     lineage_repo: LineageRepository = Depends(get_lineage_repo),
+    revision_repo: RevisionRepository = Depends(get_revision_repo),
 ) -> PipelineService:
-    return PipelineService(pipeline_repo, lineage_repo)
+    return PipelineService(pipeline_repo, lineage_repo, revision_repo=revision_repo)
 
 
 def get_schema_matrix_service(
@@ -138,6 +140,15 @@ def get_bouncer_service(
     pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
 ) -> BouncerService:
     return BouncerService(bouncer_repo, dag_task_repo, pipeline_repo)
+
+
+def get_topology_service(
+    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
+    dag_task_repo: DagTaskRepository = Depends(get_dag_task_repo),
+    bouncer_repo: BouncerRepository = Depends(get_bouncer_repo),
+    resource_repo: ResourceRepository = Depends(get_resource_repo),
+) -> TopologyService:
+    return TopologyService(pipeline_repo, dag_task_repo, bouncer_repo, resource_repo)
 
 
 def get_ai_service(

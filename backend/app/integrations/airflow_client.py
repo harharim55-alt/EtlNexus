@@ -4,9 +4,11 @@ Uses a persistent httpx.AsyncClient with connection pooling to avoid
 creating a new TCP connection per request.
 """
 
+import asyncio
 import contextlib
 import logging
 import re
+import time
 from datetime import datetime
 from urllib.parse import quote
 
@@ -38,6 +40,9 @@ class AirflowClient:
         self.timeout = httpx.Timeout(10.0)
         self._connected = False
         self._cache = TTLCache(ttl=settings.cache_ttl_airflow)
+        # Circuit breaker — stops hammering Airflow during outages
+        self._consecutive_failures: int = 0
+        self._circuit_open_until: float = 0.0
         # Persistent client with connection pool — reuses TCP connections
         self._client = httpx.AsyncClient(
             timeout=self.timeout,
@@ -49,23 +54,50 @@ class AirflowClient:
         )
 
     async def _request(self, method: str, path: str, **kwargs) -> dict | None:
+        # Circuit breaker — fast-fail when Airflow is known to be down
+        now = time.monotonic()
+        if now < self._circuit_open_until:
+            return None
+
         url = f"{self.base_url}{path}"
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 resp = await self._client.request(
                     method, url, auth=self.auth, **kwargs
                 )
                 resp.raise_for_status()
                 self._connected = True
+                self._consecutive_failures = 0
                 return resp.json()
-            except (httpx.HTTPStatusError, httpx.RequestError) as e:
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code < 500:
+                    # Client error — do not retry, but Airflow is reachable
+                    logger.warning("Airflow %s %s -> HTTP %d", method, path, e.response.status_code)
+                    self._connected = True
+                    self._consecutive_failures = 0
+                    return None
                 logger.warning(
                     "Airflow request failed (attempt %d): %s %s -> %s",
                     attempt + 1, method, path, e,
                 )
-                if attempt == 1:
-                    self._connected = False
-                    return None
+            except httpx.RequestError as e:
+                logger.warning(
+                    "Airflow request error (attempt %d): %s %s -> %s",
+                    attempt + 1, method, path, e,
+                )
+            if attempt < 2:
+                await asyncio.sleep(0.5 * (2 ** attempt))  # 0.5s, 1s
+
+        # All retries exhausted — update circuit breaker state
+        self._connected = False
+        self._consecutive_failures += 1
+        if self._consecutive_failures >= settings.airflow_cb_threshold:
+            self._circuit_open_until = time.monotonic() + settings.airflow_cb_cooldown_seconds
+            logger.warning(
+                "Circuit breaker OPEN — %d consecutive failures, cooling down %ds",
+                self._consecutive_failures, settings.airflow_cb_cooldown_seconds,
+            )
+        return None
 
     @property
     def is_connected(self) -> bool:

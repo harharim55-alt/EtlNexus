@@ -20,9 +20,21 @@ class AIService:
     def __init__(self, pipeline_repo: PipelineRepository):
         self.pipeline_repo = pipeline_repo
 
-    async def chat(self, message: str, history: list[dict]) -> str:
-        """Process a chat message with catalog context."""
-        catalog_context = await self._build_catalog_context()
+    async def chat(
+        self,
+        message: str,
+        history: list[dict],
+        visible_pipeline_ids: set[uuid.UUID] | None = None,
+    ) -> str:
+        """Process a chat message with catalog context.
+
+        Args:
+            message: The user's chat message.
+            history: Conversation history.
+            visible_pipeline_ids: When not None, only include pipelines whose
+                ``.id`` is in this set.  None means include all (admin).
+        """
+        catalog_context = await self._build_catalog_context(visible_pipeline_ids=visible_pipeline_ids)
         system_prompt = SYSTEM_PROMPT.format(catalog_context=catalog_context)
 
         messages = [
@@ -67,14 +79,25 @@ class AIService:
             system_prompt="You are a data architect. Be concise and specific.",
         )
 
-    async def _build_catalog_context(self) -> str:
-        """Build a summary of the catalog for the system prompt."""
+    async def _build_catalog_context(
+        self, visible_pipeline_ids: set[uuid.UUID] | None = None,
+    ) -> str:
+        """Build a summary of the catalog for the system prompt.
+
+        Args:
+            visible_pipeline_ids: When not None, filter to only pipelines
+                whose ``.id`` is in the set.  None means include all (admin).
+        """
         pipeline_map = await self.pipeline_repo.get_task_id_map()
         if not pipeline_map:
             return "No pipelines currently in the catalog."
 
+        values = list(pipeline_map.values())
+        if visible_pipeline_ids is not None:
+            values = [p for p in values if p.id in visible_pipeline_ids]
+
         lines = []
-        for p in list(pipeline_map.values())[:20]:  # Limit context size
+        for p in values[:20]:  # Limit context size
             line = f"- {p.name}"
             if p.category:
                 line += f" [{p.category}]"

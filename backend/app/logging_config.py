@@ -92,7 +92,5 @@ def build_log_config(*, debug: bool = False, log_format: str = "auto") -> dict:
             "sqlalchemy.engine": {"level": "WARNING"},
             "httpx": {"level": "WARNING"},
             "apscheduler": {"level": "INFO"},
-            "py4j": {"level": "ERROR"},
-            "pyspark": {"level": "WARNING"},
         },
     }

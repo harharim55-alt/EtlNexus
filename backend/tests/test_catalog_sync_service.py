@@ -44,9 +44,11 @@ class TestSyncFromCatalog:
         mock_iceberg.get_all_schemas.return_value = [
             make_iceberg_schema("UnknownPipeline", [{"name": "col1", "type": "STRING"}]),
         ]
-        # Pipeline lookup returns None
+        # Bulk pipeline lookup returns empty (no matching pipelines)
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = []
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = None
+        mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
         result = await service.sync_from_catalog()
@@ -56,6 +58,7 @@ class TestSyncFromCatalog:
     async def test_syncs_fields_for_found_pipeline(self, mock_iceberg, service, mock_session):
         pipeline = MagicMock()
         pipeline.id = uuid.uuid4()
+        pipeline.task_id = "PortScanCollector"
         pipeline.fields = []
 
         mock_iceberg.get_all_schemas.return_value = [
@@ -64,14 +67,19 @@ class TestSyncFromCatalog:
                 {"name": "speed_mbps", "type": "INT"},
             ]),
         ]
+        # Bulk pipeline lookup returns the matching pipeline
+        mock_scalars = MagicMock()
+        mock_scalars.all.return_value = [pipeline]
         mock_result = MagicMock()
-        mock_result.scalar_one_or_none.return_value = pipeline
+        mock_result.scalars.return_value = mock_scalars
         mock_session.execute.return_value = mock_result
 
         result = await service.sync_from_catalog()
         assert result == 1
-        # Should have added 2 PipelineField objects
-        assert mock_session.add.call_count == 2
+        # Should have batch-added 2 PipelineField objects via add_all
+        mock_session.add_all.assert_called_once()
+        added_fields = mock_session.add_all.call_args[0][0]
+        assert len(added_fields) == 2
 
 
 class TestTableToDisplayName:

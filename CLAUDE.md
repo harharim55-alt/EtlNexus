@@ -35,9 +35,10 @@ ETL Explorer Hub — a data architecture command center for discovering, underst
 
 - Backend serves a REST API; frontend consumes it via TanStack Query
 - All pipeline metadata is sourced from Airflow — **no git cloning**. `AirflowSyncService` reads `rendered_fields.op_kwargs` from task instances for pipeline discovery, lineage, and metadata
-- Lineage `reads_from` edges derived from `needs` task_ids in op_kwargs; `writes_to` edges parsed from task logs (`ETL_WRITES_TO:` markers)
+- Lineage `reads_from` edges derived from `needs` task_ids in `params`; `writes_to` edges parsed from task logs (`ETL_WRITES_TO:` markers)
 - ETL catalog is sourced from an Iceberg catalog — schemas synced every 2 hours
 - AI Architect terminal uses an OpenAPI-compatible LLM endpoint with full catalog context
+- **Caching:** In-memory TTL caches (process-local). Cache invalidation via `clear_all()` only clears the local process. Horizontal scaling requires migrating to Redis or accepting eventual consistency via TTL expiration. The APScheduler also runs per-process — multiple backend instances will each run their own sync jobs.
 - **SSO/RBAC:** Keycloak OIDC with JIT user provisioning, team-based RBAC, visibility grants for cross-team access, admin panel for grant management
 
 ## Key UI Sections
@@ -105,6 +106,8 @@ Three-layer pattern: **Router** (HTTP) -> **Service** (business logic) -> **Repo
 - **Grants:** Two types — per-pipeline or per-source-team, with `viewer` or `editor` level. Admin-only management via `/api/visibility/grants`
 - **Default user:** When SSO disabled, a stable `default-admin` user is returned (no credential check)
 - **5 Teams:** Dagger, Vault, Prism, Relay, Oasis — each owning specific DAGs and Iceberg namespaces
+
+> **Security Warning:** When `SSO_ENABLED=false` (the Python default in config.py), the backend returns a default admin user for ALL requests with NO credential check. This is acceptable only for local development. Production deployments MUST set `SSO_ENABLED=true`.
 
 ## Frontend Architecture
 

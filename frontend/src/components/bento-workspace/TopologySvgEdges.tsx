@@ -1,3 +1,4 @@
+import { memo } from "react";
 import type { EdgePath } from "./hooks/useEdgeDrawing";
 
 /* ── Props ─────────────────────────────────────────────────────────── */
@@ -15,7 +16,7 @@ const SVG_OVERLAY_STYLE: React.CSSProperties = {
   overflow: "visible",
 };
 
-export function TopologySvgEdges({ edgePaths, hoveredNode }: TopologySvgEdgesProps) {
+export const TopologySvgEdges = memo(function TopologySvgEdges({ edgePaths, hoveredNode }: TopologySvgEdgesProps) {
   return (
     <svg className="absolute inset-0 pointer-events-none" style={SVG_OVERLAY_STYLE}>
       <defs>
@@ -49,4 +50,4 @@ export function TopologySvgEdges({ edgePaths, hoveredNode }: TopologySvgEdgesPro
       })}
     </svg>
   );
-}
+});

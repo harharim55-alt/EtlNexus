@@ -3,6 +3,10 @@
 Pipeline data changes only every 20-min sync cycle, so short-lived caches
 (30–60 s) eliminate redundant DB queries between syncs.  All caches are
 cleared after each sync/poll cycle completes.
+
+NOTE: This cache is process-local. In multi-instance deployments, each
+process has its own cache. clear_all() only affects the local process.
+See docs/adr/001-in-memory-cache-design.md for migration path to Redis.
 """
 
 import logging
@@ -12,6 +16,8 @@ from typing import Any
 from app.config import settings
 
 logger = logging.getLogger(__name__)
+
+_MAX_ENTRIES = 5000
 
 
 class TTLCache[T]:
@@ -32,7 +38,14 @@ class TTLCache[T]:
         return value
 
     def set(self, key: str, value: T) -> None:
-        self._store[key] = (time.monotonic(), value)
+        now = time.monotonic()
+        # Lazy eviction when store grows large
+        if len(self._store) >= _MAX_ENTRIES:
+            self._store = {
+                k: v for k, v in self._store.items()
+                if now - v[0] <= self._ttl
+            }
+        self._store[key] = (now, value)
 
     def clear(self) -> None:
         self._store.clear()
