@@ -23,7 +23,7 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
-CATALOG_URL = "http://iceberg-rest:8181"
+CATALOG_URL = os.environ.get("ICEBERG_CATALOG_URI", "http://iceberg-rest:8181")
 SEED = 42
 random.seed(SEED)
 

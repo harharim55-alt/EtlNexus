@@ -5,12 +5,13 @@ respective table schemas.
 """
 
 import json
+import os
 import sys
 import time
 import urllib.request
 import urllib.error
 
-CATALOG_URL = "http://iceberg-rest:8181"
+CATALOG_URL = os.environ.get("ICEBERG_CATALOG_URI", "http://iceberg-rest:8181")
 
 # Tables organized by team namespace
 NAMESPACES = {

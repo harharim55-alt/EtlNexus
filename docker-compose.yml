@@ -3,6 +3,7 @@ services:
   # Core Services
   # ============================================
   db:
+    container_name: db
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-etlnexus}
@@ -19,6 +20,7 @@ services:
       retries: 5
 
   backend:
+    container_name: backend
     image: etlnexus-backend
     build:
       context: ./backend
@@ -50,6 +52,7 @@ services:
           path: ./backend/pyproject.toml
 
   frontend:
+    container_name: frontend
     image: etlnexus-frontend
     build:
       context: ./frontend
@@ -57,6 +60,8 @@ services:
       target: production
       args:
         VITE_AIRFLOW_URL: http://${HOSTNAME:-localhost}:8080
+    environment:
+      VITE_AIRFLOW_URL: http://${HOSTNAME:-localhost}:8080
     ports:
       - "5173:80"
     healthcheck:
@@ -79,6 +84,7 @@ services:
   # Dev-only: Oasis Prod (usage metrics DB)
   # ============================================
   oasis-prod-db:
+    container_name: oasis-prod-db
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: oasis_prod
@@ -99,6 +105,7 @@ services:
   # Dev-only: Airflow (for testing)
   # ============================================
   airflow-db:
+    container_name: airflow-db
     image: postgres:16-alpine
     environment:
       POSTGRES_DB: airflow
@@ -113,6 +120,7 @@ services:
       retries: 5
 
   airflow-init:
+    container_name: airflow-init
     image: etlnexus-airflow-init
     build:
       context: .
@@ -137,6 +145,7 @@ services:
         condition: service_healthy
 
   airflow-webserver:
+    container_name: airflow-webserver
     image: etlnexus-airflow-webserver
     build:
       context: .
@@ -149,6 +158,7 @@ services:
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
       AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
       AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
+      ICEBERG_CATALOG_URI: http://iceberg-rest:8181
     volumes:
       - ./dev/dags:/opt/airflow/dags
       - ./dev/seeds/etl_code:/data/etl-code
@@ -165,6 +175,7 @@ services:
       retries: 5
 
   airflow-scheduler:
+    container_name: airflow-scheduler
     image: etlnexus-airflow-scheduler
     build:
       context: .
@@ -175,6 +186,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ""
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
+      ICEBERG_CATALOG_URI: http://iceberg-rest:8181
     volumes:
       - ./dev/dags:/opt/airflow/dags
       - ./dev/seeds/etl_code:/data/etl-code
@@ -190,6 +202,7 @@ services:
   # Dev-only: Keycloak (SSO)
   # ============================================
   keycloak:
+    container_name: keycloak
     image: quay.io/keycloak/keycloak:26.2
     command: start-dev --import-realm
     environment:
@@ -208,12 +221,14 @@ services:
   # Dev-only: Iceberg REST Catalog
   # ============================================
   iceberg-volume-init:
+    container_name: iceberg-volume-init
     image: alpine:latest
     volumes:
       - iceberg-warehouse:/tmp/warehouse
     command: sh -c "chmod 1777 /tmp/warehouse"
 
   iceberg-rest:
+    container_name: iceberg-rest
     image: tabulario/iceberg-rest:latest
     environment:
       CATALOG_WAREHOUSE: /tmp/warehouse
@@ -233,7 +248,10 @@ services:
       start_period: 10s
 
   iceberg-seed:
+    container_name: iceberg-seed
     image: python:3.12-slim
+    environment:
+      ICEBERG_CATALOG_URI: http://iceberg-rest:8181
     volumes:
       - ./dev/seeds:/seeds
     command: python /seeds/seed_iceberg.py
@@ -242,11 +260,14 @@ services:
         condition: service_healthy
 
   iceberg-data-seed:
+    container_name: iceberg-data-seed
     image: etlnexus-iceberg-data-seed
     build:
       context: .
       dockerfile: dev/airflow/Dockerfile
     user: "0"
+    environment:
+      ICEBERG_CATALOG_URI: http://iceberg-rest:8181
     volumes:
       - ./dev/seeds:/seeds
       - iceberg-warehouse:/tmp/warehouse
