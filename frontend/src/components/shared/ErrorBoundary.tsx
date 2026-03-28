@@ -31,10 +31,10 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
   render() {
     if (this.state.hasError) {
       return (
-        <div className="min-h-screen flex items-center justify-center bg-[#09090b] px-6">
+        <div className="min-h-screen flex items-center justify-center bg-background px-6">
           <div className="max-w-md w-full text-center">
-            <div className="text-4xl font-bold text-white mb-2">Something went wrong</div>
-            <p className="text-sm text-slate-400 mb-6">
+            <div className="text-4xl font-bold text-foreground mb-2">Something went wrong</div>
+            <p className="text-sm text-text-secondary mb-6">
               An unexpected error occurred. Please try reloading the page.
             </p>
             {this.state.error && (

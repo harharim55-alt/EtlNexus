@@ -28,8 +28,8 @@ export function AdminView() {
             <Shield className="w-5 h-5 text-rose-400" />
           </div>
           <div>
-            <h1 className="text-xl font-semibold text-white">Access Control</h1>
-            <p className="text-xs text-slate-500 font-mono mt-0.5">
+            <h1 className="text-xl font-semibold text-foreground">Access Control</h1>
+            <p className="text-xs text-text-muted font-mono mt-0.5">
               {users?.pages[0]?.total ?? 0} users &middot; {teams?.length ?? 0} teams &middot;{" "}
               {grants?.pages[0]?.total ?? 0} grants
             </p>
@@ -45,8 +45,8 @@ export function AdminView() {
               onClick={() => setActiveSubTab(key)}
               className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-mono transition-all cursor-pointer ${
                 activeSubTab === key
-                  ? "bg-white/[0.06] text-white border border-white/[0.08]"
-                  : "text-slate-500 border border-transparent hover:text-slate-300 hover:bg-white/[0.03]"
+                  ? "bg-hover-bg-strong text-foreground border border-border"
+                  : "text-text-muted border border-transparent hover:text-text-primary hover:bg-hover-bg"
               }`}
             >
               <Icon className="size-3.5" />

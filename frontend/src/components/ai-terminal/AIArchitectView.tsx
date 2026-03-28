@@ -24,7 +24,7 @@ export function AIArchitectView() {
   };
 
   return (
-    <div data-section="ai-terminal" className="flex-1 flex flex-col h-full bg-[#09090b]">
+    <div data-section="ai-terminal" className="flex-1 flex flex-col h-full bg-background">
       <TerminalHeader onClear={clearHistory} />
       <div
         ref={scrollRef}

@@ -32,12 +32,12 @@ export const DagCard = memo(function DagCard({ dag }: DagCardProps) {
   const failedTotal = (dag.status_counts.failed ?? 0) + (dag.status_counts.upstream_failed ?? 0);
 
   return (
-    <div className="bg-[#18181b] border border-white/5 rounded-2xl p-5 flex flex-col gap-4 hover:border-white/10 transition-colors">
+    <div className="bg-card border border-border rounded-2xl p-5 flex flex-col gap-4 hover:border-border-prominent transition-colors">
       {/* Header */}
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className={`w-2.5 h-2.5 rounded-full shrink-0 ${statusGlow(dag)}`} />
-          <h3 className="text-base font-semibold text-white font-mono truncate">
+          <h3 className="text-base font-semibold text-foreground font-mono truncate">
             {formatDagName(dag.dag_id)}
           </h3>
         </div>

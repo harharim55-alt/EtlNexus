@@ -77,13 +77,13 @@ export function UsersPanel() {
     <div className="space-y-3">
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-slate-600" />
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-text-faint" />
         <input
           type="text"
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           placeholder="Search by name or email..."
-          className="w-full bg-[#0f0f11] border border-white/[0.06] rounded-lg pl-9 pr-3 py-2 text-sm text-white placeholder:text-slate-600 focus:outline-none focus:border-indigo-500/40 transition-colors"
+          className="w-full bg-surface-alt border border-border rounded-lg pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-text-faint focus:outline-none focus:border-indigo-500/40 transition-colors"
         />
       </div>
 
@@ -98,10 +98,10 @@ export function UsersPanel() {
             return (
               <div
                 key={u.id}
-                className={`bg-[#0f0f11] border rounded-xl transition-colors ${
+                className={`bg-surface-alt border rounded-xl transition-colors ${
                   isExpanded
                     ? "border-indigo-500/20"
-                    : "border-white/[0.04] hover:border-white/[0.08]"
+                    : "border-border hover:border-border"
                 }`}
               >
                 <div
@@ -112,7 +112,7 @@ export function UsersPanel() {
 
                   <div className={`flex-1 min-w-0 ${!u.is_active ? "opacity-50" : ""}`}>
                     <div className="flex items-center gap-2">
-                      <span className="text-sm font-medium text-white truncate">
+                      <span className="text-sm font-medium text-foreground truncate">
                         {u.display_name}
                       </span>
                       {!u.is_active && (
@@ -125,7 +125,7 @@ export function UsersPanel() {
                           {u.teams.map((t) => (
                             <span
                               key={t.id}
-                              className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-slate-500 border border-white/[0.06]"
+                              className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-hover-bg text-text-muted border border-border"
                             >
                               {t.name}
                             </span>
@@ -133,7 +133,7 @@ export function UsersPanel() {
                         </div>
                       )}
                     </div>
-                    <p className="text-xs text-slate-500 font-mono mt-0.5 truncate">
+                    <p className="text-xs text-text-muted font-mono mt-0.5 truncate">
                       {u.email}
                     </p>
                   </div>
@@ -163,7 +163,7 @@ export function UsersPanel() {
                             className={`text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
                               role === u.role
                                 ? ROLE_STYLES[role]
-                                : "text-slate-600 bg-transparent border-white/[0.06] hover:border-white/10 hover:text-slate-400"
+                                : "text-text-faint bg-transparent border-border hover:border-border-prominent hover:text-text-secondary"
                             }`}
                           >
                             {role}
@@ -198,7 +198,7 @@ export function UsersPanel() {
                       title={u.is_active ? "Deactivate user" : "Activate user"}
                       className={`p-1.5 rounded-md border transition-all cursor-pointer ${
                         u.is_active
-                          ? "text-slate-500 border-transparent hover:text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/20"
+                          ? "text-text-muted border-transparent hover:text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/20"
                           : "text-rose-400 bg-rose-500/10 border-rose-500/20"
                       }`}
                     >
@@ -207,7 +207,7 @@ export function UsersPanel() {
                   </div>
 
                   <ChevronDown
-                    className={`size-4 text-slate-600 shrink-0 transition-transform ${
+                    className={`size-4 text-text-faint shrink-0 transition-transform ${
                       isExpanded ? "rotate-180" : ""
                     }`}
                   />
@@ -215,13 +215,13 @@ export function UsersPanel() {
 
                 {/* Expanded grants section */}
                 {isExpanded && (
-                  <div className="px-4 pb-4 pt-0 border-t border-white/[0.04]">
+                  <div className="px-4 pb-4 pt-0 border-t border-border">
                     <div className="pt-3">
-                      <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+                      <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
                         User Grants ({userGrants.length})
                       </span>
                       {userGrants.length === 0 ? (
-                        <p className="text-xs text-slate-600 mt-2">
+                        <p className="text-xs text-text-faint mt-2">
                           No grants assigned to this user
                         </p>
                       ) : (
@@ -235,9 +235,9 @@ export function UsersPanel() {
                             return (
                               <div
                                 key={g.id}
-                                className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-white/[0.02]"
+                                className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-hover-bg"
                               >
-                                <ArrowRight className="size-3 text-slate-600 shrink-0" />
+                                <ArrowRight className="size-3 text-text-faint shrink-0" />
                                 <span
                                   className={`text-xs ${
                                     g.pipeline_id
@@ -254,7 +254,7 @@ export function UsersPanel() {
                                 >
                                   {g.grant_level}
                                 </span>
-                                <span className="text-[10px] font-mono text-slate-600 ml-auto">
+                                <span className="text-[10px] font-mono text-text-faint ml-auto">
                                   {formatDateAdmin(g.created_at)}
                                 </span>
                               </div>
@@ -274,7 +274,7 @@ export function UsersPanel() {
               type="button"
               onClick={() => fetchNextUsers()}
               disabled={isFetchingMoreUsers}
-              className="w-full py-3 rounded-xl border border-dashed border-white/[0.06] text-slate-600 hover:text-indigo-400 hover:border-indigo-500/20 transition-all cursor-pointer text-xs font-mono disabled:opacity-40"
+              className="w-full py-3 rounded-xl border border-dashed border-border text-text-faint hover:text-indigo-400 hover:border-indigo-500/20 transition-all cursor-pointer text-xs font-mono disabled:opacity-40"
             >
               {isFetchingMoreUsers
                 ? "Loading..."

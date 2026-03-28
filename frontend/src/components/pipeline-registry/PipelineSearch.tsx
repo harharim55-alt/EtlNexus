@@ -27,11 +27,11 @@ export function PipelineSearch() {
   return (
     <div className="flex items-center gap-2">
       <div className="relative flex-1">
-        <Search className="h-4 w-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+        <Search className="h-4 w-4 text-text-muted absolute left-3 top-1/2 -translate-y-1/2" />
         <input
           type="text"
           placeholder="Search pipelines or fields..."
-          className="w-full bg-[#18181b] border border-white/10 rounded-lg pl-9 pr-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
+          className="w-full bg-card border border-border-prominent rounded-lg pl-9 pr-4 py-2 text-sm text-foreground placeholder-slate-500 focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 transition-all"
           value={localQuery}
           onChange={(e) => setLocalQuery(e.target.value)}
         />
@@ -42,7 +42,7 @@ export function PipelineSearch() {
         className={`relative p-2 rounded-lg border transition-all duration-200 shrink-0 cursor-pointer ${
           filtersOpen || activeFilterCount > 0
             ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/25"
-            : "text-slate-500 bg-[#18181b] border-white/10 hover:text-slate-300 hover:border-white/20"
+            : "text-text-muted bg-card border-border-prominent hover:text-text-primary hover:border-border-prominent"
         }`}
       >
         <SlidersHorizontal className="size-4" />

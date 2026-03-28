@@ -7,7 +7,7 @@ export function FallbackFormatter({ node }: { node: ExecutionPlanNode }) {
   return (
     <div className="space-y-4">
       {detail && (
-        <div className="text-xs font-mono text-slate-300 bg-black/30 p-3 rounded-lg break-all leading-relaxed whitespace-pre-wrap">
+        <div className="text-xs font-mono text-text-primary bg-surface-inset p-3 rounded-lg break-all leading-relaxed whitespace-pre-wrap">
           {detail}
         </div>
       )}
@@ -16,12 +16,12 @@ export function FallbackFormatter({ node }: { node: ExecutionPlanNode }) {
           {entries.map(([key, val]) => (
             <div
               key={key}
-              className="flex items-center justify-between bg-black/30 px-3 py-2 rounded-lg"
+              className="flex items-center justify-between bg-surface-inset px-3 py-2 rounded-lg"
             >
-              <span className="text-[10px] font-mono text-slate-500">
+              <span className="text-[10px] font-mono text-text-muted">
                 {key}
               </span>
-              <span className="text-xs font-mono text-slate-300">{val}</span>
+              <span className="text-xs font-mono text-text-primary">{val}</span>
             </div>
           ))}
         </div>

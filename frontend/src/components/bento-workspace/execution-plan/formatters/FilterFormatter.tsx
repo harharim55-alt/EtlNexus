@@ -30,13 +30,13 @@ function highlightSQL(text: string) {
 /* ── Shared styles ─────────────────────────────────────────────── */
 
 const groupCard =
-  "bg-white/[0.02] border border-white/[0.06] rounded-lg px-3 py-2.5";
+  "bg-hover-bg border border-border rounded-lg px-3 py-2.5";
 const groupLabel =
-  "text-[9px] font-mono uppercase tracking-widest text-slate-600 flex items-center gap-1.5 mb-2";
+  "text-[9px] font-mono uppercase tracking-widest text-text-faint flex items-center gap-1.5 mb-2";
 const valuePill =
   "text-[11px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/20";
 const mutedPill =
-  "text-[11px] font-mono px-1.5 py-0.5 rounded bg-white/[0.04] text-slate-500 border border-white/[0.06]";
+  "text-[11px] font-mono px-1.5 py-0.5 rounded bg-hover-bg text-text-muted border border-border";
 
 /* ── Group renderers ───────────────────────────────────────────── */
 
@@ -62,9 +62,9 @@ function DateRangeGroup({ ranges }: { ranges: SmartFilter["dateRanges"] }) {
       <div className="space-y-1">
         {ranges.map((r, i) => (
           <div key={i} className="flex items-center gap-2 text-xs font-mono">
-            <span className="text-slate-400">{r.column}</span>
+            <span className="text-text-secondary">{r.column}</span>
             <span className="text-emerald-400">{formatDateVal(r.from)}</span>
-            <span className="text-slate-600">→</span>
+            <span className="text-text-faint">→</span>
             <span className="text-emerald-400">{formatDateVal(r.to)}</span>
           </div>
         ))}
@@ -84,7 +84,7 @@ function InListGroup({ lists }: { lists: SmartFilter["inLists"] }) {
       <div className="space-y-2">
         {lists.map((item, i) => (
           <div key={i} className="flex items-start gap-2">
-            <span className="text-xs font-mono text-slate-300 shrink-0 mt-0.5">
+            <span className="text-xs font-mono text-text-primary shrink-0 mt-0.5">
               {item.column}{" "}
               <span className="text-violet-400">IN</span>
             </span>
@@ -156,7 +156,7 @@ function NotNullGroup({ columns }: { columns: string[] }) {
     <div className={groupCard}>
       <div className={groupLabel}>
         Required Fields
-        <span className="text-slate-700">({columns.length})</span>
+        <span className="text-text-faint">({columns.length})</span>
       </div>
       <div className="flex flex-wrap gap-1">
         {columns.map((col, i) => (
@@ -181,11 +181,11 @@ function ComplexGroup({ predicates }: { predicates: string[] }) {
           return (
             <div key={i} className="font-mono text-xs">
               {lines.length === 1 ? (
-                <span className="text-slate-300 break-all">{highlightSQL(lines[0])}</span>
+                <span className="text-text-primary break-all">{highlightSQL(lines[0])}</span>
               ) : (
                 <div className="space-y-0.5">
                   {lines.map((line, j) => (
-                    <div key={j} className="text-slate-300" style={{ whiteSpace: "pre" }}>
+                    <div key={j} className="text-text-primary" style={{ whiteSpace: "pre" }}>
                       {highlightSQL(line)}
                     </div>
                   ))}
@@ -218,9 +218,9 @@ export function FilterFormatter({ node }: { node: ExecutionPlanNode }) {
     <div className="space-y-3">
       <div className="flex items-center gap-2">
         <FilterIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-        <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+        <span className="text-[10px] font-mono uppercase tracking-widest text-text-muted">
           Filter
-          <span className="ml-1.5 text-slate-600">
+          <span className="ml-1.5 text-text-faint">
             ({totalConditions} condition{totalConditions !== 1 ? "s" : ""})
           </span>
         </span>

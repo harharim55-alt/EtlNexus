@@ -15,12 +15,12 @@ export function JoinFormatter({ node }: { node: ExecutionPlanNode }) {
           {joinType}
         </span>
         {strategy && (
-          <span className="text-[9px] font-mono text-slate-400 bg-white/5 border border-white/10 rounded-md px-1.5 py-0.5">
+          <span className="text-[9px] font-mono text-text-secondary bg-hover-bg border border-border-prominent rounded-md px-1.5 py-0.5">
             {strategy}
           </span>
         )}
         {buildSide && (
-          <span className="text-[9px] font-mono text-slate-500 bg-white/[0.03] rounded px-1.5 py-0.5">
+          <span className="text-[9px] font-mono text-text-muted bg-hover-bg rounded px-1.5 py-0.5">
             build {buildSide}
           </span>
         )}
@@ -28,11 +28,11 @@ export function JoinFormatter({ node }: { node: ExecutionPlanNode }) {
 
       {/* Equi-join keys */}
       {(leftKey || rightKey) && (
-        <div className="flex items-center gap-3 px-4 py-3 bg-black/20 rounded-xl border border-white/[0.04]">
+        <div className="flex items-center gap-3 px-4 py-3 bg-surface-inset rounded-xl border border-border">
           <span className="text-xs font-mono text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-0.5">
             {leftKey || "?"}
           </span>
-          <ArrowRight className="w-4 h-4 text-slate-600 shrink-0" />
+          <ArrowRight className="w-4 h-4 text-text-faint shrink-0" />
           <span className="text-xs font-mono text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-md px-2 py-0.5">
             {rightKey || leftKey || "?"}
           </span>
@@ -42,10 +42,10 @@ export function JoinFormatter({ node }: { node: ExecutionPlanNode }) {
       {/* Non-equi join condition */}
       {condition && !leftKey && !rightKey && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-600 mb-1.5">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-faint mb-1.5">
             Condition
           </div>
-          <div className="text-[11px] font-mono text-slate-300 bg-black/30 p-3 rounded-lg break-all leading-relaxed">
+          <div className="text-[11px] font-mono text-text-primary bg-surface-inset p-3 rounded-lg break-all leading-relaxed">
             {condition}
           </div>
         </div>
@@ -53,7 +53,7 @@ export function JoinFormatter({ node }: { node: ExecutionPlanNode }) {
 
       {/* No condition at all (CartesianProduct) */}
       {!leftKey && !rightKey && !condition && joinType === "CROSS" && (
-        <div className="text-[11px] font-mono text-slate-500 italic px-4 py-2">
+        <div className="text-[11px] font-mono text-text-muted italic px-4 py-2">
           No join condition (cartesian product)
         </div>
       )}

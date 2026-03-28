@@ -19,37 +19,37 @@ export function JoinIntelligence({ pipelineId }: JoinIntelligenceProps) {
   });
 
   return (
-    <div className="bg-[#18181b] border border-white/5 rounded-2xl p-5 flex-1 flex flex-col gap-5">
+    <div className="bg-card border border-border rounded-2xl p-5 flex-1 flex flex-col gap-5">
       {/* Schema Matches */}
       <div>
         <div className="flex items-center gap-2 mb-3">
-          <h3 className="text-[11px] font-mono uppercase tracking-widest text-slate-400 flex items-center gap-2">
+          <h3 className="text-[11px] font-mono uppercase tracking-widest text-text-secondary flex items-center gap-2">
             <Database className="w-3.5 h-3.5" /> Schema Matches
           </h3>
         </div>
         {isLoading ? (
           <div className="space-y-2">
-            <Skeleton className="h-16 bg-white/5 rounded-lg" />
-            <Skeleton className="h-16 bg-white/5 rounded-lg" />
+            <Skeleton className="h-16 bg-hover-bg rounded-lg" />
+            <Skeleton className="h-16 bg-hover-bg rounded-lg" />
           </div>
         ) : data && data.schema_matches.length > 0 ? (
           <div className="space-y-2">
             {data.schema_matches.slice(0, 2).map((match) => (
               <div
                 key={match.pipeline_id}
-                className="p-2.5 rounded-lg bg-white/5 border border-white/5 flex flex-col gap-1.5"
+                className="p-2.5 rounded-lg bg-hover-bg border border-border flex flex-col gap-1.5"
               >
-                <div className="font-medium text-[13px] text-slate-200">
+                <div className="font-medium text-[13px] text-text-primary">
                   {stripDummy(match.pipeline_name)}
                 </div>
                 <div className="flex flex-wrap gap-1.5 items-center">
-                  <span className="text-[10px] text-slate-500 font-mono">
+                  <span className="text-[10px] text-text-muted font-mono">
                     ON:
                   </span>
                   {match.shared_fields.map((f) => (
                     <span
                       key={f}
-                      className="text-[10px] bg-[#09090b] text-slate-300 px-1.5 py-0.5 rounded font-mono border border-white/10"
+                      className="text-[10px] bg-background text-text-primary px-1.5 py-0.5 rounded font-mono border border-border-prominent"
                     >
                       {f}
                     </span>
@@ -59,7 +59,7 @@ export function JoinIntelligence({ pipelineId }: JoinIntelligenceProps) {
             ))}
           </div>
         ) : (
-          <div className="text-xs text-slate-600 font-mono">
+          <div className="text-xs text-text-faint font-mono">
             No schema matches found
           </div>
         )}

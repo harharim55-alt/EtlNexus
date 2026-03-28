@@ -29,9 +29,9 @@ export function DependencySection({ needs, prefers, onTaskClick }: DependencySec
   return (
     <>
       <div className="flex-1 min-w-0 max-w-[240px] self-center">
-        <span className="text-[9px] font-mono uppercase tracking-[0.15em] text-slate-600 mb-2 block text-center">
+        <span className="text-[9px] font-mono uppercase tracking-[0.15em] text-text-faint mb-2 block text-center">
           Dependencies
-          <span className="text-slate-700 ml-1.5">
+          <span className="text-text-faint ml-1.5">
             ({totalNP})
           </span>
         </span>

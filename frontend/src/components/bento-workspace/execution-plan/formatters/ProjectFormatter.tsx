@@ -12,9 +12,9 @@ export function ProjectFormatter({ node }: { node: ExecutionPlanNode }) {
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <Columns3 className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-        <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+        <span className="text-[10px] font-mono uppercase tracking-widest text-text-muted">
           Output Columns
-          <span className="ml-1.5 text-slate-600">({total})</span>
+          <span className="ml-1.5 text-text-faint">({total})</span>
         </span>
       </div>
 
@@ -22,9 +22,9 @@ export function ProjectFormatter({ node }: { node: ExecutionPlanNode }) {
       {passthrough.length > 0 && (
         <div>
           {(renamed.length > 0 || computed.length > 0) && (
-            <div className="text-[10px] font-mono uppercase tracking-widest text-slate-600 mb-1.5">
+            <div className="text-[10px] font-mono uppercase tracking-widest text-text-faint mb-1.5">
               Passthrough
-              <span className="ml-1.5 text-slate-700">
+              <span className="ml-1.5 text-text-faint">
                 ({passthrough.length})
               </span>
             </div>
@@ -45,9 +45,9 @@ export function ProjectFormatter({ node }: { node: ExecutionPlanNode }) {
       {/* Renamed columns */}
       {renamed.length > 0 && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-600 mb-1.5">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-faint mb-1.5">
             Renamed
-            <span className="ml-1.5 text-slate-700">({renamed.length})</span>
+            <span className="ml-1.5 text-text-faint">({renamed.length})</span>
           </div>
           <div className="space-y-1">
             {renamed.map((r, i) => (
@@ -55,7 +55,7 @@ export function ProjectFormatter({ node }: { node: ExecutionPlanNode }) {
                 key={i}
                 className="flex items-center gap-2 px-3 py-1.5 bg-amber-500/5 rounded-lg border border-amber-500/10"
               >
-                <span className="text-[11px] font-mono text-slate-400">
+                <span className="text-[11px] font-mono text-text-secondary">
                   {r.from}
                 </span>
                 <ArrowRight className="w-3 h-3 text-amber-400 shrink-0" />
@@ -71,9 +71,9 @@ export function ProjectFormatter({ node }: { node: ExecutionPlanNode }) {
       {/* Computed expressions */}
       {computed.length > 0 && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-600 mb-1.5">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-faint mb-1.5">
             Computed
-            <span className="ml-1.5 text-slate-700">({computed.length})</span>
+            <span className="ml-1.5 text-text-faint">({computed.length})</span>
           </div>
           <div className="space-y-1">
             {computed.map((c, i) => (
@@ -86,8 +86,8 @@ export function ProjectFormatter({ node }: { node: ExecutionPlanNode }) {
                     <span className="text-violet-300 font-semibold">
                       {c.alias}
                     </span>
-                    <span className="text-slate-600 mx-1">=</span>
-                    <span className="text-slate-400">{c.expression}</span>
+                    <span className="text-text-faint mx-1">=</span>
+                    <span className="text-text-secondary">{c.expression}</span>
                   </>
                 ) : (
                   c.expression

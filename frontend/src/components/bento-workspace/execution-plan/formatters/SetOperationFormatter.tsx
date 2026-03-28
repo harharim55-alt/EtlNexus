@@ -20,7 +20,7 @@ export function SetOperationFormatter({ node }: { node: ExecutionPlanNode }) {
             ALL
           </span>
         )}
-        <span className="text-[10px] font-mono text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
+        <span className="text-[10px] font-mono text-text-muted bg-hover-bg px-1.5 py-0.5 rounded">
           {node.children.length} branches
         </span>
       </div>

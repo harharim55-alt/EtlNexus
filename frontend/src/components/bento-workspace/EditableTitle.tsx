@@ -81,18 +81,18 @@ export function EditableTitle({
           value={editValue}
           onChange={(e) => setEditValue(e.target.value)}
           onKeyDown={handleKeyDown}
-          className="w-full bg-[#09090b] border border-indigo-500/40 rounded-xl p-4 text-sm text-slate-300 leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all resize-none placeholder:text-slate-600"
+          className="w-full bg-background border border-indigo-500/40 rounded-xl p-4 text-sm text-text-primary leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all resize-none placeholder:text-text-faint"
           rows={3}
           placeholder="Enter a brief description of this pipeline..."
         />
         <div className="flex items-center justify-between mt-2">
-          <span className="text-[10px] text-slate-600 font-mono select-none">
+          <span className="text-[10px] text-text-faint font-mono select-none">
             Ctrl+Enter to save · Esc to cancel
           </span>
           <div className="flex gap-2">
             <button
               onClick={handleCancelEdit}
-              className="px-3 py-1.5 text-xs text-slate-400 hover:text-white transition-colors rounded-lg"
+              className="px-3 py-1.5 text-xs text-text-secondary hover:text-foreground transition-colors rounded-lg"
             >
               Cancel
             </button>
@@ -112,9 +112,9 @@ export function EditableTitle({
 
   return (
     <div className="mt-3 group/desc relative">
-      <p className="text-slate-400 text-sm leading-relaxed max-w-3xl pr-10">
+      <p className="text-text-secondary text-sm leading-relaxed max-w-3xl pr-10">
         {description || (
-          <span className="text-slate-600 italic">No description</span>
+          <span className="text-text-faint italic">No description</span>
         )}
       </p>
       <div className="absolute top-0 right-0 flex items-center gap-0.5 opacity-0 group-hover/desc:opacity-100 transition-all duration-200">
@@ -122,16 +122,16 @@ export function EditableTitle({
         <div className="relative" ref={descHistoryRef}>
           <button
             onClick={() => setDescHistoryOpen((v) => !v)}
-            className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20 transition-all duration-200"
+            className="p-1.5 text-text-faint hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20 transition-all duration-200"
             title="Description history"
           >
             <History className="size-3.5" />
           </button>
           {descHistoryOpen && (
-            <div className="absolute top-full right-0 mt-1 z-50 w-80 bg-[#111116] border border-white/[0.08] rounded-xl shadow-2xl shadow-black/50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-              <div className="px-4 py-2.5 border-b border-white/[0.06] flex items-center justify-between">
-                <span className="text-[11px] font-semibold text-white tracking-tight">Description History</span>
-                <button onClick={() => setDescHistoryOpen(false)} className="p-0.5 text-slate-500 hover:text-white transition-colors rounded">
+            <div className="absolute top-full right-0 mt-1 z-50 w-80 bg-surface-raised border border-border rounded-xl shadow-2xl shadow-black/50 overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+              <div className="px-4 py-2.5 border-b border-border flex items-center justify-between">
+                <span className="text-[11px] font-semibold text-foreground tracking-tight">Description History</span>
+                <button onClick={() => setDescHistoryOpen(false)} className="p-0.5 text-text-muted hover:text-foreground transition-colors rounded">
                   <X className="size-3" />
                 </button>
               </div>
@@ -150,7 +150,7 @@ export function EditableTitle({
               setEditValue(description ?? "");
               setIsEditingDesc(true);
             }}
-            className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20 transition-all duration-200"
+            className="p-1.5 text-text-faint hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg border border-transparent hover:border-indigo-500/20 transition-all duration-200"
             title="Edit Description"
           >
             <Edit3 className="size-3.5" />

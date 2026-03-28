@@ -5,7 +5,7 @@ export function LoginPage() {
   const auth = useAuth();
 
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-[#09090b]">
+    <div className="flex h-screen w-full items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-8">
         {/* Logo + branding */}
         <div className="flex flex-col items-center gap-4">
@@ -13,18 +13,18 @@ export function LoginPage() {
             <Shield className="size-8 text-indigo-400" />
           </div>
           <div className="text-center">
-            <h1 className="text-2xl font-bold text-white tracking-tight">
+            <h1 className="text-2xl font-bold text-foreground tracking-tight">
               ETL Nexus
             </h1>
-            <p className="text-sm text-slate-500 mt-1">
+            <p className="text-sm text-text-muted mt-1">
               Data Architecture Command Center
             </p>
           </div>
         </div>
 
         {/* Sign-in card */}
-        <div className="w-80 bg-[#18181b] border border-white/[0.08] rounded-2xl p-8 flex flex-col items-center gap-6">
-          <p className="text-sm text-slate-400 text-center">
+        <div className="w-80 bg-card border border-border rounded-2xl p-8 flex flex-col items-center gap-6">
+          <p className="text-sm text-text-secondary text-center">
             Sign in with your organization account to continue
           </p>
 
@@ -44,7 +44,7 @@ export function LoginPage() {
           )}
         </div>
 
-        <p className="text-[10px] text-slate-700 font-mono">
+        <p className="text-[10px] text-text-faint font-mono">
           Secure authentication via OpenID Connect
         </p>
       </div>

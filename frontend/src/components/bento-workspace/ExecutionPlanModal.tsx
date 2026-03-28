@@ -23,7 +23,7 @@ interface ExecutionPlanModalProps {
 
 const DOT_GRID_STYLE: React.CSSProperties = {
   backgroundImage:
-    "radial-gradient(rgba(148,163,184,0.07) 1px, transparent 1px)",
+    "radial-gradient(rgba(128,128,128,0.07) 1px, transparent 1px)",
   backgroundSize: "24px 24px",
 };
 
@@ -89,32 +89,32 @@ export function ExecutionPlanModal({
       />
 
       {/* Modal panel */}
-      <div className="relative w-full max-w-[92vw] h-[88vh] bg-[#0a0a0f] border border-white/[0.06] rounded-2xl shadow-2xl shadow-black/60 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-[92vw] h-[88vh] bg-surface-modal border border-border rounded-2xl shadow-2xl shadow-black/60 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         <style>{treeStyles}</style>
 
         {/* ── Header ──────────────────────────────────────────────── */}
-        <div className="px-6 py-3.5 border-b border-white/[0.06] bg-[#0e0e14] flex items-center gap-4 shrink-0">
+        <div className="px-6 py-3.5 border-b border-border bg-surface-modal-header flex items-center gap-4 shrink-0">
           {/* Icon + Title */}
           <div className="size-8 bg-indigo-500/10 border border-indigo-500/20 rounded-lg flex items-center justify-center shrink-0">
             <GitMerge className="size-4 text-indigo-400" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-white tracking-tight truncate">
+            <h2 className="text-sm font-semibold text-foreground tracking-tight truncate">
               Logical Execution DAG
             </h2>
-            <p className="text-[10px] text-slate-600 font-mono mt-0.5">
+            <p className="text-[10px] text-text-faint font-mono mt-0.5">
               Physical query plan with metrics
             </p>
           </div>
 
           {/* DAG + duration pills */}
-          <div className="w-px h-5 bg-white/[0.06] mx-1" />
-          <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500">
-            <span className="px-2 py-1 rounded bg-white/[0.03] border border-white/[0.05]">
+          <div className="w-px h-5 bg-hover-bg-strong mx-1" />
+          <div className="flex items-center gap-2 text-[10px] font-mono text-text-muted">
+            <span className="px-2 py-1 rounded bg-hover-bg border border-border">
               {data.dag_id}
             </span>
             {data.duration_seconds != null && (
-              <span className="px-2 py-1 rounded bg-white/[0.03] border border-white/[0.05]">
+              <span className="px-2 py-1 rounded bg-hover-bg border border-border">
                 {formatDuration(data.duration_seconds)}
               </span>
             )}
@@ -129,7 +129,7 @@ export function ExecutionPlanModal({
             className={`text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
               isOverview
                 ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/30"
-                : "text-slate-500 bg-white/[0.03] border-white/5 hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10"
+                : "text-text-muted bg-hover-bg border-border hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10"
             }`}
           >
             <ScanEye className="w-3 h-3" />
@@ -138,10 +138,10 @@ export function ExecutionPlanModal({
 
           {/* Node count stats */}
           <div className="flex items-center gap-2 shrink-0">
-            <span className="text-[9px] font-mono text-slate-600">
+            <span className="text-[9px] font-mono text-text-faint">
               {totalNodes} node{totalNodes !== 1 ? "s" : ""}
             </span>
-            <div className="w-px h-3 bg-white/[0.06]" />
+            <div className="w-px h-3 bg-hover-bg-strong" />
             <div className="flex items-center gap-1.5">
               {LEGEND.map(({ type, label }) => {
                 const count = nodeCounts[type] || 0;
@@ -165,7 +165,7 @@ export function ExecutionPlanModal({
           {/* Close */}
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-600 hover:text-white hover:bg-white/5 rounded-lg transition-all border border-transparent hover:border-white/[0.06]"
+            className="p-1.5 text-text-faint hover:text-foreground hover:bg-hover-bg rounded-lg transition-all border border-transparent hover:border-border"
           >
             <X className="size-4" />
           </button>
@@ -205,14 +205,14 @@ export function ExecutionPlanModal({
         </div>
 
         {/* ── Floating legend ─────────────────────────────────────── */}
-        <div className="absolute bottom-4 right-4 flex items-center gap-2 px-3 py-2 bg-black/70 backdrop-blur-sm border border-white/[0.06] rounded-lg">
+        <div className="absolute bottom-4 right-4 flex items-center gap-2 px-3 py-2 bg-black/70 backdrop-blur-sm border border-border rounded-lg">
           {LEGEND.map(({ type, label }) => {
             const s = NODE_STYLES[type];
             const Icon = s.icon;
             return (
               <span
                 key={type}
-                className="flex items-center gap-1.5 text-[9px] font-mono text-slate-500"
+                className="flex items-center gap-1.5 text-[9px] font-mono text-text-muted"
               >
                 <Icon className={`w-3 h-3 ${s.text}`} />
                 {label}

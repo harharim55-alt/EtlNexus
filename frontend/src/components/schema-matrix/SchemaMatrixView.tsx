@@ -1,10 +1,12 @@
-import { useEffect, useMemo, useRef, useCallback } from "react";
+import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Network } from "lucide-react";
+import { Download, Network, Search } from "lucide-react";
 import { useSchemaMatrix } from "@/hooks/use-schema-matrix";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { downloadAsCSV } from "@/lib/export";
 import { FieldFrequencyRow } from "./FieldFrequencyRow";
 
 /* ── Module-level constants ────────────────────────────────────────── */
@@ -24,6 +26,14 @@ const TOTAL_SIZE_STYLE = (height: number): React.CSSProperties => ({
 });
 
 export function SchemaMatrixView() {
+  const [searchInput, setSearchInput] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchInput), 300);
+    return () => clearTimeout(timer);
+  }, [searchInput]);
+
   const {
     data,
     fetchNextPage,
@@ -32,7 +42,7 @@ export function SchemaMatrixView() {
     isLoading,
     error,
     refetch,
-  } = useSchemaMatrix();
+  } = useSchemaMatrix(debouncedQuery);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const fields = useMemo(
@@ -48,6 +58,15 @@ export function SchemaMatrixView() {
     (el: Element) => el.getBoundingClientRect().height,
     [],
   );
+
+  const handleExportCSV = useCallback(() => {
+    const rows = fields.map((f) => ({
+      field_name: f.field_name,
+      frequency: f.frequency,
+      pipelines: f.pipelines.map((p) => p.pipeline_name).join(", "),
+    }));
+    downloadAsCSV(rows, "schema-matrix");
+  }, [fields]);
 
   const virtualizer = useVirtualizer({
     count: fields.length,
@@ -104,17 +123,38 @@ export function SchemaMatrixView() {
             <div className="bg-indigo-500/10 p-2 rounded-lg border border-indigo-500/20">
               <Network className="w-5 h-5 text-indigo-400" />
             </div>
-            <div>
-              <h1 className="text-xl font-semibold text-white">Field Frequency Matrix</h1>
-              <p className="text-xs text-slate-500 font-mono mt-0.5">
+            <div className="flex-1">
+              <h1 className="text-xl font-semibold text-foreground">Field Frequency Matrix</h1>
+              <p className="text-xs text-text-muted font-mono mt-0.5">
                 Fields shared across 2+ pipelines — {totalLabel} fields found
               </p>
             </div>
+            <Tooltip>
+              <TooltipTrigger
+                className="p-1.5 text-text-muted hover:text-foreground rounded-lg transition-colors cursor-pointer"
+                onClick={handleExportCSV}
+              >
+                <Download className="size-4" />
+              </TooltipTrigger>
+              <TooltipContent>Export CSV</TooltipContent>
+            </Tooltip>
+          </div>
+
+          {/* Search Input */}
+          <div className="relative mt-4 max-w-sm">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+            <input
+              type="text"
+              placeholder="Search fields..."
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-xs bg-hover-bg border border-border-prominent rounded-lg text-text-primary placeholder:text-text-faint focus:outline-none focus:border-indigo-500/30 transition-colors"
+            />
           </div>
         </div>
 
         {/* Column Headers */}
-        <div className="flex items-center gap-4 px-5 py-2 text-[10px] font-mono uppercase tracking-widest text-slate-600 border-b border-white/5 mb-2">
+        <div className="flex items-center gap-4 px-5 py-2 text-[10px] font-mono uppercase tracking-widest text-text-faint border-b border-border mb-2">
           <div className="w-48 shrink-0">Field Name</div>
           <div className="w-24 shrink-0">Frequency</div>
           <div className="flex-1">Pipelines</div>

@@ -26,7 +26,7 @@ export function NodeCard({
       {hasContent && (
         <button
           onClick={() => onExpand(node)}
-          className="absolute top-2 right-2 p-1 rounded-md opacity-0 group-hover/card:opacity-100 transition-opacity text-slate-500 hover:text-slate-300 hover:bg-white/5"
+          className="absolute top-2 right-2 p-1 rounded-md opacity-0 group-hover/card:opacity-100 transition-opacity text-text-muted hover:text-text-primary hover:bg-hover-bg"
           title="Expand details"
         >
           <Maximize2 className="w-3 h-3" />
@@ -40,33 +40,33 @@ export function NodeCard({
       </div>
       {node.detail && (
         <span
-          className="text-[10px] font-mono text-slate-400 leading-tight line-clamp-2"
+          className="text-[10px] font-mono text-text-secondary leading-tight line-clamp-2"
           title={node.detail}
         >
           {node.detail}
         </span>
       )}
       {entries.length > 0 && (
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 border-t border-white/5 pt-1.5">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-0.5 mt-0.5 border-t border-border pt-1.5">
           {timeEntry && (
-            <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
-              <span className="text-slate-600">⏱</span>
+            <span className="text-[10px] font-mono text-text-secondary flex items-center gap-1">
+              <span className="text-text-faint">⏱</span>
               {timeEntry[1]}
             </span>
           )}
           {rows && (
-            <span className="text-[10px] font-mono text-slate-400 flex items-center gap-1">
-              <span className="text-slate-600">≣</span>
+            <span className="text-[10px] font-mono text-text-secondary flex items-center gap-1">
+              <span className="text-text-faint">≣</span>
               {rows}
             </span>
           )}
           {rest.map(([key, val]) => (
             <span
               key={key}
-              className="text-[9px] font-mono text-slate-500"
+              className="text-[9px] font-mono text-text-muted"
             >
-              <span className="text-slate-600">{key}:</span>{" "}
-              <span className="text-slate-400">{val}</span>
+              <span className="text-text-faint">{key}:</span>{" "}
+              <span className="text-text-secondary">{val}</span>
             </span>
           ))}
         </div>

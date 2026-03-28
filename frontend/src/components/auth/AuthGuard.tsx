@@ -95,11 +95,11 @@ function SSOGuard({ children }: { children: React.ReactNode }) {
 
 function AuthLoadingScreen() {
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-[#09090b]">
+    <div className="flex h-screen w-full items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-4">
-        <Skeleton className="size-12 rounded-xl bg-white/5" />
-        <Skeleton className="h-4 w-32 bg-white/5" />
-        <p className="text-xs text-slate-600 font-mono mt-2">
+        <Skeleton className="size-12 rounded-xl bg-hover-bg" />
+        <Skeleton className="h-4 w-32 bg-hover-bg" />
+        <p className="text-xs text-text-faint font-mono mt-2">
           Authenticating...
         </p>
       </div>
@@ -109,12 +109,12 @@ function AuthLoadingScreen() {
 
 function AuthErrorScreen({ onRetry }: { onRetry: () => void }) {
   return (
-    <div className="flex h-screen w-full items-center justify-center bg-[#09090b]">
+    <div className="flex h-screen w-full items-center justify-center bg-background">
       <div className="flex flex-col items-center gap-4 text-center">
         <div className="size-12 rounded-xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
           <span className="text-rose-400 text-lg">!</span>
         </div>
-        <p className="text-sm text-slate-400">Failed to load user profile</p>
+        <p className="text-sm text-text-secondary">Failed to load user profile</p>
         <button
           onClick={onRetry}
           className="text-xs text-indigo-400 hover:text-indigo-300 font-mono underline underline-offset-2"

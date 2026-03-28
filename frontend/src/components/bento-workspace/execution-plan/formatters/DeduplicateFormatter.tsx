@@ -15,7 +15,7 @@ export function DeduplicateFormatter({ node }: { node: ExecutionPlanNode }) {
           Deduplicate
         </span>
         {columns.length > 0 && (
-          <span className="text-[10px] font-mono text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
+          <span className="text-[10px] font-mono text-text-muted bg-hover-bg px-1.5 py-0.5 rounded">
             {columns.length} {columns.length === 1 ? "column" : "columns"}
           </span>
         )}
@@ -23,7 +23,7 @@ export function DeduplicateFormatter({ node }: { node: ExecutionPlanNode }) {
 
       {columns.length > 0 && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-muted mb-2">
             Dedup Keys
           </div>
           <div className="flex flex-wrap gap-1.5">

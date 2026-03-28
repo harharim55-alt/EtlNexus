@@ -74,11 +74,11 @@ export function AuthBootstrap({ children }: Props) {
 
   if (loading) {
     return (
-      <div className="flex h-screen w-full items-center justify-center bg-[#09090b]">
+      <div className="flex h-screen w-full items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
-          <Skeleton className="size-12 rounded-xl bg-white/5" />
-          <Skeleton className="h-4 w-40 bg-white/5" />
-          <p className="text-xs text-slate-600 font-mono mt-2">
+          <Skeleton className="size-12 rounded-xl bg-hover-bg" />
+          <Skeleton className="h-4 w-40 bg-hover-bg" />
+          <p className="text-xs text-text-faint font-mono mt-2">
             Loading configuration...
           </p>
         </div>

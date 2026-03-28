@@ -8,7 +8,7 @@ export function TypingIndicator() {
           <div className="w-1.5 h-1.5 rounded-full bg-indigo-400 animate-bounce [animation-delay:300ms]" />
         </div>
       </div>
-      <div className="bg-white/5 border border-white/5 rounded-xl px-4 py-2.5 text-sm text-slate-500 font-mono">
+      <div className="bg-hover-bg border border-border rounded-xl px-4 py-2.5 text-sm text-text-muted font-mono">
         Processing query...
       </div>
     </div>

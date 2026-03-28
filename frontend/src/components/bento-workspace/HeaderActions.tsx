@@ -47,7 +47,7 @@ export function HeaderActions({
     <div className="flex items-center gap-2 shrink-0">
       {fresh && fresh.label !== "never" && (
         <span
-          className={`hidden xl:flex items-center gap-1.5 text-[11px] font-mono bg-white/[0.02] px-2.5 py-1.5 rounded-lg border border-white/5 ${fresh.className}`}
+          className={`hidden xl:flex items-center gap-1.5 text-[11px] font-mono bg-hover-bg px-2.5 py-1.5 rounded-lg border border-border ${fresh.className}`}
           title="Last Airflow run"
         >
           <Clock className="size-3" />
@@ -56,19 +56,19 @@ export function HeaderActions({
       )}
       {lastUpdatedBy && (
         <span
-          className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-500 font-mono bg-white/[0.02] px-2.5 py-1.5 rounded-lg border border-white/5"
+          className="hidden xl:flex items-center gap-1.5 text-[11px] text-text-muted font-mono bg-hover-bg px-2.5 py-1.5 rounded-lg border border-border"
           title="Last updated by"
         >
-          <User className="size-3 text-slate-600" />
+          <User className="size-3 text-text-faint" />
           {lastUpdatedBy}
         </span>
       )}
       {lastUpdatedAt && (
         <span
-          className="hidden xl:flex items-center gap-1.5 text-[11px] text-slate-500 font-mono bg-white/[0.02] px-2.5 py-1.5 rounded-lg border border-white/5"
+          className="hidden xl:flex items-center gap-1.5 text-[11px] text-text-muted font-mono bg-hover-bg px-2.5 py-1.5 rounded-lg border border-border"
           title="Last updated"
         >
-          <Calendar className="size-3 text-slate-600" />
+          <Calendar className="size-3 text-text-faint" />
           {formatRelativeTime(lastUpdatedAt)}
         </span>
       )}
@@ -81,7 +81,7 @@ export function HeaderActions({
               variant="outline"
               size="icon-sm"
               onClick={onOpenDocs}
-              className="border-white/10 bg-white/[0.03] text-slate-400 hover:text-indigo-400 hover:bg-indigo-500/10 hover:border-indigo-500/20 transition-all duration-200"
+              className="border-border-prominent bg-hover-bg text-text-secondary hover:text-indigo-400 hover:bg-indigo-500/10 hover:border-indigo-500/20 transition-all duration-200"
             />
           }
         >
@@ -107,7 +107,7 @@ export function HeaderActions({
                     "noopener,noreferrer",
                   )
                 }
-                className="border-white/10 bg-white/[0.03] text-slate-400 hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 transition-all duration-200"
+                className="border-border-prominent bg-hover-bg text-text-secondary hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 transition-all duration-200"
               />
             }
           >
@@ -129,7 +129,7 @@ export function HeaderActions({
               size="sm"
               disabled={isSyncing}
               onClick={onSync}
-              className="border-white/10 bg-white/[0.03] text-slate-400 hover:text-white hover:bg-white/[0.07] transition-all duration-200"
+              className="border-border-prominent bg-hover-bg text-text-secondary hover:text-foreground hover:bg-hover-bg-strong transition-all duration-200"
             />
           }
         >

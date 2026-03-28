@@ -27,18 +27,18 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
   void _dagRunId; // Will power per-run resource view in next iteration
 
   return (
-    <div className="col-span-12 bg-[#18181b] border border-white/5 rounded-2xl p-5 flex flex-col">
+    <div className="col-span-12 bg-card border border-border rounded-2xl p-5 flex flex-col">
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
-          <Gauge className="w-3.5 h-3.5 text-slate-500" />
-          <h3 className="text-[11px] font-mono uppercase tracking-widest text-slate-500">
+          <Gauge className="w-3.5 h-3.5 text-text-muted" />
+          <h3 className="text-[11px] font-mono uppercase tracking-widest text-text-muted">
             Resource & Performance
           </h3>
         </div>
           <button
             type="button"
             onClick={() => setHistoryOpen(true)}
-            className="text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer text-slate-500 bg-white/[0.03] border-white/5 hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-1.5"
+            className="text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer text-text-muted bg-hover-bg border-border hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-1.5"
           >
             <TrendingUp className="w-3 h-3" />
             Usage Over Time
@@ -47,9 +47,9 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
 
       {isLoading ? (
         <div className="grid grid-cols-3 gap-6">
-          <Skeleton className="h-32 bg-white/5 rounded-xl" />
-          <Skeleton className="h-32 bg-white/5 rounded-xl" />
-          <Skeleton className="h-32 bg-white/5 rounded-xl" />
+          <Skeleton className="h-32 bg-hover-bg rounded-xl" />
+          <Skeleton className="h-32 bg-hover-bg rounded-xl" />
+          <Skeleton className="h-32 bg-hover-bg rounded-xl" />
         </div>
       ) : data ? (
         (() => {
@@ -68,8 +68,8 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
               {/* Duration */}
               <div className="flex flex-col">
                 <div className="flex items-center gap-1.5 mb-3">
-                  <Clock className="w-3 h-3 text-slate-600" />
-                  <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+                  <Clock className="w-3 h-3 text-text-faint" />
+                  <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
                     Run Duration
                   </span>
                 </div>
@@ -84,10 +84,10 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
               </div>
 
               {/* Resources */}
-              <div className="lg:border-l lg:border-white/5 lg:-my-1 lg:pl-6">
+              <div className="lg:border-l lg:border-border lg:-my-1 lg:pl-6">
                 <div className="flex items-center gap-1.5 mb-3">
-                  <Cpu className="w-3 h-3 text-slate-600" />
-                  <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+                  <Cpu className="w-3 h-3 text-text-faint" />
+                  <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
                     Resources
                   </span>
                 </div>
@@ -99,10 +99,10 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
               </div>
 
               {/* Capacity */}
-              <div className="lg:border-l lg:border-white/5 lg:-my-1 lg:pl-6">
+              <div className="lg:border-l lg:border-border lg:-my-1 lg:pl-6">
                 <div className="flex items-center gap-1.5 mb-3">
-                  <Server className="w-3 h-3 text-slate-600" />
-                  <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+                  <Server className="w-3 h-3 text-text-faint" />
+                  <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
                     Cluster Capacity
                   </span>
                 </div>
@@ -113,7 +113,7 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
         })()
       ) : (
         <div className="flex items-center justify-center py-8">
-          <span className="text-xs text-slate-600 font-mono">
+          <span className="text-xs text-text-faint font-mono">
             No resource data available
           </span>
         </div>

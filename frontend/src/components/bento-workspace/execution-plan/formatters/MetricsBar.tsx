@@ -11,25 +11,25 @@ export function MetricsBar({ metrics }: { metrics: Record<string, string> }) {
   );
 
   return (
-    <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-black/20 rounded-xl border border-white/[0.04]">
+    <div className="flex flex-wrap items-center gap-3 px-4 py-2.5 bg-surface-inset rounded-xl border border-border">
       {timeEntry && (
-        <span className="text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
-          <span className="text-slate-500">⏱</span>
+        <span className="text-[11px] font-mono text-text-primary flex items-center gap-1.5">
+          <span className="text-text-muted">⏱</span>
           {timeEntry[1]}
         </span>
       )}
       {rows && (
-        <span className="text-[11px] font-mono text-slate-300 flex items-center gap-1.5">
-          <span className="text-slate-500">≣</span>
+        <span className="text-[11px] font-mono text-text-primary flex items-center gap-1.5">
+          <span className="text-text-muted">≣</span>
           {rows} rows
         </span>
       )}
       {rest.map(([key, val]) => (
         <span
           key={key}
-          className="text-[11px] font-mono text-slate-400"
+          className="text-[11px] font-mono text-text-secondary"
         >
-          <span className="text-slate-600">{key}</span>{" "}
+          <span className="text-text-faint">{key}</span>{" "}
           {val}
         </span>
       ))}

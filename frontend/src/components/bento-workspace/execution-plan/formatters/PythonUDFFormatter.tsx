@@ -30,7 +30,7 @@ export function PythonUDFFormatter({ node }: { node: ExecutionPlanNode }) {
       </div>
 
       {extra && (
-        <div className="text-[11px] font-mono text-slate-300 px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]">
+        <div className="text-[11px] font-mono text-text-primary px-3 py-2 bg-surface-inset rounded-lg border border-border">
           {extra}
         </div>
       )}

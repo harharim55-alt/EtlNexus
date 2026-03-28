@@ -49,17 +49,17 @@ export function MarkdownEditor({
       </div>
 
       {/* Editor body */}
-      <div className="flex-1 overflow-auto bg-[#09090b] custom-scrollbar">
+      <div className="flex-1 overflow-auto bg-background custom-scrollbar">
         <div className="flex h-full">
           {/* Line number gutter */}
           <div
             ref={gutterRef}
-            className="shrink-0 py-8 pl-5 pr-3 text-right select-none overflow-hidden border-r border-white/[0.04]"
+            className="shrink-0 py-8 pl-5 pr-3 text-right select-none overflow-hidden border-r border-border"
           >
             {lines.map((_, i) => (
               <div
                 key={i}
-                className="text-[11px] font-mono text-slate-700 leading-relaxed"
+                className="text-[11px] font-mono text-text-faint leading-relaxed"
                 style={{ height: "1.625rem" }}
               >
                 {i + 1}
@@ -72,7 +72,7 @@ export function MarkdownEditor({
             value={editValue}
             onChange={(e) => onEditValueChange(e.target.value)}
             onScroll={syncGutterScroll}
-            className="flex-1 h-full min-h-full bg-transparent text-slate-300 font-mono text-sm resize-none focus:outline-none py-8 px-6 leading-relaxed placeholder:text-slate-600"
+            className="flex-1 h-full min-h-full bg-transparent text-text-primary font-mono text-sm resize-none focus:outline-none py-8 px-6 leading-relaxed placeholder:text-text-faint"
             placeholder="# Start writing documentation here..."
             spellCheck={false}
           />

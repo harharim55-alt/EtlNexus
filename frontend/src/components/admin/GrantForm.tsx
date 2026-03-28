@@ -1,5 +1,12 @@
 import { X } from "lucide-react";
 import { stripDummy } from "@/lib/format";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { GrantType, GranteeType } from "./useGrantForm";
 
 /* ── Types ────────────────────────────────────────────────────────── */
@@ -68,7 +75,7 @@ export function GrantForm({
   onCancel,
 }: GrantFormProps) {
   return (
-    <div className="bg-[#0f0f11] border border-indigo-500/20 rounded-xl p-5 space-y-4">
+    <div className="bg-surface-alt border border-indigo-500/20 rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-between">
         <h3 className="text-xs font-mono text-indigo-400 uppercase tracking-wider">
           New Visibility Grant
@@ -76,7 +83,7 @@ export function GrantForm({
         <button
           type="button"
           onClick={onCancel}
-          className="text-slate-600 hover:text-slate-400 transition-colors cursor-pointer"
+          className="text-text-faint hover:text-text-secondary transition-colors cursor-pointer"
         >
           <X className="size-4" />
         </button>
@@ -84,7 +91,7 @@ export function GrantForm({
 
       {/* Grantee type toggle */}
       <div>
-        <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block mb-1.5">
+        <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider block mb-1.5">
           Grant To
         </label>
         <div className="flex gap-1">
@@ -96,7 +103,7 @@ export function GrantForm({
               className={`text-xs font-mono px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
                 granteeType === type
                   ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/20"
-                  : "text-slate-600 border-white/[0.06] hover:text-slate-400 hover:border-white/10"
+                  : "text-text-faint border-border hover:text-text-secondary hover:border-border-prominent"
               }`}
             >
               {type === "team" ? "Team" : "User"}
@@ -107,41 +114,41 @@ export function GrantForm({
 
       {/* Grantee selector */}
       <div>
-        <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block mb-1.5">
+        <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider block mb-1.5">
           {granteeType === "team" ? "Grantee Team" : "Grantee User"}
         </label>
         {granteeType === "team" ? (
-          <select
-            value={granteeTeamId}
-            onChange={(e) => onGranteeTeamIdChange(e.target.value)}
-            className="w-full bg-[#09090b] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/40 transition-colors"
-          >
-            <option value="">Select team...</option>
-            {teams.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+          <Select value={granteeTeamId} onValueChange={(v) => onGranteeTeamIdChange(v ?? "")}>
+            <SelectTrigger className="w-full bg-background border-border text-foreground focus-visible:border-indigo-500/40 focus-visible:ring-indigo-500/20">
+              <SelectValue placeholder="Select team..." />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border-prominent">
+              {teams.map((t) => (
+                <SelectItem key={t.id} value={t.id}>
+                  {t.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         ) : (
-          <select
-            value={granteeUserId}
-            onChange={(e) => onGranteeUserIdChange(e.target.value)}
-            className="w-full bg-[#09090b] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/40 transition-colors"
-          >
-            <option value="">Select user...</option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.display_name} ({u.email})
-              </option>
-            ))}
-          </select>
+          <Select value={granteeUserId} onValueChange={(v) => onGranteeUserIdChange(v ?? "")}>
+            <SelectTrigger className="w-full bg-background border-border text-foreground focus-visible:border-indigo-500/40 focus-visible:ring-indigo-500/20">
+              <SelectValue placeholder="Select user..." />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border-prominent">
+              {users.map((u) => (
+                <SelectItem key={u.id} value={u.id}>
+                  {u.display_name} ({u.email})
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         )}
       </div>
 
       {/* Grant type toggle */}
       <div>
-        <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block mb-1.5">
+        <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider block mb-1.5">
           Access To
         </label>
         <div className="flex gap-1">
@@ -153,7 +160,7 @@ export function GrantForm({
               className={`text-xs font-mono px-3 py-1.5 rounded-lg border transition-all cursor-pointer ${
                 grantType === type
                   ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/20"
-                  : "text-slate-600 border-white/[0.06] hover:text-slate-400 hover:border-white/10"
+                  : "text-text-faint border-border hover:text-text-secondary hover:border-border-prominent"
               }`}
             >
               {type === "pipeline" ? "Single Pipeline" : "All Team Pipelines"}
@@ -164,43 +171,43 @@ export function GrantForm({
 
       {/* Target selector */}
       <div>
-        <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block mb-1.5">
+        <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider block mb-1.5">
           {grantType === "pipeline" ? "Pipeline" : "Source Team"}
         </label>
         {grantType === "pipeline" ? (
-          <select
-            value={pipelineId}
-            onChange={(e) => onPipelineIdChange(e.target.value)}
-            className="w-full bg-[#09090b] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/40 transition-colors"
-          >
-            <option value="">Select pipeline...</option>
-            {pipelines.map((p) => (
-              <option key={p.id} value={p.id}>
-                {stripDummy(p.name)}
-              </option>
-            ))}
-          </select>
-        ) : (
-          <select
-            value={sourceTeamId}
-            onChange={(e) => onSourceTeamIdChange(e.target.value)}
-            className="w-full bg-[#09090b] border border-white/[0.06] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-indigo-500/40 transition-colors"
-          >
-            <option value="">Select team...</option>
-            {teams
-              .filter((t) => t.id !== granteeTeamId)
-              .map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.name}
-                </option>
+          <Select value={pipelineId} onValueChange={(v) => onPipelineIdChange(v ?? "")}>
+            <SelectTrigger className="w-full bg-background border-border text-foreground focus-visible:border-indigo-500/40 focus-visible:ring-indigo-500/20">
+              <SelectValue placeholder="Select pipeline..." />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border-prominent">
+              {pipelines.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {stripDummy(p.name)}
+                </SelectItem>
               ))}
-          </select>
+            </SelectContent>
+          </Select>
+        ) : (
+          <Select value={sourceTeamId} onValueChange={(v) => onSourceTeamIdChange(v ?? "")}>
+            <SelectTrigger className="w-full bg-background border-border text-foreground focus-visible:border-indigo-500/40 focus-visible:ring-indigo-500/20">
+              <SelectValue placeholder="Select team..." />
+            </SelectTrigger>
+            <SelectContent className="bg-card border-border-prominent">
+              {teams
+                .filter((t) => t.id !== granteeTeamId)
+                .map((t) => (
+                  <SelectItem key={t.id} value={t.id}>
+                    {t.name}
+                  </SelectItem>
+                ))}
+            </SelectContent>
+          </Select>
         )}
       </div>
 
       {/* Permission level */}
       <div>
-        <label className="text-[10px] font-mono text-slate-500 uppercase tracking-wider block mb-1.5">
+        <label className="text-[10px] font-mono text-text-muted uppercase tracking-wider block mb-1.5">
           Permission Level
         </label>
         <div className="flex gap-1">
@@ -214,14 +221,14 @@ export function GrantForm({
                   ? level === "editor"
                     ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
                     : "text-indigo-400 bg-indigo-500/10 border-indigo-500/20"
-                  : "text-slate-600 border-white/[0.06] hover:text-slate-400 hover:border-white/10"
+                  : "text-text-faint border-border hover:text-text-secondary hover:border-border-prominent"
               }`}
             >
               {level === "viewer" ? "Viewer" : "Editor"}
             </button>
           ))}
         </div>
-        <p className="text-[10px] text-slate-600 mt-1">
+        <p className="text-[10px] text-text-faint mt-1">
           {grantLevel === "viewer"
             ? "Can view the pipeline but cannot edit description or documentation"
             : "Can view and edit description and documentation"}

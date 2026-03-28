@@ -9,7 +9,7 @@ function parseBold(text: string): React.ReactNode[] {
   const parts = text.split(/\*\*(.*?)\*\*/g);
   return parts.map((part, i) =>
     i % 2 === 1 ? (
-      <strong key={i} className="text-white font-semibold">
+      <strong key={i} className="text-foreground font-semibold">
         {part}
       </strong>
     ) : (
@@ -31,15 +31,15 @@ export function ChatMessage({ message }: ChatMessageProps) {
       <div
         className={`max-w-[80%] px-4 py-2.5 rounded-xl text-sm leading-relaxed ${
           isUser
-            ? "bg-indigo-500/10 border border-indigo-500/20 text-slate-200"
-            : "bg-white/5 border border-white/5 text-slate-300"
+            ? "bg-indigo-500/10 border border-indigo-500/20 text-text-primary"
+            : "bg-hover-bg border border-border text-text-primary"
         }`}
       >
         {parseBold(message.content)}
       </div>
       {isUser && (
-        <div className="w-7 h-7 rounded-lg bg-white/5 border border-white/10 flex items-center justify-center shrink-0 mt-0.5">
-          <User className="w-4 h-4 text-slate-400" />
+        <div className="w-7 h-7 rounded-lg bg-hover-bg border border-border-prominent flex items-center justify-center shrink-0 mt-0.5">
+          <User className="w-4 h-4 text-text-secondary" />
         </div>
       )}
     </div>

@@ -31,9 +31,9 @@ export function CollapsibleLineageGroup({
   tasks,
   onTaskClick,
   defaultOpen,
-  borderColor = "border-white/[0.04]",
-  bgColor = "bg-white/[0.01]",
-  chevronColor = "text-slate-500",
+  borderColor = "border-border",
+  bgColor = "bg-hover-bg",
+  chevronColor = "text-text-muted",
   showStatusSummary = true,
   children,
 }: CollapsibleLineageGroupProps) {
@@ -61,12 +61,12 @@ export function CollapsibleLineageGroup({
       <button
         type="button"
         onClick={() => setIsOpen((v) => !v)}
-        className="flex items-center gap-2 w-full px-2.5 py-2 text-left hover:bg-white/[0.02] transition-colors cursor-pointer"
+        className="flex items-center gap-2 w-full px-2.5 py-2 text-left hover:bg-hover-bg transition-colors cursor-pointer"
       >
         <ChevronRight
           className={`w-3 h-3 ${chevronColor} shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
         />
-        <span className="text-[10px] font-mono text-slate-400 truncate flex-1">
+        <span className="text-[10px] font-mono text-text-secondary truncate flex-1">
           {dagId.replace(/_/g, " ")}
         </span>
 
@@ -90,7 +90,7 @@ export function CollapsibleLineageGroup({
         )}
 
         <span
-          className={`text-[9px] font-mono tabular-nums shrink-0 ${hasFailure ? "text-rose-400/60" : "text-slate-600"}`}
+          className={`text-[9px] font-mono tabular-nums shrink-0 ${hasFailure ? "text-rose-400/60" : "text-text-faint"}`}
         >
           {tasks.length}
         </span>

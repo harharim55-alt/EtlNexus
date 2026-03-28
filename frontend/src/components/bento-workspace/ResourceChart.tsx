@@ -11,22 +11,23 @@ import {
   Tooltip,
   ResponsiveContainer,
   Legend,
+  ReferenceLine,
 } from "recharts";
 
 /* ── Chart theme (shared with parent) ────────────────────────────── */
 
-const GRID_COLOR = "#1e293b";
-const TICK_STYLE = { fill: "#64748b", fontSize: 9, fontFamily: "monospace" };
+const GRID_COLOR = "var(--border)";
+const TICK_STYLE = { fill: "var(--text-muted)", fontSize: 9, fontFamily: "monospace" };
 const TOOLTIP_STYLE = {
   contentStyle: {
-    backgroundColor: "#18181b",
-    border: "1px solid rgba(255,255,255,0.1)",
+    backgroundColor: "var(--surface-modal)",
+    border: "1px solid var(--border)",
     borderRadius: 8,
     fontSize: 11,
     fontFamily: "monospace",
-    color: "#e2e8f0",
+    color: "var(--text-primary)",
   },
-  labelStyle: { color: "#94a3b8", fontSize: 10 },
+  labelStyle: { color: "var(--text-muted)", fontSize: 10 },
 };
 
 /* ── Types ────────────────────────────────────────────────────────── */
@@ -59,6 +60,14 @@ interface ChartArea {
   dot?: any;
 }
 
+interface ChartReferenceLine {
+  y: number;
+  stroke: string;
+  strokeDasharray?: string;
+  label?: string;
+  labelFormatter?: (value: number) => string;
+}
+
 interface ResourceChartProps {
   title: string;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -77,6 +86,8 @@ interface ResourceChartProps {
   showLegend?: boolean;
   /** Recharts gradient defs (for area charts) */
   gradientDefs?: React.ReactNode;
+  /** Horizontal reference lines (e.g. p90 thresholds) */
+  referenceLines?: ChartReferenceLine[];
 }
 
 /* ── Panel wrapper ────────────────────────────────────────────────── */
@@ -89,8 +100,8 @@ function ChartPanel({
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white/[0.02] border border-white/[0.04] rounded-xl p-4">
-      <div className="text-[9px] font-mono uppercase tracking-widest text-slate-600 mb-3">
+    <div className="bg-hover-bg border border-border rounded-xl p-4">
+      <div className="text-[9px] font-mono uppercase tracking-widest text-text-faint mb-3">
         {title}
       </div>
       <div className="h-[200px]">{children}</div>
@@ -113,6 +124,7 @@ export function ResourceChart({
   labelFormatter,
   showLegend = false,
   gradientDefs,
+  referenceLines,
 }: ResourceChartProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const defaultLabelFormatter = (_: any, payload: any) =>
@@ -145,6 +157,21 @@ export function ResourceChart({
                 wrapperStyle={{ fontSize: 9, fontFamily: "monospace" }}
               />
             )}
+            {referenceLines?.map((ref, i) => (
+              <ReferenceLine
+                key={`ref-${i}`}
+                y={ref.y}
+                stroke={ref.stroke}
+                strokeDasharray={ref.strokeDasharray ?? "6 3"}
+                label={{
+                  value: ref.labelFormatter ? ref.labelFormatter(ref.y) : (ref.label ?? ""),
+                  position: "right",
+                  fill: ref.stroke,
+                  fontSize: 9,
+                  fontFamily: "monospace",
+                }}
+              />
+            ))}
             {bars?.map((bar) => (
               <Bar
                 key={bar.dataKey}
@@ -179,6 +206,21 @@ export function ResourceChart({
                 wrapperStyle={{ fontSize: 9, fontFamily: "monospace" }}
               />
             )}
+            {referenceLines?.map((ref, i) => (
+              <ReferenceLine
+                key={`ref-${i}`}
+                y={ref.y}
+                stroke={ref.stroke}
+                strokeDasharray={ref.strokeDasharray ?? "6 3"}
+                label={{
+                  value: ref.labelFormatter ? ref.labelFormatter(ref.y) : (ref.label ?? ""),
+                  position: "right",
+                  fill: ref.stroke,
+                  fontSize: 9,
+                  fontFamily: "monospace",
+                }}
+              />
+            ))}
             {areas?.map((area) => (
               <Area
                 key={area.dataKey}
@@ -214,6 +256,21 @@ export function ResourceChart({
                 wrapperStyle={{ fontSize: 9, fontFamily: "monospace" }}
               />
             )}
+            {referenceLines?.map((ref, i) => (
+              <ReferenceLine
+                key={`ref-${i}`}
+                y={ref.y}
+                stroke={ref.stroke}
+                strokeDasharray={ref.strokeDasharray ?? "6 3"}
+                label={{
+                  value: ref.labelFormatter ? ref.labelFormatter(ref.y) : (ref.label ?? ""),
+                  position: "right",
+                  fill: ref.stroke,
+                  fontSize: 9,
+                  fontFamily: "monospace",
+                }}
+              />
+            ))}
             {lines?.map((line) => (
               <Line
                 key={line.dataKey}

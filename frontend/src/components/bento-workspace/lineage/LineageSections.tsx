@@ -41,7 +41,7 @@ export function BouncerDagGroup({
         <ChevronRight
           className={`w-3 h-3 text-teal-500/40 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
         />
-        <span className="text-[10px] font-mono text-slate-400 truncate flex-1">
+        <span className="text-[10px] font-mono text-text-secondary truncate flex-1">
           {dagId.replace(/_/g, " ")}
         </span>
         <span className="text-[9px] font-mono tabular-nums shrink-0 text-teal-400/50">

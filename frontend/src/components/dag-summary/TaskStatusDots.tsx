@@ -25,9 +25,9 @@ export function TaskStatusDots({ tasks }: TaskStatusDotsProps) {
             />
             <TooltipContent
               side="top"
-              className="bg-[#18181b] border border-white/10 text-white text-[10px] font-mono px-2 py-1"
+              className="bg-card border border-border-prominent text-foreground text-[10px] font-mono px-2 py-1"
             >
-              <span className="text-slate-400">{task.task_id}</span>
+              <span className="text-text-secondary">{task.task_id}</span>
               {task.pipeline_name && (
                 <span className="text-indigo-400 ml-1.5">
                   {stripDummy(task.pipeline_name)}

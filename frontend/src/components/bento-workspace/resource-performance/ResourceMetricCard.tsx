@@ -8,7 +8,7 @@ interface ResourceMetricCardProps {
   value: string;
   /** Additional detail line (e.g., actual usage) */
   detail?: string | null;
-  /** Icon color class (defaults to text-slate-600) */
+  /** Icon color class (defaults to text-text-faint) */
   iconColor?: string;
   /** Whether this metric should show a warning style */
   warn?: boolean;
@@ -21,17 +21,17 @@ export function ResourceMetricCard({
   label,
   value,
   detail,
-  iconColor = "text-slate-600",
+  iconColor = "text-text-faint",
   warn = false,
 }: ResourceMetricCardProps) {
   return (
     <div className="flex items-start gap-2">
       <Icon className={`w-3.5 h-3.5 mt-0.5 shrink-0 ${warn ? "text-amber-500" : iconColor}`} />
       <div className="min-w-0">
-        <div className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+        <div className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
           {label}
         </div>
-        <div className={`text-sm font-medium font-mono ${warn ? "text-amber-400" : "text-white"}`}>
+        <div className={`text-sm font-medium font-mono ${warn ? "text-amber-400" : "text-foreground"}`}>
           {value}
         </div>
         {detail && (
@@ -61,12 +61,12 @@ export function CompactMetricCard({
 }: CompactMetricCardProps) {
   return (
     <div className="flex items-start gap-1.5">
-      <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${warn ? "text-amber-500" : "text-slate-600"}`} />
+      <Icon className={`w-3 h-3 mt-0.5 shrink-0 ${warn ? "text-amber-500" : "text-text-faint"}`} />
       <div className="min-w-0">
-        <div className="text-[8px] font-mono uppercase tracking-widest text-slate-600 truncate">
+        <div className="text-[8px] font-mono uppercase tracking-widest text-text-faint truncate">
           {label}
         </div>
-        <div className={`text-xs font-mono ${warn ? "text-amber-400" : "text-white"}`}>
+        <div className={`text-xs font-mono ${warn ? "text-amber-400" : "text-foreground"}`}>
           {value}
         </div>
       </div>

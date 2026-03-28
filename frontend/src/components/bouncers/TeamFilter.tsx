@@ -50,7 +50,7 @@ export function TeamFilter({ teams }: TeamFilterProps) {
         className={`text-[10px] font-mono px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
           !teamFilter
             ? "text-teal-300 bg-teal-500/15 border-teal-500/30 shadow-[0_0_10px_rgba(45,212,191,0.15)]"
-            : "text-slate-500 bg-white/[0.02] border-white/5 hover:border-white/15 hover:text-slate-400"
+            : "text-text-muted bg-hover-bg border-border hover:border-border-prominent hover:text-text-secondary"
         }`}
       >
         All Teams
@@ -66,7 +66,7 @@ export function TeamFilter({ teams }: TeamFilterProps) {
             className={`text-[10px] font-mono px-3 py-1.5 rounded-full border transition-all cursor-pointer ${
               isActive
                 ? `${colors.text} ${colors.bg} ${colors.border} shadow-[0_0_10px_rgba(99,102,241,0.15)]`
-                : "text-slate-500 bg-white/[0.02] border-white/5 hover:border-white/15 hover:text-slate-400"
+                : "text-text-muted bg-hover-bg border-border hover:border-border-prominent hover:text-text-secondary"
             }`}
           >
             {team}

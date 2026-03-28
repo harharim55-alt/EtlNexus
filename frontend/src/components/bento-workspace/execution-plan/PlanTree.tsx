@@ -42,14 +42,14 @@ export const treeStyles = `
   position: absolute;
   top: 0;
   right: 50%;
-  border-top: 2px solid #334155;
+  border-top: 2px solid var(--border-prominent);
   width: 50%;
   height: 30px;
 }
 .tree-container li::after {
   right: auto;
   left: 50%;
-  border-left: 2px solid #334155;
+  border-left: 2px solid var(--border-prominent);
 }
 .tree-container li:only-child::after,
 .tree-container li:only-child::before {
@@ -63,7 +63,7 @@ export const treeStyles = `
   border: 0 none;
 }
 .tree-container li:last-child::before {
-  border-right: 2px solid #334155;
+  border-right: 2px solid var(--border-prominent);
   border-radius: 0 8px 0 0;
 }
 .tree-container li:first-child::after {
@@ -74,7 +74,7 @@ export const treeStyles = `
   position: absolute;
   top: 0;
   left: 50%;
-  border-left: 2px solid #334155;
+  border-left: 2px solid var(--border-prominent);
   width: 0;
   height: 30px;
   transform: translateX(-50%);

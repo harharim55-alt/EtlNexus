@@ -18,9 +18,9 @@ export function DagTaskList({ tasks }: DagTaskListProps) {
   });
 
   return (
-    <div className="pt-2 border-t border-white/5">
+    <div className="pt-2 border-t border-border">
       <div className="flex items-center gap-1.5 mb-2">
-        <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+        <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
           Tasks
         </span>
       </div>

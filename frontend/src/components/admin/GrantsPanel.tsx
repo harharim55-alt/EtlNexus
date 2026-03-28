@@ -1,5 +1,5 @@
-import { useMemo } from "react";
-import { ArrowRight, Plus, X } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ArrowRight, Grid3X3, List, Plus, X } from "lucide-react";
 import { formatDateAdmin } from "@/lib/format";
 import { useAdminGrants, useAdminTeams, useAdminUsers, useDeleteGrant } from "@/hooks/use-admin";
 import { useQuery } from "@tanstack/react-query";
@@ -10,6 +10,9 @@ import { EmptyState } from "@/components/shared/EmptyState";
 import { GRANT_LEVEL_STYLES } from "@/lib/admin-styles";
 import { useGrantForm } from "./useGrantForm";
 import { GrantForm } from "./GrantForm";
+import { VisibilityMatrix } from "./VisibilityMatrix";
+
+type ViewMode = "list" | "matrix";
 
 export function GrantsPanel() {
   const {
@@ -39,6 +42,7 @@ export function GrantsPanel() {
   const removeGrant = useDeleteGrant();
 
   const form = useGrantForm();
+  const [viewMode, setViewMode] = useState<ViewMode>("list");
 
   if (isLoading) return <LoadingState />;
   if (error) return <ErrorState message="Failed to load grants" onRetry={refetch} />;
@@ -48,6 +52,30 @@ export function GrantsPanel() {
 
   return (
     <div className="space-y-4">
+      {/* View mode toggle */}
+      <div className="flex items-center gap-1">
+        {(
+          [
+            { key: "list", label: "List", icon: List },
+            { key: "matrix", label: "Matrix", icon: Grid3X3 },
+          ] as const
+        ).map(({ key, label, icon: Icon }) => (
+          <button
+            key={key}
+            type="button"
+            onClick={() => setViewMode(key)}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-mono transition-all cursor-pointer ${
+              viewMode === key
+                ? "bg-hover-bg-strong text-foreground border border-border"
+                : "text-text-muted border border-transparent hover:text-text-primary hover:bg-hover-bg"
+            }`}
+          >
+            <Icon className="size-3.5" />
+            {label}
+          </button>
+        ))}
+      </div>
+
       {/* Create grant form */}
       {form.showForm ? (
         <GrantForm
@@ -76,15 +104,21 @@ export function GrantsPanel() {
         <button
           type="button"
           onClick={() => form.setShowForm(true)}
-          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-white/[0.06] text-slate-600 hover:text-indigo-400 hover:border-indigo-500/20 transition-all cursor-pointer"
+          className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-border text-text-faint hover:text-indigo-400 hover:border-indigo-500/20 transition-all cursor-pointer"
         >
           <Plus className="size-3.5" />
           <span className="text-xs font-mono">New Grant</span>
         </button>
       )}
 
-      {/* Grants list */}
-      {grants.length === 0 ? (
+      {/* Grants content — list or matrix */}
+      {viewMode === "matrix" ? (
+        <VisibilityMatrix
+          grants={grants}
+          teams={teams ?? []}
+          pipelines={pipelinesData?.items ?? []}
+        />
+      ) : grants.length === 0 ? (
         <EmptyState message="No visibility grants configured" />
       ) : (
         <div className="space-y-2">
@@ -106,7 +140,7 @@ export function GrantsPanel() {
             return (
               <div
                 key={grant.id}
-                className="bg-[#0f0f11] border border-white/[0.04] rounded-xl p-4 flex items-center gap-3 hover:border-white/[0.08] transition-colors group"
+                className="bg-surface-alt border border-border rounded-xl p-4 flex items-center gap-3 hover:border-border transition-colors group"
               >
                 {/* Grantee */}
                 <div className="shrink-0 flex items-center gap-2">
@@ -120,18 +154,18 @@ export function GrantsPanel() {
                     {isUserGrant ? "user" : "team"}
                   </span>
                   <div>
-                    <span className="text-sm font-medium text-white">
+                    <span className="text-sm font-medium text-foreground">
                       {granteeName}
                     </span>
                     {granteeDetail && (
-                      <span className="text-[10px] text-slate-600 ml-1.5 font-mono">
+                      <span className="text-[10px] text-text-faint ml-1.5 font-mono">
                         {granteeDetail}
                       </span>
                     )}
                   </div>
                 </div>
 
-                <ArrowRight className="size-3.5 text-slate-600 shrink-0" />
+                <ArrowRight className="size-3.5 text-text-faint shrink-0" />
 
                 {/* Target */}
                 <span
@@ -155,17 +189,17 @@ export function GrantsPanel() {
 
                 {/* Meta */}
                 <div className="flex-1 flex items-center justify-end gap-3">
-                  <span className="text-[10px] font-mono text-slate-600">
+                  <span className="text-[10px] font-mono text-text-faint">
                     by {grant.granted_by}
                   </span>
-                  <span className="text-[10px] font-mono text-slate-600">
+                  <span className="text-[10px] font-mono text-text-faint">
                     {formatDateAdmin(grant.created_at)}
                   </span>
                   <button
                     type="button"
                     onClick={() => removeGrant.mutate(grant.id)}
                     disabled={removeGrant.isPending}
-                    className="opacity-0 group-hover:opacity-100 p-1 text-slate-600 hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-all cursor-pointer"
+                    className="opacity-0 group-hover:opacity-100 p-1 text-text-faint hover:text-rose-400 hover:bg-rose-500/10 rounded-md transition-all cursor-pointer"
                   >
                     <X className="size-3.5" />
                   </button>
@@ -179,7 +213,7 @@ export function GrantsPanel() {
               type="button"
               onClick={() => fetchNextGrants()}
               disabled={isFetchingMoreGrants}
-              className="w-full py-3 rounded-xl border border-dashed border-white/[0.06] text-slate-600 hover:text-indigo-400 hover:border-indigo-500/20 transition-all cursor-pointer text-xs font-mono disabled:opacity-40"
+              className="w-full py-3 rounded-xl border border-dashed border-border text-text-faint hover:text-indigo-400 hover:border-indigo-500/20 transition-all cursor-pointer text-xs font-mono disabled:opacity-40"
             >
               {isFetchingMoreGrants
                 ? "Loading..."

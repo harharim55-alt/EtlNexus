@@ -34,13 +34,13 @@ export function TransformInspectorCard({
 
   if (isLoading) {
     return (
-      <div className="col-span-12 bg-[#18181b] border border-white/[0.06] rounded-2xl overflow-hidden">
-        <div className="px-6 py-4 border-b border-white/[0.06] flex items-center gap-3">
-          <Skeleton className="h-4 w-4 bg-white/5 rounded" />
-          <Skeleton className="h-3 w-40 bg-white/5" />
+      <div className="col-span-12 bg-card border border-border rounded-2xl overflow-hidden">
+        <div className="px-6 py-4 border-b border-border flex items-center gap-3">
+          <Skeleton className="h-4 w-4 bg-hover-bg rounded" />
+          <Skeleton className="h-3 w-40 bg-hover-bg" />
         </div>
         <div className="p-10 flex justify-center">
-          <Skeleton className="h-48 w-96 bg-white/5 rounded-xl" />
+          <Skeleton className="h-48 w-96 bg-hover-bg rounded-xl" />
         </div>
       </div>
     );
@@ -49,23 +49,23 @@ export function TransformInspectorCard({
   if (!data?.execution_plan) return null;
 
   return (
-    <div className="col-span-12 bg-[#18181b] border border-white/[0.06] rounded-2xl overflow-hidden">
+    <div className="col-span-12 bg-card border border-border rounded-2xl overflow-hidden">
       <style>{treeStyles}</style>
 
       {/* Header */}
-      <div className="px-6 py-4 border-b border-white/[0.06] flex items-center justify-between">
+      <div className="px-6 py-4 border-b border-border flex items-center justify-between">
         <div className="flex items-center gap-3">
           <GitMerge className="w-4 h-4 text-indigo-400" />
-          <span className="text-xs font-mono uppercase tracking-widest text-slate-300">
+          <span className="text-xs font-mono uppercase tracking-widest text-text-primary">
             Logical Execution DAG
           </span>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-3 text-[11px] font-mono text-slate-500">
+          <div className="flex items-center gap-3 text-[11px] font-mono text-text-muted">
             <span>{data.dag_id}</span>
             {data.duration_seconds != null && (
               <>
-                <span className="text-slate-700">|</span>
+                <span className="text-text-faint">|</span>
                 <span>{formatDuration(data.duration_seconds)}</span>
               </>
             )}
@@ -81,7 +81,7 @@ export function TransformInspectorCard({
             className={`text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer flex items-center gap-1.5 ${
               isOverview
                 ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/30"
-                : "text-slate-500 bg-white/[0.03] border-white/5 hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10"
+                : "text-text-muted bg-hover-bg border-border hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10"
             }`}
           >
             <ScanEye className="w-3 h-3" />
@@ -90,7 +90,7 @@ export function TransformInspectorCard({
           <button
             type="button"
             onClick={() => setFullscreenOpen(true)}
-            className="text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer text-slate-500 bg-white/[0.03] border-white/5 hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-1.5"
+            className="text-[9px] font-mono px-2 py-1 rounded border transition-all cursor-pointer text-text-muted bg-hover-bg border-border hover:border-indigo-500/30 hover:text-indigo-400 hover:bg-indigo-500/10 flex items-center gap-1.5"
           >
             <Maximize2 className="w-3 h-3" />
             Full Plan
@@ -112,7 +112,7 @@ export function TransformInspectorCard({
           className="absolute inset-0 opacity-[0.08] pointer-events-none"
           style={{
             backgroundImage:
-              "radial-gradient(#94a3b8 1px, transparent 1px)",
+              "radial-gradient(var(--text-muted) 1px, transparent 1px)",
             backgroundSize: "24px 24px",
           }}
         />

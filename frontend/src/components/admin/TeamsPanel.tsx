@@ -58,24 +58,24 @@ function TeamDetailSection({ teamId }: { teamId: string }) {
     <div className="space-y-4">
       {/* Members */}
       <div>
-        <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+        <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
           Members ({detail?.members.length ?? 0})
         </span>
         {!detail?.members.length ? (
-          <p className="text-xs text-slate-600 mt-2">No members</p>
+          <p className="text-xs text-text-faint mt-2">No members</p>
         ) : (
           <div className="mt-2 space-y-1.5">
             {detail.members.map((m) => (
               <div
                 key={m.id}
-                className="flex items-center gap-3 py-1.5 px-3 rounded-lg bg-white/[0.02]"
+                className="flex items-center gap-3 py-1.5 px-3 rounded-lg bg-hover-bg"
               >
                 <UserInitials name={m.display_name} size="sm" />
                 <div className="flex-1 min-w-0">
-                  <span className="text-xs text-white font-medium truncate block">
+                  <span className="text-xs text-foreground font-medium truncate block">
                     {m.display_name}
                   </span>
-                  <span className="text-[10px] text-slate-600 font-mono truncate block">
+                  <span className="text-[10px] text-text-faint font-mono truncate block">
                     {m.email}
                   </span>
                 </div>
@@ -92,11 +92,11 @@ function TeamDetailSection({ teamId }: { teamId: string }) {
 
       {/* Grants */}
       <div>
-        <span className="text-[10px] font-mono text-slate-500 uppercase tracking-wider">
+        <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
           Team Grants ({teamGrants.length})
         </span>
         {teamGrants.length === 0 ? (
-          <p className="text-xs text-slate-600 mt-2">No grants for this team</p>
+          <p className="text-xs text-text-faint mt-2">No grants for this team</p>
         ) : (
           <div className="mt-2 space-y-1.5">
             {teamGrants.map((g) => {
@@ -108,9 +108,9 @@ function TeamDetailSection({ teamId }: { teamId: string }) {
               return (
                 <div
                   key={g.id}
-                  className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-white/[0.02]"
+                  className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-hover-bg"
                 >
-                  <ArrowRight className="size-3 text-slate-600 shrink-0" />
+                  <ArrowRight className="size-3 text-text-faint shrink-0" />
                   <span
                     className={`text-xs ${
                       g.pipeline_id
@@ -127,7 +127,7 @@ function TeamDetailSection({ teamId }: { teamId: string }) {
                   >
                     {g.grant_level}
                   </span>
-                  <span className="text-[10px] font-mono text-slate-600 ml-auto">
+                  <span className="text-[10px] font-mono text-text-faint ml-auto">
                     {formatDateAdmin(g.created_at)}
                   </span>
                 </div>
@@ -159,10 +159,10 @@ export function TeamsPanel() {
         return (
           <div
             key={team.id}
-            className={`bg-[#0f0f11] border rounded-xl transition-colors ${
+            className={`bg-surface-alt border rounded-xl transition-colors ${
               isExpanded
                 ? "border-indigo-500/20 lg:col-span-2"
-                : "border-white/[0.04] hover:border-white/[0.08]"
+                : "border-border hover:border-border"
             }`}
           >
             <div
@@ -171,9 +171,9 @@ export function TeamsPanel() {
             >
               <div className="flex items-start justify-between mb-3">
                 <div>
-                  <h3 className="text-sm font-medium text-white">{team.name}</h3>
+                  <h3 className="text-sm font-medium text-foreground">{team.name}</h3>
                   {team.description && (
-                    <p className="text-xs text-slate-500 mt-0.5">
+                    <p className="text-xs text-text-muted mt-0.5">
                       {team.description}
                     </p>
                   )}
@@ -185,14 +185,14 @@ export function TeamsPanel() {
                     {team.source}
                   </span>
                   <ChevronDown
-                    className={`size-4 text-slate-600 transition-transform ${
+                    className={`size-4 text-text-faint transition-transform ${
                       isExpanded ? "rotate-180" : ""
                     }`}
                   />
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 text-slate-500">
+              <div className="flex items-center gap-1.5 text-text-muted">
                 <Users className="size-3.5" />
                 <span className="text-xs font-mono">
                   {team.member_count} member{team.member_count !== 1 ? "s" : ""}
@@ -202,7 +202,7 @@ export function TeamsPanel() {
 
             {/* Expanded detail */}
             {isExpanded && (
-              <div className="px-5 pb-5 pt-0 border-t border-white/[0.04]">
+              <div className="px-5 pb-5 pt-0 border-t border-border">
                 <div className="pt-3">
                   <TeamDetailSection teamId={team.id} />
                 </div>

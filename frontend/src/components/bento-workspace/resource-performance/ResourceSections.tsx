@@ -30,7 +30,7 @@ export function DurationSection({
   if (runCount === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <span className="text-xs text-slate-600 font-mono">No run history</span>
+        <span className="text-xs text-text-faint font-mono">No run history</span>
       </div>
     );
   }
@@ -40,26 +40,26 @@ export function DurationSection({
   return (
     <div className="flex flex-col gap-3">
       <div className="flex items-end gap-2">
-        <span className="text-2xl font-semibold text-white font-mono tracking-tight">
+        <span className="text-2xl font-semibold text-foreground font-mono tracking-tight">
           {avgDuration != null ? formatDuration(avgDuration) : "\u2014"}
         </span>
-        <span className="text-[10px] text-slate-500 font-mono uppercase mb-1">avg</span>
+        <span className="text-[10px] text-text-muted font-mono uppercase mb-1">avg</span>
       </div>
-      <div className="flex items-center gap-3 text-[10px] font-mono text-slate-500">
+      <div className="flex items-center gap-3 text-[10px] font-mono text-text-muted">
         <span>
           min {minDuration != null ? formatDuration(minDuration) : "\u2014"}
         </span>
-        <span className="text-white/10">|</span>
+        <span className="text-border-prominent">|</span>
         <span>
           max {maxDuration != null ? formatDuration(maxDuration) : "\u2014"}
         </span>
-        <span className="text-white/10">|</span>
+        <span className="text-border-prominent">|</span>
         <span>{runCount} runs</span>
       </div>
       {successRate != null && (
         <div className="flex items-center gap-1.5">
           <CheckCircle className="w-3 h-3 text-emerald-500" />
-          <span className="text-[10px] font-mono text-slate-400">
+          <span className="text-[10px] font-mono text-text-secondary">
             {successRate}% success rate
           </span>
         </div>
@@ -97,7 +97,7 @@ export function ResourceSection({
   if (configs.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <span className="text-xs text-slate-600 font-mono">No Spark resources</span>
+        <span className="text-xs text-text-faint font-mono">No Spark resources</span>
       </div>
     );
   }
@@ -173,7 +173,7 @@ export function CapacitySection({ bars }: { bars: CapacityBarType[] }) {
   if (bars.length === 0) {
     return (
       <div className="flex items-center justify-center h-full">
-        <span className="text-xs text-slate-600 font-mono">No capacity data</span>
+        <span className="text-xs text-text-faint font-mono">No capacity data</span>
       </div>
     );
   }
@@ -183,7 +183,7 @@ export function CapacitySection({ bars }: { bars: CapacityBarType[] }) {
       {bars.map((bar) => (
         <div key={bar.label} className="flex flex-col gap-1">
           <div className="flex items-center justify-between">
-            <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+            <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
               {bar.label}
             </span>
             <span className={`text-[10px] font-mono ${capacityTextColor(bar.allocated_pct)}`}>
@@ -191,10 +191,10 @@ export function CapacitySection({ bars }: { bars: CapacityBarType[] }) {
             </span>
           </div>
           {/* Stacked bar: used (solid) + allocated (lighter) within capacity track */}
-          <div className="relative h-2 bg-white/5 rounded-full overflow-hidden">
+          <div className="relative h-2 bg-hover-bg rounded-full overflow-hidden">
             {/* Allocated fill (lighter) */}
             <div
-              className="absolute inset-y-0 left-0 bg-white/10 rounded-full transition-all duration-500"
+              className="absolute inset-y-0 left-0 bg-hover-bg-strong rounded-full transition-all duration-500"
               style={{ width: `${Math.min(bar.allocated_pct, 100)}%` }}
             />
             {/* Used fill (solid, on top) */}
@@ -205,10 +205,10 @@ export function CapacitySection({ bars }: { bars: CapacityBarType[] }) {
               />
             )}
           </div>
-          <div className="text-[9px] font-mono text-slate-500">
+          <div className="text-[9px] font-mono text-text-muted">
             {bar.used !== "\u2014" ? (
               <>
-                <span className="text-slate-400">{bar.used}</span>
+                <span className="text-text-secondary">{bar.used}</span>
                 {" used / "}
                 {bar.allocated}
                 {" alloc / "}
@@ -286,10 +286,10 @@ export function SparkInternalsSection({ actualUsage }: { actualUsage: ActualUsag
   if (items.length === 0) return null;
 
   return (
-    <div className="mt-4 pt-3 border-t border-white/5">
+    <div className="mt-4 pt-3 border-t border-border">
       <div className="flex items-center gap-1.5 mb-2.5">
-        <Activity className="w-3 h-3 text-slate-600" />
-        <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+        <Activity className="w-3 h-3 text-text-faint" />
+        <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
           Spark Internals
         </span>
       </div>

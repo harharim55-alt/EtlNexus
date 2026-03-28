@@ -58,9 +58,9 @@ export function CacheFormatter({ node }: { node: ExecutionPlanNode }) {
 
       {columns.length > 0 && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-muted mb-2">
             Columns
-            <span className="ml-1.5 text-slate-600">({columns.length})</span>
+            <span className="ml-1.5 text-text-faint">({columns.length})</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {columns.map((col) => (
@@ -77,14 +77,14 @@ export function CacheFormatter({ node }: { node: ExecutionPlanNode }) {
 
       {filters.length > 0 && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-muted mb-2">
             Filters
           </div>
           <div className="space-y-1">
             {filters.map((f, i) => (
               <div
                 key={i}
-                className="text-[11px] font-mono text-slate-300 px-3 py-1.5 bg-black/20 rounded-lg border border-white/[0.04]"
+                className="text-[11px] font-mono text-text-primary px-3 py-1.5 bg-surface-inset rounded-lg border border-border"
               >
                 {f}
               </div>

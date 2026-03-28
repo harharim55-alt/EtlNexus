@@ -17,8 +17,8 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   };
 
   return (
-    <div className="border-t border-white/5 p-4">
-      <div className="flex gap-3 items-center bg-[#18181b] border border-white/5 rounded-xl px-4 py-2.5">
+    <div className="border-t border-border p-4">
+      <div className="flex gap-3 items-center bg-card border border-border rounded-xl px-4 py-2.5">
         <input
           type="text"
           value={value}
@@ -26,12 +26,12 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
           onKeyDown={(e) => e.key === "Enter" && handleSubmit()}
           placeholder="Ask about pipelines, joins, or architecture..."
           disabled={disabled}
-          className="flex-1 bg-transparent text-sm text-slate-200 placeholder:text-slate-600 outline-none font-mono"
+          className="flex-1 bg-transparent text-sm text-text-primary placeholder:text-text-faint outline-none font-mono"
         />
         <button
           onClick={handleSubmit}
           disabled={disabled || !value.trim()}
-          className="text-indigo-400 hover:text-indigo-300 disabled:text-slate-700 transition-colors"
+          className="text-indigo-400 hover:text-indigo-300 disabled:text-text-faint transition-colors"
         >
           <SendHorizonal className="w-4 h-4" />
         </button>

@@ -13,7 +13,7 @@ export function AggregateFormatter({ node }: { node: ExecutionPlanNode }) {
           <span
             className={`text-[9px] font-mono font-bold uppercase tracking-wider rounded-md px-1.5 py-0.5 border ${
               phase === "partial"
-                ? "text-slate-400 bg-white/5 border-white/10"
+                ? "text-text-secondary bg-hover-bg border-border-prominent"
                 : "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
             }`}
           >
@@ -23,7 +23,7 @@ export function AggregateFormatter({ node }: { node: ExecutionPlanNode }) {
       )}
       {groupBy.length > 0 && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-muted mb-2">
             Group By
           </div>
           <div className="flex flex-wrap gap-1.5">
@@ -40,7 +40,7 @@ export function AggregateFormatter({ node }: { node: ExecutionPlanNode }) {
       )}
       {functions.length > 0 && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-muted mb-2">
             Aggregations
           </div>
           <div className="flex flex-wrap gap-1.5">

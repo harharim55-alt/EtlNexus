@@ -15,7 +15,7 @@ export function RangeFormatter({ node }: { node: ExecutionPlanNode }) {
           Range
         </span>
         {partitions && (
-          <span className="text-[10px] font-mono text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
+          <span className="text-[10px] font-mono text-text-muted bg-hover-bg px-1.5 py-0.5 rounded">
             {partitions} partitions
           </span>
         )}
@@ -23,25 +23,25 @@ export function RangeFormatter({ node }: { node: ExecutionPlanNode }) {
 
       <div className="grid grid-cols-3 gap-2">
         {start && (
-          <div className="flex flex-col items-center px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]">
-            <span className="text-[10px] font-mono text-slate-500">start</span>
+          <div className="flex flex-col items-center px-3 py-2 bg-surface-inset rounded-lg border border-border">
+            <span className="text-[10px] font-mono text-text-muted">start</span>
             <span className="text-sm font-mono font-semibold text-blue-300">
               {start}
             </span>
           </div>
         )}
         {end && (
-          <div className="flex flex-col items-center px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]">
-            <span className="text-[10px] font-mono text-slate-500">end</span>
+          <div className="flex flex-col items-center px-3 py-2 bg-surface-inset rounded-lg border border-border">
+            <span className="text-[10px] font-mono text-text-muted">end</span>
             <span className="text-sm font-mono font-semibold text-blue-300">
               {end}
             </span>
           </div>
         )}
         {step && (
-          <div className="flex flex-col items-center px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]">
-            <span className="text-[10px] font-mono text-slate-500">step</span>
-            <span className="text-sm font-mono font-semibold text-slate-300">
+          <div className="flex flex-col items-center px-3 py-2 bg-surface-inset rounded-lg border border-border">
+            <span className="text-[10px] font-mono text-text-muted">step</span>
+            <span className="text-sm font-mono font-semibold text-text-primary">
               {step}
             </span>
           </div>

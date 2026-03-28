@@ -257,7 +257,7 @@ export function OnboardingOverlay() {
       <div
         className={`absolute inset-0 transition-all duration-500 ease-out ${
           isCentered
-            ? "bg-[#09090b]/95 backdrop-blur-xl onboarding-hex-grid onboarding-scanline"
+            ? "bg-background/95 backdrop-blur-xl onboarding-hex-grid onboarding-scanline"
             : hasSectionTarget
               ? "bg-transparent"
               : "bg-black/50 backdrop-blur-[2px]"
@@ -297,7 +297,7 @@ export function OnboardingOverlay() {
         <div className="absolute -bottom-2 -right-2 w-5 h-5 border-b-2 border-r-2 border-indigo-500/30 rounded-br-sm" />
 
         {/* Card */}
-        <div className="bg-[#111116] border border-white/[0.08] rounded-2xl shadow-[0_0_60px_rgba(99,102,241,0.06),0_25px_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden">
+        <div className="bg-surface-raised border border-border rounded-2xl shadow-[0_0_60px_rgba(99,102,241,0.06),0_25px_50px_-12px_rgba(0,0,0,0.5)] overflow-hidden">
           {/* Data-stream top accent */}
           <div className="h-[2px] onboarding-border-flow" />
 
@@ -358,7 +358,7 @@ export function OnboardingOverlay() {
                 <button
                   onClick={prevStep}
                   disabled={isExiting}
-                  className="px-3.5 py-1.5 text-xs text-slate-400 hover:text-white border border-white/10 hover:border-white/20 rounded-lg transition-all font-medium"
+                  className="px-3.5 py-1.5 text-xs text-slate-400 hover:text-white border border-border-prominent hover:border-white/20 rounded-lg transition-all font-medium"
                 >
                   Previous
                 </button>

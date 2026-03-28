@@ -42,31 +42,31 @@ export function CheatsheetPanel({ onClose }: { onClose: () => void }) {
   return (
     <div
       ref={ref}
-      className="absolute top-full right-0 mt-2 z-50 w-[380px] bg-[#111116] border border-white/[0.08] rounded-xl shadow-2xl shadow-black/50 animate-in fade-in zoom-in-95 duration-150 overflow-hidden"
+      className="absolute top-full right-0 mt-2 z-50 w-[380px] bg-surface-raised border border-border rounded-xl shadow-2xl shadow-black/50 animate-in fade-in zoom-in-95 duration-150 overflow-hidden"
     >
-      <div className="px-4 py-3 border-b border-white/[0.06] flex items-center justify-between">
-        <span className="text-xs font-semibold text-white tracking-tight">Markdown Cheatsheet</span>
-        <button onClick={onClose} className="p-1 text-slate-500 hover:text-white transition-colors rounded">
+      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+        <span className="text-xs font-semibold text-foreground tracking-tight">Markdown Cheatsheet</span>
+        <button onClick={onClose} className="p-1 text-text-muted hover:text-foreground transition-colors rounded">
           <X className="size-3" />
         </button>
       </div>
       <div className="max-h-[320px] overflow-y-auto custom-scrollbar">
         <table className="w-full text-[11px]">
           <thead>
-            <tr className="border-b border-white/[0.04]">
-              <th className="text-left px-4 py-2 text-slate-500 font-medium uppercase tracking-wider">Syntax</th>
-              <th className="text-left px-4 py-2 text-slate-500 font-medium uppercase tracking-wider">Result</th>
+            <tr className="border-b border-border">
+              <th className="text-left px-4 py-2 text-text-muted font-medium uppercase tracking-wider">Syntax</th>
+              <th className="text-left px-4 py-2 text-text-muted font-medium uppercase tracking-wider">Result</th>
             </tr>
           </thead>
           <tbody>
             {cheatsheetRows.map(([syntax, desc], i) => (
-              <tr key={i} className="border-b border-white/[0.02] hover:bg-white/[0.02] transition-colors">
+              <tr key={i} className="border-b border-border hover:bg-hover-bg transition-colors">
                 <td className="px-4 py-1.5">
                   <code className="font-mono text-indigo-300/80 bg-indigo-500/[0.06] px-1.5 py-0.5 rounded text-[10px]">
                     {syntax}
                   </code>
                 </td>
-                <td className="px-4 py-1.5 text-slate-400">{desc}</td>
+                <td className="px-4 py-1.5 text-text-secondary">{desc}</td>
               </tr>
             ))}
           </tbody>

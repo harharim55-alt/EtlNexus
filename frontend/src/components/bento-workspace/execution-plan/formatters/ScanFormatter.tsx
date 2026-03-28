@@ -8,7 +8,7 @@ const FORMAT_STYLES: Record<string, string> = {
   csv: "text-orange-300 bg-orange-500/10 border-orange-500/20",
   json: "text-green-300 bg-green-500/10 border-green-500/20",
   orc: "text-purple-300 bg-purple-500/10 border-purple-500/20",
-  text: "text-slate-300 bg-slate-500/10 border-slate-500/20",
+  text: "text-text-primary bg-slate-500/10 border-slate-500/20",
 };
 
 export function ScanFormatter({ node }: { node: ExecutionPlanNode }) {
@@ -17,7 +17,7 @@ export function ScanFormatter({ node }: { node: ExecutionPlanNode }) {
     parseScanDetail(detail);
   const fmtStyle =
     FORMAT_STYLES[format.toLowerCase()] ||
-    "text-slate-400 bg-white/5 border-white/10";
+    "text-text-secondary bg-hover-bg border-border-prominent";
 
   return (
     <div className="space-y-4">
@@ -28,7 +28,7 @@ export function ScanFormatter({ node }: { node: ExecutionPlanNode }) {
           {table}
         </span>
         {namespace && (
-          <span className="text-[9px] font-mono uppercase tracking-wider text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
+          <span className="text-[9px] font-mono uppercase tracking-wider text-text-muted bg-hover-bg px-1.5 py-0.5 rounded">
             {namespace}
           </span>
         )}
@@ -44,7 +44,7 @@ export function ScanFormatter({ node }: { node: ExecutionPlanNode }) {
       {/* Location path */}
       {location && (
         <div
-          className="text-[11px] font-mono text-slate-500 truncate px-3 py-1.5 bg-black/20 rounded-lg border border-white/[0.04]"
+          className="text-[11px] font-mono text-text-muted truncate px-3 py-1.5 bg-surface-inset rounded-lg border border-border"
           title={location}
         >
           {location}
@@ -54,9 +54,9 @@ export function ScanFormatter({ node }: { node: ExecutionPlanNode }) {
       {/* Columns */}
       {columns.length > 0 && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-muted mb-2">
             Columns
-            <span className="ml-1.5 text-slate-600">({columns.length})</span>
+            <span className="ml-1.5 text-text-faint">({columns.length})</span>
           </div>
           <div className="flex flex-wrap gap-1.5">
             {columns.map((col) => (
@@ -74,20 +74,20 @@ export function ScanFormatter({ node }: { node: ExecutionPlanNode }) {
       {/* Filters */}
       {filters.length > 0 && (
         <div>
-          <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+          <div className="text-[10px] font-mono uppercase tracking-widest text-text-muted mb-2">
             Pushed Filters
-            <span className="ml-1.5 text-slate-600">({filters.length})</span>
+            <span className="ml-1.5 text-text-faint">({filters.length})</span>
           </div>
           <div className="space-y-1">
             {filters.map((f, i) => (
               <div
                 key={i}
-                className="flex items-start gap-2 px-3 py-1.5 bg-black/20 rounded-lg border border-white/[0.04]"
+                className="flex items-start gap-2 px-3 py-1.5 bg-surface-inset rounded-lg border border-border"
               >
-                <span className="text-[9px] font-mono text-slate-600 mt-0.5 shrink-0">
+                <span className="text-[9px] font-mono text-text-faint mt-0.5 shrink-0">
                   {i + 1}
                 </span>
-                <span className="text-[11px] font-mono text-slate-300 break-all">
+                <span className="text-[11px] font-mono text-text-primary break-all">
                   {f
                     .replace(/\bIS NOT NULL\b/g, '<is_not_null>')
                     .replace(/\bIS NULL\b/g, '<is_null>')

@@ -214,8 +214,9 @@
   animation: onboarding-backdrop-fade 600ms ease-out 1400ms forwards;
 }
 
-/* Always-dark theme matching design_idea.ts (#09090b, #18181b) */
-:root {
+/* ── Theme: Dark (default) ───────────────────────────────────────── */
+:root,
+[data-theme="dark"] {
   --background: #09090b;
   --foreground: oklch(0.985 0 0);
   --card: #18181b;
@@ -248,6 +249,119 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(1 0 0 / 5%);
   --sidebar-ring: oklch(0.585 0.233 277);
+  /* Extended surface tokens */
+  --surface-alt: #0f0f11;
+  --surface-raised: #111116;
+  --surface-modal: #0a0a0f;
+  --surface-modal-header: #0e0e14;
+  --surface-code: #08080d;
+  --surface-inset: #0c0c10;
+  --border-prominent: oklch(1 0 0 / 10%);
+  --text-heading: #ffffff;
+  --text-primary: #cbd5e1;
+  --text-secondary: #94a3b8;
+  --text-muted: #64748b;
+  --text-faint: #475569;
+  --hover-bg: oklch(1 0 0 / 5%);
+  --hover-bg-strong: oklch(1 0 0 / 8%);
+}
+
+/* ── Theme: Light ───────────────────────────────────────────────── */
+[data-theme="light"] {
+  --background: #f8fafc;
+  --foreground: #0f172a;
+  --card: #ffffff;
+  --card-foreground: #0f172a;
+  --popover: #ffffff;
+  --popover-foreground: #0f172a;
+  --primary: oklch(0.50 0.233 277);
+  --primary-foreground: #ffffff;
+  --secondary: #f1f5f9;
+  --secondary-foreground: #0f172a;
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --accent: #e2e8f0;
+  --accent-foreground: #0f172a;
+  --destructive: oklch(0.55 0.22 25);
+  --border: #e2e8f0;
+  --input: #e2e8f0;
+  --ring: oklch(0.50 0.233 277);
+  --chart-1: oklch(0.55 0.18 255);
+  --chart-2: oklch(0.50 0.22 260);
+  --chart-3: oklch(0.45 0.25 263);
+  --chart-4: oklch(0.42 0.24 265);
+  --chart-5: oklch(0.38 0.20 266);
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-primary: oklch(0.50 0.233 277);
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f1f5f9;
+  --sidebar-accent-foreground: #0f172a;
+  --sidebar-border: #e2e8f0;
+  --sidebar-ring: oklch(0.50 0.233 277);
+  --surface-alt: #f1f5f9;
+  --surface-raised: #f8fafc;
+  --surface-modal: #ffffff;
+  --surface-modal-header: #f8fafc;
+  --surface-code: #f1f5f9;
+  --surface-inset: #f1f5f9;
+  --border-prominent: #cbd5e1;
+  --text-heading: #0f172a;
+  --text-primary: #1e293b;
+  --text-secondary: #475569;
+  --text-muted: #64748b;
+  --text-faint: #94a3b8;
+  --hover-bg: rgba(0, 0, 0, 0.04);
+  --hover-bg-strong: rgba(0, 0, 0, 0.06);
+}
+
+/* ── Theme: Pink ────────────────────────────────────────────────── */
+[data-theme="pink"] {
+  --background: #1a0a14;
+  --foreground: #fce7f3;
+  --card: #2d1525;
+  --card-foreground: #fce7f3;
+  --popover: #2d1525;
+  --popover-foreground: #fce7f3;
+  --primary: #ec4899;
+  --primary-foreground: #ffffff;
+  --secondary: #3b1a2e;
+  --secondary-foreground: #fce7f3;
+  --muted: #3b1a2e;
+  --muted-foreground: #d4a0bc;
+  --accent: #4a2038;
+  --accent-foreground: #fce7f3;
+  --destructive: #f43f5e;
+  --border: rgba(236, 72, 153, 0.12);
+  --input: rgba(236, 72, 153, 0.18);
+  --ring: #ec4899;
+  --chart-1: #f9a8d4;
+  --chart-2: #f472b6;
+  --chart-3: #ec4899;
+  --chart-4: #db2777;
+  --chart-5: #be185d;
+  --sidebar: #1a0a14;
+  --sidebar-foreground: #fce7f3;
+  --sidebar-primary: #ec4899;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #3b1a2e;
+  --sidebar-accent-foreground: #fce7f3;
+  --sidebar-border: rgba(236, 72, 153, 0.12);
+  --sidebar-ring: #ec4899;
+  --surface-alt: #1f0e18;
+  --surface-raised: #24121d;
+  --surface-modal: #150a10;
+  --surface-modal-header: #1f0e18;
+  --surface-code: #120810;
+  --surface-inset: #1c0d16;
+  --border-prominent: rgba(236, 72, 153, 0.2);
+  --text-heading: #fce7f3;
+  --text-primary: #f9a8d4;
+  --text-secondary: #d4a0bc;
+  --text-muted: #a87191;
+  --text-faint: #7a4d68;
+  --hover-bg: rgba(236, 72, 153, 0.06);
+  --hover-bg-strong: rgba(236, 72, 153, 0.1);
 }
 
 @theme inline {
@@ -329,4 +443,33 @@
       calc(var(--radius) * 2.2);
   --radius-4xl:
       calc(var(--radius) * 2.6);
+  /* Extended surface tokens */
+  --color-surface-alt:
+      var(--surface-alt);
+  --color-surface-raised:
+      var(--surface-raised);
+  --color-surface-modal:
+      var(--surface-modal);
+  --color-surface-modal-header:
+      var(--surface-modal-header);
+  --color-surface-code:
+      var(--surface-code);
+  --color-surface-inset:
+      var(--surface-inset);
+  --color-border-prominent:
+      var(--border-prominent);
+  --color-text-heading:
+      var(--text-heading);
+  --color-text-primary:
+      var(--text-primary);
+  --color-text-secondary:
+      var(--text-secondary);
+  --color-text-muted:
+      var(--text-muted);
+  --color-text-faint:
+      var(--text-faint);
+  --color-hover-bg:
+      var(--hover-bg);
+  --color-hover-bg-strong:
+      var(--hover-bg-strong);
 }

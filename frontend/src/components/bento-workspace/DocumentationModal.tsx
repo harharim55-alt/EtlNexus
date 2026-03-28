@@ -42,14 +42,14 @@ const sanitizeSchema = {
 function EmptyDocState({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="flex flex-col items-center justify-center py-20 gap-4">
-      <div className="size-12 rounded-xl bg-white/[0.03] border border-white/[0.06] flex items-center justify-center">
-        <FileText className="size-5 text-slate-600" />
+      <div className="size-12 rounded-xl bg-hover-bg border border-border flex items-center justify-center">
+        <FileText className="size-5 text-text-faint" />
       </div>
       <div className="text-center">
-        <p className="text-sm text-slate-500 font-medium">
+        <p className="text-sm text-text-muted font-medium">
           No documentation yet
         </p>
-        <p className="text-[11px] text-slate-600 mt-1">
+        <p className="text-[11px] text-text-faint mt-1">
           {canEdit
             ? "Switch to Edit to start writing in Markdown"
             : "Only team members can add documentation"}
@@ -149,18 +149,18 @@ export function DocumentationModal({
       />
 
       {/* Modal */}
-      <div className="relative w-full max-w-5xl h-[85vh] bg-[#0d0d12] border border-white/[0.08] rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-5xl h-[85vh] bg-surface-modal border border-border rounded-2xl shadow-2xl shadow-black/50 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* ── Header ─────────────────────────────────────────────── */}
-        <div className="px-7 py-4 border-b border-white/[0.08] bg-[#111116] flex items-center justify-between shrink-0">
+        <div className="px-7 py-4 border-b border-border bg-surface-raised flex items-center justify-between shrink-0">
           <div className="flex items-center gap-4">
             <div className="size-9 bg-indigo-500/10 border border-indigo-500/20 rounded-xl flex items-center justify-center">
               <FileText className="size-[18px] text-indigo-400" />
             </div>
             <div>
-              <h2 className="text-lg font-semibold text-white tracking-tight">
+              <h2 className="text-lg font-semibold text-foreground tracking-tight">
                 {pipelineName}
               </h2>
-              <p className="text-[11px] text-slate-500 font-mono mt-0.5">
+              <p className="text-[11px] text-text-muted font-mono mt-0.5">
                 Documentation.md
               </p>
             </div>
@@ -168,13 +168,13 @@ export function DocumentationModal({
 
           <div className="flex items-center gap-3">
             {/* Segmented control: Preview / Edit / History */}
-            <div className="flex bg-white/[0.04] rounded-lg p-0.5 border border-white/[0.06]">
+            <div className="flex bg-hover-bg rounded-lg p-0.5 border border-border">
               <button
                 onClick={() => { setActiveTab("preview"); setCheatsheetOpen(false); }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
                   activeTab === "preview"
-                    ? "bg-white/[0.08] text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-300"
+                    ? "bg-hover-bg-strong text-foreground shadow-sm"
+                    : "text-text-muted hover:text-text-primary"
                 }`}
               >
                 <FileText className="size-3" />
@@ -185,10 +185,10 @@ export function DocumentationModal({
                 disabled={!canEdit}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
                   !canEdit
-                    ? "text-slate-600 cursor-not-allowed opacity-40"
+                    ? "text-text-faint cursor-not-allowed opacity-40"
                     : activeTab === "edit"
-                      ? "bg-white/[0.08] text-white shadow-sm"
-                      : "text-slate-500 hover:text-slate-300"
+                      ? "bg-hover-bg-strong text-foreground shadow-sm"
+                      : "text-text-muted hover:text-text-primary"
                 }`}
                 title={!canEdit ? "You don't have permission to edit this pipeline's documentation" : undefined}
               >
@@ -199,8 +199,8 @@ export function DocumentationModal({
                 onClick={() => { setActiveTab("history"); setCheatsheetOpen(false); }}
                 className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md transition-all duration-200 ${
                   activeTab === "history"
-                    ? "bg-white/[0.08] text-white shadow-sm"
-                    : "text-slate-500 hover:text-slate-300"
+                    ? "bg-hover-bg-strong text-foreground shadow-sm"
+                    : "text-text-muted hover:text-text-primary"
                 }`}
               >
                 <History className="size-3" />
@@ -220,11 +220,11 @@ export function DocumentationModal({
               </button>
             )}
 
-            <div className="w-px h-5 bg-white/[0.08] mx-1" />
+            <div className="w-px h-5 bg-hover-bg-strong mx-1" />
 
             <button
               onClick={onClose}
-              className="p-2 text-slate-500 hover:text-white hover:bg-white/5 rounded-lg transition-all duration-200 border border-transparent hover:border-white/[0.08]"
+              className="p-2 text-text-muted hover:text-foreground hover:bg-hover-bg rounded-lg transition-all duration-200 border border-transparent hover:border-border"
             >
               <X className="size-[18px]" />
             </button>
@@ -245,7 +245,7 @@ export function DocumentationModal({
 
         {/* ── Body (non-edit modes) ───────────────────────────── */}
         {!isEditing && (
-        <div className="flex-1 overflow-auto bg-[#09090b] custom-scrollbar">
+        <div className="flex-1 overflow-auto bg-background custom-scrollbar">
           {activeTab === "history" ? (
             <RevisionHistoryPanel
               pipelineId={pipelineId}
@@ -272,7 +272,7 @@ export function DocumentationModal({
         )}
 
         {/* ── Footer ─────────────────────────────────────────────── */}
-        <div className="px-7 py-2.5 bg-[#111116] border-t border-white/[0.08] text-[11px] font-mono text-slate-600 flex justify-between shrink-0">
+        <div className="px-7 py-2.5 bg-surface-raised border-t border-border text-[11px] font-mono text-text-faint flex justify-between shrink-0">
           {activeTab === "edit" ? (
             <>
               <span>Markdown + GFM &middot; Use toolbar for formatting</span>

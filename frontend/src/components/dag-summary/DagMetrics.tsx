@@ -6,7 +6,7 @@ import type { DagSummary, DagTaskSummary } from "@/types/dag-summary";
 /* ── Helpers ──────────────────────────────────────────────────────── */
 
 function successRateColor(rate: number | null): string {
-  if (rate === null) return "text-slate-500";
+  if (rate === null) return "text-text-muted";
   if (rate >= 90) return "text-emerald-400";
   if (rate >= 70) return "text-amber-400";
   return "text-rose-400";
@@ -74,16 +74,16 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
             <div key={groupKey} className="flex flex-col gap-1">
               <div className="flex items-center gap-1.5 pl-0.5">
                 <span className="w-2.5 h-px bg-slate-700/60" />
-                <span className="text-[8px] font-mono uppercase tracking-[0.12em] text-slate-500">
+                <span className="text-[8px] font-mono uppercase tracking-[0.12em] text-text-muted">
                   {groupKey === "_ungrouped" ? "ungrouped" : formatGroupName(groupKey)}
                 </span>
               </div>
               {failedByGroup[groupKey].map((task) => (
                 <div
                   key={task.task_id}
-                  className="flex items-center gap-3 py-1 px-2 rounded-md hover:bg-white/[0.02]"
+                  className="flex items-center gap-3 py-1 px-2 rounded-md hover:bg-hover-bg"
                 >
-                  <span className="text-[11px] font-mono text-slate-300 truncate flex-1 min-w-0">
+                  <span className="text-[11px] font-mono text-text-primary truncate flex-1 min-w-0">
                     {stripDummy(task.pipeline_name || task.task_id)}
                   </span>
                   <span
@@ -91,7 +91,7 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
                   >
                     {getStatusStyle(task.status).label.toLowerCase()}
                   </span>
-                  <span className="text-[10px] font-mono text-slate-600 w-14 text-right shrink-0">
+                  <span className="text-[10px] font-mono text-text-faint w-14 text-right shrink-0">
                     {task.latest_duration_seconds != null
                       ? formatDuration(task.latest_duration_seconds)
                       : "\u2014"}
@@ -105,27 +105,27 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
 
       {/* Description */}
       {dag.description && (
-        <p className="text-xs text-slate-500 leading-relaxed line-clamp-2">
+        <p className="text-xs text-text-muted leading-relaxed line-clamp-2">
           {dag.description}
         </p>
       )}
 
       {/* Key Metrics Row */}
-      <div className="flex items-center gap-4 text-[10px] font-mono text-slate-500">
+      <div className="flex items-center gap-4 text-[10px] font-mono text-text-muted">
         <span className="flex items-center gap-1">
-          <Workflow className="w-3 h-3 text-slate-600" />
+          <Workflow className="w-3 h-3 text-text-faint" />
           {dag.task_count} tasks
         </span>
-        <span className="text-white/10">|</span>
+        <span className="text-border-prominent">|</span>
         <span className="flex items-center gap-1">
-          <Layers className="w-3 h-3 text-slate-600" />
+          <Layers className="w-3 h-3 text-text-faint" />
           {dag.pipeline_count} pipelines
         </span>
         {dag.schedule_interval && (
           <>
-            <span className="text-white/10">|</span>
+            <span className="text-border-prominent">|</span>
             <span className="flex items-center gap-1">
-              <CalendarClock className="w-3 h-3 text-slate-600" />
+              <CalendarClock className="w-3 h-3 text-text-faint" />
               {dag.schedule_interval}
             </span>
           </>
@@ -133,31 +133,31 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
       </div>
 
       {/* Duration Section */}
-      <div className="bg-white/[0.02] rounded-xl p-3 flex flex-col gap-2">
+      <div className="bg-hover-bg rounded-xl p-3 flex flex-col gap-2">
         <div className="flex items-center gap-1.5 mb-0.5">
-          <Timer className="w-3 h-3 text-slate-600" />
-          <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+          <Timer className="w-3 h-3 text-text-faint" />
+          <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
             Duration
           </span>
         </div>
         {dag.avg_task_duration_seconds != null ? (
           <>
             <div className="flex items-end gap-2">
-              <span className="text-xl font-semibold text-white font-mono tracking-tight">
+              <span className="text-xl font-semibold text-foreground font-mono tracking-tight">
                 {formatDuration(dag.avg_task_duration_seconds)}
               </span>
-              <span className="text-[10px] text-slate-500 font-mono uppercase mb-0.5">
+              <span className="text-[10px] text-text-muted font-mono uppercase mb-0.5">
                 avg
               </span>
             </div>
-            <div className="flex items-center gap-3 text-[10px] font-mono text-slate-500">
+            <div className="flex items-center gap-3 text-[10px] font-mono text-text-muted">
               <span>
                 min{" "}
                 {dag.min_task_duration_seconds != null
                   ? formatDuration(dag.min_task_duration_seconds)
                   : "\u2014"}
               </span>
-              <span className="text-white/10">|</span>
+              <span className="text-border-prominent">|</span>
               <span>
                 max{" "}
                 {dag.max_task_duration_seconds != null
@@ -166,7 +166,7 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
               </span>
               {dag.total_duration_seconds != null && (
                 <>
-                  <span className="text-white/10">|</span>
+                  <span className="text-border-prominent">|</span>
                   <span>
                     total {formatDuration(dag.total_duration_seconds)}
                   </span>
@@ -175,7 +175,7 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
             </div>
           </>
         ) : (
-          <span className="text-xs text-slate-600 font-mono">No run data</span>
+          <span className="text-xs text-text-faint font-mono">No run data</span>
         )}
       </div>
 
@@ -183,8 +183,8 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
       <div className="flex flex-col gap-2">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-1.5">
-            <CheckCircle className="w-3 h-3 text-slate-600" />
-            <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+            <CheckCircle className="w-3 h-3 text-text-faint" />
+            <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
               Success Rate
             </span>
           </div>
@@ -192,13 +192,13 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
             {dag.success_rate != null ? `${dag.success_rate}%` : "\u2014"}
           </span>
         </div>
-        <div className="relative h-1.5 bg-white/5 rounded-full overflow-hidden">
+        <div className="relative h-1.5 bg-hover-bg rounded-full overflow-hidden">
           <div
             className={`absolute inset-y-0 left-0 rounded-full transition-all duration-700 ${successBarColor(dag.success_rate)}`}
             style={{ width: `${Math.min(dag.success_rate ?? 0, 100)}%` }}
           />
         </div>
-        <div className="flex items-center gap-3 text-[10px] font-mono text-slate-600 flex-wrap">
+        <div className="flex items-center gap-3 text-[10px] font-mono text-text-faint flex-wrap">
           {Object.entries(dag.status_counts)
             .sort(([a], [b]) => {
               const ai = STATUS_SEVERITY_ORDER.indexOf(a);
@@ -220,16 +220,16 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
       {/* Timing */}
       <div className="flex items-center gap-4 text-[10px] font-mono">
         <div className="flex items-center gap-1.5">
-          <Clock className="w-3 h-3 text-slate-600" />
-          <span className="text-slate-500">Last finish</span>
-          <span className="text-slate-300">
+          <Clock className="w-3 h-3 text-text-faint" />
+          <span className="text-text-muted">Last finish</span>
+          <span className="text-text-primary">
             {formatTimeUTC(dag.latest_run_end)}
           </span>
         </div>
         {dag.typical_finish_hour && (
           <>
-            <span className="text-white/10">|</span>
-            <span className="text-slate-500">Typical</span>
+            <span className="text-border-prominent">|</span>
+            <span className="text-text-muted">Typical</span>
             <span className="text-indigo-400">{dag.typical_finish_hour}</span>
           </>
         )}
@@ -237,11 +237,11 @@ export function DagMetrics({ dag, showFailed }: DagMetricsProps) {
 
       {/* 30d History */}
       {dag.total_runs_30d > 0 && (
-        <div className="flex items-center gap-3 text-[10px] font-mono text-slate-600">
+        <div className="flex items-center gap-3 text-[10px] font-mono text-text-faint">
           <span>{dag.total_runs_30d} runs ({dag.period_label ?? "30d"})</span>
           {dag.dag_success_rate_30d != null && (
             <>
-              <span className="text-white/10">|</span>
+              <span className="text-border-prominent">|</span>
               <span className={successRateColor(dag.dag_success_rate_30d)}>
                 {dag.dag_success_rate_30d}% task success
               </span>

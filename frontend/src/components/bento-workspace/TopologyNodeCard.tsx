@@ -45,21 +45,21 @@ export function NodeCard({
         ${EDGE_BORDER[edgeType]}
         ${node.is_current
           ? "bg-indigo-500/[0.08] border-r-indigo-500/20 border-t-indigo-500/20 border-b-indigo-500/20 shadow-[0_0_24px_rgba(99,102,241,0.1)]"
-          : "bg-[#0c0c11] border-r-white/[0.04] border-t-white/[0.04] border-b-white/[0.04] hover:border-r-white/10 hover:border-t-white/10 hover:border-b-white/10 hover:bg-white/[0.025]"
+          : "bg-surface-inset border-r-border border-t-border border-b-border hover:border-r-border-prominent hover:border-t-border-prominent hover:border-b-border-prominent hover:bg-hover-bg"
         }
         ${isClickable ? "cursor-pointer hover:-translate-y-[1px]" : "cursor-default"}
-        ${isHighlighted && !node.is_current ? "!border-r-white/15 !border-t-white/15 !border-b-white/15 !bg-white/[0.04] -translate-y-[1px]" : ""}
+        ${isHighlighted && !node.is_current ? "!border-r-border-prominent !border-t-border-prominent !border-b-border-prominent !bg-hover-bg -translate-y-[1px]" : ""}
         ${isDimmed ? "opacity-40" : ""}
       `}
     >
       <span className={`inline-block w-2 h-2 rounded-full shrink-0 ${cfg.dot} ${cfg.glow}`} title={cfg.label} />
       <div className="min-w-0 flex-1">
         <span className={`text-[11px] font-medium block truncate ${
-          node.is_current ? "text-indigo-300" : "text-slate-300 group-hover/node:text-slate-200"
+          node.is_current ? "text-indigo-300" : "text-text-primary group-hover/node:text-text-primary"
         }`}>
           {displayName}
         </span>
-        <span className="text-[9px] font-mono text-slate-600 block truncate">
+        <span className="text-[9px] font-mono text-text-faint block truncate">
           {node.task_id}
         </span>
       </div>
@@ -103,7 +103,7 @@ export function BouncerNodeCard({
         <span className="text-[11px] font-medium block truncate text-teal-200/70 group-hover/node:text-teal-200/90">
           {displayName}
         </span>
-        <span className="text-[9px] font-mono text-slate-600 block truncate">
+        <span className="text-[9px] font-mono text-text-faint block truncate">
           {node.bouncer_name ?? node.task_id}
         </span>
       </div>

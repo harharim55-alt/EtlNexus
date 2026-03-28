@@ -81,7 +81,7 @@ function ToolbarBtn({
       type="button"
       onClick={onClick}
       title={label}
-      className="p-1.5 text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-md transition-all duration-150 border border-transparent hover:border-indigo-500/20"
+      className="p-1.5 text-text-muted hover:text-indigo-400 hover:bg-indigo-500/10 rounded-md transition-all duration-150 border border-transparent hover:border-indigo-500/20"
     >
       <Icon className="size-3.5" />
     </button>
@@ -89,7 +89,7 @@ function ToolbarBtn({
 }
 
 function ToolbarSep() {
-  return <div className="w-px h-4 bg-white/[0.06] mx-0.5" />;
+  return <div className="w-px h-4 bg-hover-bg-strong mx-0.5" />;
 }
 
 /* ── Formatting toolbar ───────────────────────────────────────────── */
@@ -112,7 +112,7 @@ export function MarkdownToolbar({
   const block = (b: string) => insertBlock(textareaRef, editValue, setEditValue, b);
 
   return (
-    <div className="flex items-center gap-0.5 px-4 py-1.5 bg-[#0c0c10] border-b border-white/[0.04] shrink-0 flex-wrap">
+    <div className="flex items-center gap-0.5 px-4 py-1.5 bg-surface-inset border-b border-border shrink-0 flex-wrap">
       {/* Text formatting */}
       <ToolbarBtn icon={Bold} label="Bold (Ctrl+B)" onClick={() => ins("**", "**", { placeholder: "bold" })} />
       <ToolbarBtn icon={Italic} label="Italic" onClick={() => ins("*", "*", { placeholder: "italic" })} />
@@ -185,7 +185,7 @@ export function MarkdownToolbar({
         className={`p-1.5 rounded-md transition-all duration-150 border ${
           cheatsheetOpen
             ? "text-indigo-400 bg-indigo-500/10 border-indigo-500/20"
-            : "text-slate-500 hover:text-indigo-400 hover:bg-indigo-500/10 border-transparent hover:border-indigo-500/20"
+            : "text-text-muted hover:text-indigo-400 hover:bg-indigo-500/10 border-transparent hover:border-indigo-500/20"
         }`}
       >
         <HelpCircle className="size-3.5" />

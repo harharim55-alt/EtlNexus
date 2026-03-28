@@ -37,7 +37,7 @@ export const TaskNode = memo(function TaskNode({
         ${
           isCurrent
             ? "bg-indigo-500/10 border-indigo-500/30 shadow-[0_0_20px_rgba(99,102,241,0.1)]"
-            : "bg-[#0f0f12] border-white/5 hover:border-white/15 hover:bg-white/[0.03]"
+            : "bg-surface-inset border-border hover:border-border-prominent hover:bg-hover-bg"
         }
         ${isClickable ? "cursor-pointer" : "cursor-default"}
       `}
@@ -45,11 +45,11 @@ export const TaskNode = memo(function TaskNode({
       <StatusDot status={task.status} />
       <div className="min-w-0 flex-1">
         <span
-          className={`text-[11px] font-medium block truncate ${isCurrent ? "text-indigo-300" : "text-slate-300 group-hover/node:text-slate-200"}`}
+          className={`text-[11px] font-medium block truncate ${isCurrent ? "text-indigo-300" : "text-text-primary group-hover/node:text-text-primary"}`}
         >
           {displayName}
         </span>
-        <span className="text-[9px] font-mono text-slate-600 block truncate">
+        <span className="text-[9px] font-mono text-text-faint block truncate">
           {task.task_id}
         </span>
       </div>
@@ -69,7 +69,7 @@ export function FlowArrow() {
         width="24"
         height="16"
         viewBox="0 0 24 16"
-        className="text-slate-600"
+        className="text-text-faint"
       >
         <line
           x1="0"
@@ -112,7 +112,7 @@ export const BouncerNode = memo(function BouncerNode({
         <span className="text-[11px] font-medium block truncate text-teal-200/80 group-hover/node:text-teal-200">
           {bouncer.display_name}
         </span>
-        <span className="text-[9px] font-mono text-slate-600 block truncate">
+        <span className="text-[9px] font-mono text-text-faint block truncate">
           {bouncer.bouncer_name}
         </span>
       </div>
@@ -141,7 +141,7 @@ export function SectionLabel({
       >
         {label}
       </span>
-      <span className="flex-1 h-px bg-slate-700/30" />
+      <span className="flex-1 h-px bg-border" />
     </div>
   );
 }
@@ -149,11 +149,11 @@ export function SectionLabel({
 export function TaskGroupLabel({ groupId }: { groupId: string }) {
   return (
     <div className="flex items-center gap-1.5 pt-1.5 pb-0.5 px-0.5">
-      <span className="w-3 h-px bg-slate-700/60" />
-      <span className="text-[8px] font-mono uppercase tracking-[0.12em] text-slate-600 whitespace-nowrap">
+      <span className="w-3 h-px bg-border-prominent" />
+      <span className="text-[8px] font-mono uppercase tracking-[0.12em] text-text-faint whitespace-nowrap">
         {groupId.replace(/_/g, " ")}
       </span>
-      <span className="flex-1 h-px bg-slate-700/30" />
+      <span className="flex-1 h-px bg-border" />
     </div>
   );
 }

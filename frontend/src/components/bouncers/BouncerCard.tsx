@@ -29,7 +29,7 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
   const cfg = getStatusStyle(status);
   const teamColors =
     TEAM_TAG_COLORS[bouncer.team || ""] ||
-    "text-slate-400/70 bg-white/[0.03] border-white/5";
+    "text-text-secondary/70 bg-hover-bg border-border";
 
   return (
     <button
@@ -40,7 +40,7 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
         ${
           isSelected
             ? "bg-teal-500/[0.06] border-teal-500/25 shadow-[0_0_20px_rgba(45,212,191,0.12)]"
-            : "bg-[#18181b] border-white/5 hover:border-white/10 hover:bg-white/[0.02]"
+            : "bg-card border-border hover:border-border-prominent hover:bg-hover-bg"
         }
       `}
     >
@@ -49,7 +49,7 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
         className={`absolute top-3 right-3 w-5 h-5 rounded-md border-2 flex items-center justify-center transition-all ${
           isSelected
             ? "bg-teal-500 border-teal-500"
-            : "border-white/15 group-hover:border-white/25"
+            : "border-border-prominent group-hover:border-border-prominent"
         }`}
       >
         {isSelected && <Check className="w-3 h-3 text-white" strokeWidth={3} />}
@@ -61,12 +61,12 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
           className={`shrink-0 p-1.5 rounded-lg transition-colors ${
             isSelected
               ? "bg-teal-500/15"
-              : "bg-white/[0.03] group-hover:bg-white/[0.05]"
+              : "bg-hover-bg group-hover:bg-hover-bg-strong"
           }`}
         >
           <Radio
             className={`w-3.5 h-3.5 ${
-              isSelected ? "text-teal-400" : "text-slate-500"
+              isSelected ? "text-teal-400" : "text-text-muted"
             }`}
           />
         </div>
@@ -77,13 +77,13 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
             />
             <h4
               className={`text-xs font-medium truncate ${
-                isSelected ? "text-teal-200" : "text-slate-200"
+                isSelected ? "text-teal-200" : "text-text-primary"
               }`}
             >
               {bouncer.display_name}
             </h4>
           </div>
-          <p className="text-[9px] font-mono text-slate-600 truncate">
+          <p className="text-[9px] font-mono text-text-faint truncate">
             {bouncer.bouncer_name}
           </p>
         </div>
@@ -94,12 +94,12 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
         <div className="flex items-end gap-1.5">
           <span
             className={`text-2xl font-semibold font-mono tracking-tight leading-none ${
-              isSelected ? "text-teal-300" : "text-white"
+              isSelected ? "text-teal-300" : "text-foreground"
             }`}
           >
             {formatVolume(bouncer.volume_per_day)}
           </span>
-          <span className="text-[9px] font-mono text-slate-600 mb-0.5">
+          <span className="text-[9px] font-mono text-text-faint mb-0.5">
             events/day
           </span>
         </div>
@@ -118,7 +118,7 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
 
       {/* Description */}
       {bouncer.description && (
-        <p className="text-[10px] text-slate-500 leading-relaxed line-clamp-2 mb-3">
+        <p className="text-[10px] text-text-muted leading-relaxed line-clamp-2 mb-3">
           {bouncer.description}
         </p>
       )}
@@ -126,13 +126,13 @@ export function BouncerCard({ bouncer }: BouncerCardProps) {
       {/* DAG pills */}
       {bouncer.dag_ids.length > 0 && (
         <div className="flex items-center gap-1.5 flex-wrap">
-          <span className="text-[8px] font-mono uppercase tracking-widest text-slate-600 mr-0.5">
+          <span className="text-[8px] font-mono uppercase tracking-widest text-text-faint mr-0.5">
             DAGs
           </span>
           {bouncer.dag_ids.map((dagId) => (
             <span
               key={dagId}
-              className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-white/[0.03] text-slate-500 border border-white/5"
+              className="text-[8px] font-mono px-1.5 py-0.5 rounded bg-hover-bg text-text-muted border border-border"
             >
               {dagId.replace(/_/g, " ")}
             </span>

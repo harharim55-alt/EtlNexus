@@ -13,15 +13,15 @@ export function SortFormatter({ node }: { node: ExecutionPlanNode }) {
         {keys.map((k, i) => (
           <div
             key={i}
-            className="flex items-center gap-2 px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]"
+            className="flex items-center gap-2 px-3 py-2 bg-surface-inset rounded-lg border border-border"
           >
             {k.direction === "ASC" ? (
               <ChevronUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
             ) : (
               <ChevronDown className="w-3.5 h-3.5 text-rose-400 shrink-0" />
             )}
-            <span className="text-xs font-mono text-slate-300">{k.column}</span>
-            <span className="text-[9px] font-mono text-slate-600 ml-auto">
+            <span className="text-xs font-mono text-text-primary">{k.column}</span>
+            <span className="text-[9px] font-mono text-text-faint ml-auto">
               {k.direction}
             </span>
           </div>

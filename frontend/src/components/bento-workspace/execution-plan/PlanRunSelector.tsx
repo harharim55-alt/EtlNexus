@@ -59,7 +59,7 @@ export function RunPicker({
         <ChevronDown className={`w-2.5 h-2.5 transition-transform ${open ? "rotate-180" : ""}`} />
       </button>
       {open && (
-        <div className="absolute top-full right-0 mt-1 z-50 bg-[#18181b] border border-white/10 rounded-xl shadow-xl overflow-hidden min-w-[220px]">
+        <div className="absolute top-full right-0 mt-1 z-50 bg-card border border-border-prominent rounded-xl shadow-xl overflow-hidden min-w-[220px]">
           <div
             ref={scrollRef}
             className="max-h-[280px] overflow-y-auto custom-scrollbar"
@@ -72,21 +72,21 @@ export function RunPicker({
                 className={`w-full text-left px-3 py-2 text-[11px] font-mono transition-colors cursor-pointer flex items-center justify-between gap-3 ${
                   run.dag_run_id === currentRunId
                     ? "bg-indigo-500/10 text-indigo-300"
-                    : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                    : "text-text-secondary hover:bg-hover-bg hover:text-text-primary"
                 }`}
               >
                 <span>{formatDateFull(run.start_date)}</span>
-                <span className="text-[9px] text-slate-600">{run.dag_id}</span>
+                <span className="text-[9px] text-text-faint">{run.dag_id}</span>
               </button>
             ))}
             {isFetchingNextPage && (
               <div className="flex justify-center py-2">
-                <Loader2 className="w-3.5 h-3.5 text-slate-600 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 text-text-faint animate-spin" />
               </div>
             )}
           </div>
           {total > 0 && (
-            <div className="px-3 py-1.5 border-t border-white/5 text-[9px] font-mono text-slate-600 text-center">
+            <div className="px-3 py-1.5 border-t border-border text-[9px] font-mono text-text-faint text-center">
               {allRuns.length} of {total} runs
             </div>
           )}

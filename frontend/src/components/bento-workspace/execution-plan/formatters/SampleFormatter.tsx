@@ -23,17 +23,17 @@ export function SampleFormatter({ node }: { node: ExecutionPlanNode }) {
 
       <div className="flex flex-wrap gap-2">
         {withReplacement && (
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]">
-            <span className="text-[10px] font-mono text-slate-500">mode</span>
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-surface-inset rounded-lg border border-border">
+            <span className="text-[10px] font-mono text-text-muted">mode</span>
             <span className="text-xs font-mono text-pink-300">
               with replacement
             </span>
           </div>
         )}
         {seed && (
-          <div className="flex items-center gap-1.5 px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]">
-            <span className="text-[10px] font-mono text-slate-500">seed</span>
-            <span className="text-xs font-mono text-slate-300">{seed}</span>
+          <div className="flex items-center gap-1.5 px-3 py-2 bg-surface-inset rounded-lg border border-border">
+            <span className="text-[10px] font-mono text-text-muted">seed</span>
+            <span className="text-xs font-mono text-text-primary">{seed}</span>
           </div>
         )}
       </div>

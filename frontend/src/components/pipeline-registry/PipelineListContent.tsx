@@ -114,7 +114,7 @@ export function PipelineListContent({
       {isLoading && (
         <div className="space-y-3 p-2">
           {Array.from({ length: 6 }).map((_, i) => (
-            <Skeleton key={i} className="h-24 rounded-xl bg-white/5" />
+            <Skeleton key={i} className="h-24 rounded-xl bg-hover-bg" />
           ))}
         </div>
       )}
@@ -141,15 +141,15 @@ export function PipelineListContent({
                 }}
               >
                 {item.type === "header" ? (
-                  <div className="px-3 pt-4 pb-1.5 bg-[#09090b]">
+                  <div className="px-3 pt-4 pb-1.5 bg-background">
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+                      <span className="text-[10px] font-mono uppercase tracking-widest text-text-muted">
                         {item.category}
                       </span>
-                      <span className="text-[10px] font-mono text-slate-600">
+                      <span className="text-[10px] font-mono text-text-faint">
                         {item.count}
                       </span>
-                      <div className="flex-1 h-px bg-white/5" />
+                      <div className="flex-1 h-px bg-hover-bg" />
                     </div>
                   </div>
                 ) : (
@@ -172,13 +172,13 @@ export function PipelineListContent({
       )}
 
       {!isLoading && totalCount > 0 && filteredCount === 0 && (
-        <div className="text-center text-slate-500 text-sm py-8">
+        <div className="text-center text-text-muted text-sm py-8">
           No pipelines match filters
         </div>
       )}
 
       {!isLoading && totalCount === 0 && (
-        <div className="text-center text-slate-500 text-sm py-8">
+        <div className="text-center text-text-muted text-sm py-8">
           No pipelines found
         </div>
       )}

@@ -33,7 +33,7 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
           <span className="text-sm font-semibold text-cyan-300 font-mono">
             Union
           </span>
-          <span className="text-[10px] font-mono text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
+          <span className="text-[10px] font-mono text-text-muted bg-hover-bg px-1.5 py-0.5 rounded">
             {node.children.length} branches
           </span>
         </div>
@@ -83,17 +83,17 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
             {orderBy.map((k, i) => (
               <div
                 key={i}
-                className="flex items-center gap-2 px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]"
+                className="flex items-center gap-2 px-3 py-2 bg-surface-inset rounded-lg border border-border"
               >
                 {k.direction === "ASC" ? (
                   <ChevronUp className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                 ) : (
                   <ChevronDown className="w-3.5 h-3.5 text-rose-400 shrink-0" />
                 )}
-                <span className="text-xs font-mono text-slate-300">
+                <span className="text-xs font-mono text-text-primary">
                   {k.column}
                 </span>
-                <span className="text-[9px] font-mono text-slate-600 ml-auto">
+                <span className="text-[9px] font-mono text-text-faint ml-auto">
                   {k.direction}
                 </span>
               </div>
@@ -148,7 +148,7 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
         </div>
         {columns.length > 0 && (
           <div>
-            <div className="text-[10px] font-mono uppercase tracking-widest text-slate-500 mb-2">
+            <div className="text-[10px] font-mono uppercase tracking-widest text-text-muted mb-2">
               Output Columns
             </div>
             <div className="flex flex-wrap gap-1.5">
@@ -188,13 +188,13 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
             </span>
           )}
           {isOuter && (
-            <span className="text-[9px] font-mono text-slate-400 bg-white/5 border border-white/10 rounded px-1.5 py-0.5">
+            <span className="text-[9px] font-mono text-text-secondary bg-hover-bg border border-border-prominent rounded px-1.5 py-0.5">
               OUTER
             </span>
           )}
         </div>
         {outputPart && (
-          <div className="text-[11px] font-mono text-slate-400 px-3 py-1.5 bg-black/20 rounded-lg border border-white/[0.04]">
+          <div className="text-[11px] font-mono text-text-secondary px-3 py-1.5 bg-surface-inset rounded-lg border border-border">
             output: {outputPart.replace("→", "").trim()}
           </div>
         )}
@@ -208,12 +208,12 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
     return (
       <div className="space-y-4">
         <div className="flex items-center gap-2.5">
-          <Search className="w-4 h-4 text-slate-400 shrink-0" />
-          <span className="text-sm font-semibold text-slate-300 font-mono">
+          <Search className="w-4 h-4 text-text-secondary shrink-0" />
+          <span className="text-sm font-semibold text-text-primary font-mono">
             Subquery
           </span>
           {detail && (
-            <span className="text-[10px] font-mono text-slate-500 bg-white/5 px-1.5 py-0.5 rounded">
+            <span className="text-[10px] font-mono text-text-muted bg-hover-bg px-1.5 py-0.5 rounded">
               {detail}
             </span>
           )}
@@ -274,7 +274,7 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
           </span>
         </div>
         {detail && (
-          <div className="text-[11px] font-mono text-slate-300 px-3 py-2 bg-black/20 rounded-lg border border-white/[0.04]">
+          <div className="text-[11px] font-mono text-text-primary px-3 py-2 bg-surface-inset rounded-lg border border-border">
             {detail}
           </div>
         )}
@@ -310,7 +310,7 @@ export function LightFormatter({ node }: { node: ExecutionPlanNode }) {
   return (
     <div className="space-y-4">
       {detail && (
-        <div className="text-xs font-mono text-slate-300 bg-black/30 p-3 rounded-lg break-all leading-relaxed">
+        <div className="text-xs font-mono text-text-primary bg-surface-inset p-3 rounded-lg break-all leading-relaxed">
           {detail}
         </div>
       )}

@@ -15,6 +15,14 @@ interface ResourceHistoryModalProps {
   pipelineId: string;
 }
 
+/* ── Percentile utility ────────────────────────────────────────────── */
+
+function percentile(arr: number[], p: number): number {
+  const sorted = [...arr].sort((a, b) => a - b);
+  const idx = Math.ceil((p / 100) * sorted.length) - 1;
+  return sorted[Math.max(0, idx)];
+}
+
 /* ── Helpers ───────────────────────────────────────────────────────── */
 
 function prepareData(records: ResourceHistoryRecord[]) {
@@ -44,16 +52,47 @@ function StatusDot(props: {
   cx?: number;
   cy?: number;
   payload?: ChartDatum;
+  p90?: number;
 }) {
-  const { cx, cy, payload } = props;
+  const { cx, cy, payload, p90 } = props;
   if (cx == null || cy == null || !payload) return null;
+  const isAnomaly =
+    p90 != null &&
+    payload.duration_seconds != null &&
+    payload.duration_seconds > p90;
   return (
     <circle
       cx={cx}
       cy={cy}
-      r={3}
-      fill={statusDotColor(payload.status)}
-      stroke="none"
+      r={isAnomaly ? 4 : 3}
+      fill={isAnomaly ? "#f43f5e" : statusDotColor(payload.status)}
+      stroke={isAnomaly ? "#f43f5e" : "none"}
+      strokeWidth={isAnomaly ? 1.5 : 0}
+      fillOpacity={isAnomaly ? 1 : 0.9}
+    />
+  );
+}
+
+/* ── Generic anomaly dot for any metric ───────────────────────────── */
+
+function AnomalyDot(props: {
+  cx?: number;
+  cy?: number;
+  value?: number;
+  p90: number;
+  normalColor: string;
+}) {
+  const { cx, cy, value, p90, normalColor } = props;
+  if (cx == null || cy == null || value == null) return null;
+  const isAnomaly = value > p90;
+  return (
+    <circle
+      cx={cx}
+      cy={cy}
+      r={isAnomaly ? 4 : 2}
+      fill={isAnomaly ? "#f43f5e" : normalColor}
+      stroke={isAnomaly ? "#f43f5e" : "none"}
+      strokeWidth={isAnomaly ? 1.5 : 0}
     />
   );
 }
@@ -122,6 +161,22 @@ export function ResourceHistoryModal({
   );
   const hasPeakExec = chartData.some((d) => d.peakExecMemGb != null);
 
+  // Compute p90 thresholds for anomaly detection
+  const durationValues = chartData
+    .map((d) => d.duration_seconds)
+    .filter((v): v is number => v != null);
+  const p90Duration = durationValues.length >= 3 ? percentile(durationValues, 90) : null;
+
+  const cpuValues = chartData
+    .map((d) => d.cpu_utilization_pct)
+    .filter((v): v is number => v != null);
+  const p90Cpu = cpuValues.length >= 3 ? percentile(cpuValues, 90) : null;
+
+  const driverMemValues = chartData
+    .map((d) => d.driverMemGb)
+    .filter((v): v is number => v != null);
+  const p90DriverMem = driverMemValues.length >= 3 ? percentile(driverMemValues, 90) : null;
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5">
       {/* Backdrop */}
@@ -131,24 +186,24 @@ export function ResourceHistoryModal({
       />
 
       {/* Modal panel */}
-      <div className="relative w-full max-w-[92vw] h-[88vh] bg-[#0a0a0f] border border-white/[0.06] rounded-2xl shadow-2xl shadow-black/60 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
+      <div className="relative w-full max-w-[92vw] h-[88vh] bg-surface-modal border border-border rounded-2xl shadow-2xl shadow-black/60 flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-200">
         {/* Header */}
-        <div className="px-6 py-3.5 border-b border-white/[0.06] bg-[#0e0e14] flex items-center gap-4 shrink-0">
+        <div className="px-6 py-3.5 border-b border-border bg-surface-modal-header flex items-center gap-4 shrink-0">
           <div className="size-8 bg-indigo-500/10 border border-indigo-500/20 rounded-lg flex items-center justify-center shrink-0">
             <Activity className="size-4 text-indigo-400" />
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-white tracking-tight truncate">
+            <h2 className="text-sm font-semibold text-foreground tracking-tight truncate">
               Resource Usage Over Time
             </h2>
-            <p className="text-[10px] text-slate-600 font-mono mt-0.5">
+            <p className="text-[10px] text-text-faint font-mono mt-0.5">
               Per-run resource metrics history
             </p>
           </div>
 
-          <div className="w-px h-5 bg-white/[0.06] mx-1" />
-          <div className="flex items-center gap-2 text-[10px] font-mono text-slate-500">
-            <span className="px-2 py-1 rounded bg-white/[0.03] border border-white/[0.05]">
+          <div className="w-px h-5 bg-hover-bg-strong mx-1" />
+          <div className="flex items-center gap-2 text-[10px] font-mono text-text-muted">
+            <span className="px-2 py-1 rounded bg-hover-bg border border-border">
               {data?.total ?? 0} runs
             </span>
           </div>
@@ -157,7 +212,7 @@ export function ResourceHistoryModal({
 
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-600 hover:text-white hover:bg-white/5 rounded-lg transition-all border border-transparent hover:border-white/[0.06]"
+            className="p-1.5 text-text-faint hover:text-foreground hover:bg-hover-bg rounded-lg transition-all border border-transparent hover:border-border"
           >
             <X className="size-4" />
           </button>
@@ -168,12 +223,12 @@ export function ResourceHistoryModal({
           {isLoading ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
               {Array.from({ length: 4 }).map((_, i) => (
-                <Skeleton key={i} className="h-[260px] bg-white/5 rounded-xl" />
+                <Skeleton key={i} className="h-[260px] bg-hover-bg rounded-xl" />
               ))}
             </div>
           ) : chartData.length === 0 ? (
             <div className="flex items-center justify-center h-full">
-              <span className="text-xs text-slate-600 font-mono">
+              <span className="text-xs text-text-faint font-mono">
                 No resource history available
               </span>
             </div>
@@ -186,8 +241,13 @@ export function ResourceHistoryModal({
                 chartType="line"
                 yTickFormatter={(v: number) => formatDuration(v)}
                 tooltipFormatter={durationTooltipFormatter}
+                referenceLines={
+                  p90Duration != null
+                    ? [{ y: p90Duration, stroke: "#f59e0b", label: `p90 ${formatDuration(p90Duration)}` }]
+                    : undefined
+                }
                 lines={[
-                  { dataKey: "duration_seconds", stroke: "#818cf8", name: "Duration", dot: <StatusDot /> },
+                  { dataKey: "duration_seconds", stroke: "#818cf8", name: "Duration", dot: <StatusDot p90={p90Duration ?? undefined} /> },
                 ]}
               />
 
@@ -199,8 +259,20 @@ export function ResourceHistoryModal({
                 yTickFormatter={gbTickFormatter}
                 tooltipFormatter={gbTooltipFormatter}
                 showLegend
+                referenceLines={
+                  p90DriverMem != null
+                    ? [{ y: p90DriverMem, stroke: "#f59e0b", label: `p90 ${p90DriverMem.toFixed(1)}g` }]
+                    : undefined
+                }
                 lines={[
-                  { dataKey: "driverMemGb", stroke: "#818cf8", name: "Driver" },
+                  {
+                    dataKey: "driverMemGb",
+                    stroke: "#818cf8",
+                    name: "Driver",
+                    dot: p90DriverMem != null
+                      ? <AnomalyDot p90={p90DriverMem} normalColor="#818cf8" />
+                      : { r: 2, fill: "#818cf8" },
+                  },
                   { dataKey: "executorMemGb", stroke: "#34d399", name: "Executor Peak" },
                   ...(hasPeakExec
                     ? [{ dataKey: "peakExecMemGb", stroke: "#f59e0b", name: "Peak Exec", strokeDasharray: "4 2" }]
@@ -216,6 +288,11 @@ export function ResourceHistoryModal({
                 yTickFormatter={(v: number) => `${v}%`}
                 yDomain={[0, 100]}
                 tooltipFormatter={pctTooltipFormatter}
+                referenceLines={
+                  p90Cpu != null
+                    ? [{ y: p90Cpu, stroke: "#f59e0b", label: `p90 ${p90Cpu.toFixed(0)}%` }]
+                    : undefined
+                }
                 gradientDefs={
                   <linearGradient id="cpuGradient" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="0%" stopColor="#818cf8" stopOpacity={0.3} />
@@ -223,7 +300,15 @@ export function ResourceHistoryModal({
                   </linearGradient>
                 }
                 areas={[
-                  { dataKey: "cpu_utilization_pct", stroke: "#818cf8", fill: "url(#cpuGradient)", name: "CPU" },
+                  {
+                    dataKey: "cpu_utilization_pct",
+                    stroke: "#818cf8",
+                    fill: "url(#cpuGradient)",
+                    name: "CPU",
+                    dot: p90Cpu != null
+                      ? <AnomalyDot p90={p90Cpu} normalColor="#818cf8" />
+                      : { r: 2, fill: "#818cf8" },
+                  },
                 ]}
               />
 

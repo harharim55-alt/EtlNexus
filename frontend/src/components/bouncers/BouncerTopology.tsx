@@ -50,7 +50,7 @@ function EtlNode({
       disabled={!isClickable}
       className={`
         group/node flex items-center gap-2.5 w-full px-3 py-2.5 rounded-lg border text-left transition-all duration-150
-        bg-[#0f0f12] border-white/5 hover:border-white/15 hover:bg-white/[0.03]
+        bg-[#0f0f12] border-border hover:border-border-prominent hover:bg-hover-bg
         ${isClickable ? "cursor-pointer" : "cursor-default"}
       `}
     >
@@ -58,10 +58,10 @@ function EtlNode({
         className={`inline-block w-2 h-2 rounded-full shrink-0 ${cfg.dot} ${cfg.glow}`}
       />
       <div className="min-w-0 flex-1">
-        <span className="text-[11px] font-medium block truncate text-slate-300 group-hover/node:text-slate-200">
+        <span className="text-[11px] font-medium block truncate text-text-primary group-hover/node:text-text-primary">
           {displayName}
         </span>
-        <span className="text-[9px] font-mono text-slate-600 block truncate">
+        <span className="text-[9px] font-mono text-text-faint block truncate">
           {node.task_id}
         </span>
       </div>
@@ -112,16 +112,16 @@ function DagGroup({
   const hasFailure = (summary.failed ?? 0) > 0;
 
   return (
-    <div className="rounded-lg border border-white/[0.04] bg-white/[0.01] overflow-hidden">
+    <div className="rounded-lg border border-border bg-hover-bg overflow-hidden">
       <button
         type="button"
         onClick={() => setIsOpen((v) => !v)}
-        className="flex items-center gap-2 w-full px-2.5 py-2 text-left hover:bg-white/[0.02] transition-colors cursor-pointer"
+        className="flex items-center gap-2 w-full px-2.5 py-2 text-left hover:bg-hover-bg transition-colors cursor-pointer"
       >
         <ChevronRight
-          className={`w-3 h-3 text-slate-500 shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
+          className={`w-3 h-3 text-text-muted shrink-0 transition-transform duration-200 ${isOpen ? "rotate-90" : ""}`}
         />
-        <span className="text-[10px] font-mono text-slate-400 truncate flex-1">
+        <span className="text-[10px] font-mono text-text-secondary truncate flex-1">
           {dagId.replace(/_/g, " ")}
         </span>
 
@@ -141,7 +141,7 @@ function DagGroup({
         </div>
 
         <span
-          className={`text-[9px] font-mono tabular-nums shrink-0 ${hasFailure ? "text-rose-400/60" : "text-slate-600"}`}
+          className={`text-[9px] font-mono tabular-nums shrink-0 ${hasFailure ? "text-rose-400/60" : "text-text-faint"}`}
         >
           {nodes.length}
         </span>
@@ -188,8 +188,8 @@ export function BouncerTopology() {
         <div className="bg-teal-500/5 p-4 rounded-2xl border border-teal-500/10 mb-4">
           <Radio className="w-8 h-8 text-teal-500/30" />
         </div>
-        <p className="text-sm text-slate-400 mb-1">No bouncers selected</p>
-        <p className="text-[11px] text-slate-600 max-w-[240px]">
+        <p className="text-sm text-text-secondary mb-1">No bouncers selected</p>
+        <p className="text-[11px] text-text-faint max-w-[240px]">
           Select one or more bouncers from the list to view downstream ETL dependencies
         </p>
       </div>
@@ -199,9 +199,9 @@ export function BouncerTopology() {
   if (isLoading) {
     return (
       <div className="flex-1 p-4 space-y-3">
-        <Skeleton className="h-5 w-48 bg-white/5" />
-        <Skeleton className="h-32 bg-white/5 rounded-xl" />
-        <Skeleton className="h-24 bg-white/5 rounded-xl" />
+        <Skeleton className="h-5 w-48 bg-hover-bg" />
+        <Skeleton className="h-32 bg-hover-bg rounded-xl" />
+        <Skeleton className="h-24 bg-hover-bg rounded-xl" />
       </div>
     );
   }
@@ -212,10 +212,10 @@ export function BouncerTopology() {
   return (
     <div className="flex-1 flex flex-col min-h-0">
       {/* Header with mode toggle */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-white/5 shrink-0">
+      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
         <div className="flex items-center gap-2">
           <Workflow className="w-3.5 h-3.5 text-teal-400/60" />
-          <span className="text-[10px] font-mono uppercase tracking-widest text-slate-500">
+          <span className="text-[10px] font-mono uppercase tracking-widest text-text-muted">
             Downstream ETLs
           </span>
           <span className="text-[10px] font-mono text-teal-400/50">
@@ -224,14 +224,14 @@ export function BouncerTopology() {
         </div>
 
         {selectedBouncers.length >= 2 && (
-          <div className="flex items-center gap-1 bg-white/[0.03] rounded-lg p-0.5 border border-white/5">
+          <div className="flex items-center gap-1 bg-hover-bg rounded-lg p-0.5 border border-border">
             <button
               type="button"
               onClick={() => setTopologyMode("union")}
               className={`text-[9px] font-mono px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                 topologyMode === "union"
                   ? "text-teal-300 bg-teal-500/15"
-                  : "text-slate-500 hover:text-slate-400"
+                  : "text-text-muted hover:text-text-secondary"
               }`}
             >
               Union
@@ -242,7 +242,7 @@ export function BouncerTopology() {
               className={`text-[9px] font-mono px-2.5 py-1 rounded-md transition-all cursor-pointer ${
                 topologyMode === "intersection"
                   ? "text-teal-300 bg-teal-500/15"
-                  : "text-slate-500 hover:text-slate-400"
+                  : "text-text-muted hover:text-text-secondary"
               }`}
             >
               Intersect
@@ -255,7 +255,7 @@ export function BouncerTopology() {
       <div className="flex-1 overflow-y-auto custom-scrollbar p-4">
         {/* Selected bouncers row */}
         <div className="mb-4">
-          <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600 mb-2 block">
+          <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint mb-2 block">
             Selected Bouncers
           </span>
           <div className="flex flex-wrap gap-1.5">
@@ -279,7 +279,7 @@ export function BouncerTopology() {
         {/* Downstream ETLs grouped by DAG */}
         {dagIds.length === 0 ? (
           <div className="text-center py-8">
-            <p className="text-[11px] text-slate-600 font-mono">
+            <p className="text-[11px] text-text-faint font-mono">
               No downstream ETLs found
             </p>
           </div>

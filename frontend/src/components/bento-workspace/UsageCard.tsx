@@ -3,17 +3,12 @@ import { Activity, Workflow, Globe, Network, ChevronDown } from "lucide-react";
 import { usePipelineUsage } from "@/hooks/use-pipeline-usage";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getStatusStyle } from "@/lib/status-config";
+import { formatCount } from "@/lib/format";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
 import type { PipelineUsage } from "@/types/usage";
 
 interface UsageCardProps {
   etlName: string;
-}
-
-function formatCount(count: number): string {
-  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
-  if (count >= 1_000) return `${(count / 1000).toFixed(1)}k`;
-  return count.toString();
 }
 
 function UsageRow({ usage }: { usage: PipelineUsage }) {
@@ -26,7 +21,7 @@ function UsageRow({ usage }: { usage: PipelineUsage }) {
       className={`group flex items-center gap-3 px-4 py-3 transition-all duration-200 ${
         usage.is_current
           ? "bg-indigo-500/[0.06] border-b border-indigo-500/20"
-          : "hover:bg-white/[0.03]"
+          : "hover:bg-hover-bg"
       }`}
     >
       {/* Status dot */}
@@ -41,13 +36,13 @@ function UsageRow({ usage }: { usage: PipelineUsage }) {
             className={`text-sm font-medium truncate transition-colors ${
               usage.is_current
                 ? "text-indigo-300"
-                : "text-slate-200 group-hover:text-white"
+                : "text-text-primary group-hover:text-foreground"
             }`}
           >
             {usage.consumer_name}
           </span>
           <span
-            className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 border border-white/5 shrink-0 ${
+            className={`inline-flex items-center gap-1 text-[10px] font-mono px-1.5 py-0.5 rounded bg-hover-bg border border-border shrink-0 ${
               usage.usage_type === "api" ? "text-violet-400" : "text-cyan-400"
             }`}
           >
@@ -61,7 +56,7 @@ function UsageRow({ usage }: { usage: PipelineUsage }) {
           )}
         </div>
         {usage.description && !usage.is_current && (
-          <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+          <p className="text-[11px] text-text-muted mt-0.5 truncate">
             {usage.description}
           </p>
         )}
@@ -69,23 +64,23 @@ function UsageRow({ usage }: { usage: PipelineUsage }) {
 
       {/* Network (DAG) */}
       {usage.dag_id && (
-        <span className="text-[10px] font-mono px-2 py-1 rounded bg-white/[0.03] border border-white/5 text-slate-400 shrink-0 max-w-[140px] truncate">
+        <span className="text-[10px] font-mono px-2 py-1 rounded bg-hover-bg border border-border text-text-secondary shrink-0 max-w-[140px] truncate">
           {usage.dag_id}
         </span>
       )}
 
       {/* Reads metrics */}
       <div className="text-right shrink-0 w-20">
-        <div className={`text-xs font-mono tabular-nums ${usage.is_current ? "text-indigo-400" : "text-slate-300"}`}>
+        <div className={`text-xs font-mono tabular-nums ${usage.is_current ? "text-indigo-400" : "text-text-primary"}`}>
           {formatCount(usage.unique_reads)}
         </div>
-        <div className="text-[9px] text-slate-600 font-mono">unique</div>
+        <div className="text-[9px] text-text-faint font-mono">unique</div>
       </div>
       <div className="text-right shrink-0 w-16">
-        <div className={`text-xs font-mono tabular-nums ${usage.is_current ? "text-indigo-400/70" : "text-slate-400"}`}>
+        <div className={`text-xs font-mono tabular-nums ${usage.is_current ? "text-indigo-400/70" : "text-text-secondary"}`}>
           {formatCount(usage.total_reads)}
         </div>
-        <div className="text-[9px] text-slate-600 font-mono">total</div>
+        <div className="text-[9px] text-text-faint font-mono">total</div>
       </div>
     </div>
   );
@@ -118,15 +113,15 @@ export function UsageCard({ etlName }: UsageCardProps) {
   const isFiltered = selectedNetwork !== null;
 
   return (
-    <div className="bg-[#18181b] border border-white/5 rounded-2xl flex flex-col overflow-hidden">
+    <div className="bg-card border border-border rounded-2xl flex flex-col overflow-hidden">
       {/* Header */}
-      <div className="p-5 border-b border-white/5 bg-[#18181b]/50 backdrop-blur flex items-center justify-between">
-        <h3 className="text-[11px] font-mono uppercase tracking-widest text-slate-500 flex items-center gap-2">
+      <div className="p-5 border-b border-border bg-card/50 backdrop-blur flex items-center justify-between">
+        <h3 className="text-[11px] font-mono uppercase tracking-widest text-text-muted flex items-center gap-2">
           <Activity className="w-3.5 h-3.5" /> Consumers & Usage
         </h3>
         <div className="flex items-center gap-2">
           {!isLoading && consumers.length > 0 && (
-            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-slate-400">
+            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-hover-bg text-text-secondary">
               {consumers.length} downstream
             </span>
           )}
@@ -139,7 +134,7 @@ export function UsageCard({ etlName }: UsageCardProps) {
                 className={`inline-flex items-center gap-1.5 text-[10px] font-mono px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
                   isFiltered
                     ? "text-indigo-300 bg-indigo-500/15 border-indigo-500/30 shadow-[0_0_8px_rgba(99,102,241,0.12)]"
-                    : "text-slate-500 bg-white/[0.02] border-white/5 hover:border-white/15 hover:text-slate-400"
+                    : "text-text-muted bg-hover-bg border-border hover:border-border-prominent hover:text-text-secondary"
                 }`}
               >
                 <Network className="w-2.5 h-2.5" />
@@ -147,14 +142,14 @@ export function UsageCard({ etlName }: UsageCardProps) {
                 <ChevronDown className={`w-2.5 h-2.5 transition-transform ${networkOpen ? "rotate-180" : ""}`} />
               </button>
               {networkOpen && (
-                <div className="absolute top-full right-0 mt-2 z-50 bg-[#18181b] border border-white/10 rounded-xl py-1 shadow-xl min-w-[160px]">
+                <div className="absolute top-full right-0 mt-2 z-50 bg-card border border-border-prominent rounded-xl py-1 shadow-xl min-w-[160px]">
                   <button
                     type="button"
                     onClick={() => { setSelectedNetwork(null); setNetworkOpen(false); }}
                     className={`w-full text-left text-[10px] font-mono px-3 py-1.5 transition-colors cursor-pointer ${
                       !isFiltered
                         ? "text-indigo-300 bg-indigo-500/10"
-                        : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                        : "text-text-secondary hover:text-text-primary hover:bg-hover-bg"
                     }`}
                   >
                     All Networks
@@ -167,7 +162,7 @@ export function UsageCard({ etlName }: UsageCardProps) {
                       className={`w-full text-left text-[10px] font-mono px-3 py-1.5 transition-colors cursor-pointer ${
                         selectedNetwork === n
                           ? "text-indigo-300 bg-indigo-500/10"
-                          : "text-slate-400 hover:text-slate-200 hover:bg-white/5"
+                          : "text-text-secondary hover:text-text-primary hover:bg-hover-bg"
                       }`}
                     >
                       {n}
@@ -186,17 +181,17 @@ export function UsageCard({ etlName }: UsageCardProps) {
         {isLoading ? (
           <div className="space-y-2 p-4">
             {[...Array(3)].map((_, i) => (
-              <Skeleton key={i} className="h-12 w-full bg-white/5 rounded-xl" />
+              <Skeleton key={i} className="h-12 w-full bg-hover-bg rounded-xl" />
             ))}
           </div>
         ) : usages.length > 0 ? (
-          <div className="divide-y divide-white/[0.02]">
+          <div className="divide-y divide-border">
             {usages.map((usage) => (
               <UsageRow key={usage.id + (usage.is_current ? "-current" : "")} usage={usage} />
             ))}
           </div>
         ) : (
-          <div className="text-center text-slate-600 text-xs py-8 font-mono">
+          <div className="text-center text-text-faint text-xs py-8 font-mono">
             No consumers tracked
           </div>
         )}

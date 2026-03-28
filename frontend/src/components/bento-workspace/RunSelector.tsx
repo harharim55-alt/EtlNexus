@@ -89,7 +89,7 @@ export function RunSelector({ pipelineId }: RunSelectorProps) {
       </button>
 
       {open && (
-        <div className="absolute top-full right-0 mt-1 z-50 bg-[#18181b] border border-white/10 rounded-xl shadow-2xl shadow-black/60 overflow-hidden min-w-[280px]">
+        <div className="absolute top-full right-0 mt-1 z-50 bg-card border border-border-prominent rounded-xl shadow-2xl shadow-black/60 overflow-hidden min-w-[280px]">
           {/* "Latest (live)" option */}
           <button
             type="button"
@@ -97,14 +97,14 @@ export function RunSelector({ pipelineId }: RunSelectorProps) {
               clearRun();
               setOpen(false);
             }}
-            className={`w-full text-left px-4 py-2.5 text-[11px] font-mono transition-colors cursor-pointer flex items-center gap-3 border-b border-white/5 ${
+            className={`w-full text-left px-4 py-2.5 text-[11px] font-mono transition-colors cursor-pointer flex items-center gap-3 border-b border-border ${
               isLatest
                 ? "bg-emerald-500/10 text-emerald-300"
-                : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                : "text-text-secondary hover:bg-hover-bg hover:text-text-primary"
             }`}
           >
             <Radio
-              className={`w-3 h-3 ${isLatest ? "text-emerald-400 animate-pulse" : "text-slate-600"}`}
+              className={`w-3 h-3 ${isLatest ? "text-emerald-400 animate-pulse" : "text-text-faint"}`}
             />
             <span className="flex-1">Latest (live)</span>
             {isLatest && (
@@ -138,7 +138,7 @@ export function RunSelector({ pipelineId }: RunSelectorProps) {
                   className={`w-full text-left px-4 py-2 text-[11px] font-mono transition-colors cursor-pointer flex items-center gap-3 ${
                     isSelected
                       ? "bg-indigo-500/10 text-indigo-300"
-                      : "text-slate-400 hover:bg-white/5 hover:text-slate-200"
+                      : "text-text-secondary hover:bg-hover-bg hover:text-text-primary"
                   }`}
                 >
                   <span
@@ -148,7 +148,7 @@ export function RunSelector({ pipelineId }: RunSelectorProps) {
                     {formatDateFull(run.start_date)}
                   </span>
                   {run.duration_seconds != null && (
-                    <span className="text-[10px] text-slate-600 shrink-0">
+                    <span className="text-[10px] text-text-faint shrink-0">
                       {formatDuration(run.duration_seconds)}
                     </span>
                   )}
@@ -157,14 +157,14 @@ export function RunSelector({ pipelineId }: RunSelectorProps) {
             })}
             {isFetchingNextPage && (
               <div className="flex justify-center py-2">
-                <Loader2 className="w-3.5 h-3.5 text-slate-600 animate-spin" />
+                <Loader2 className="w-3.5 h-3.5 text-text-faint animate-spin" />
               </div>
             )}
           </div>
 
           {/* Footer */}
           {total > 0 && (
-            <div className="px-3 py-1.5 border-t border-white/5 text-[9px] font-mono text-slate-600 text-center">
+            <div className="px-3 py-1.5 border-t border-border text-[9px] font-mono text-text-faint text-center">
               {allRuns.length} of {total} runs
             </div>
           )}

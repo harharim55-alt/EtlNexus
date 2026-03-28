@@ -15,7 +15,7 @@ const PRESETS: { label: string; value: Exclude<DatePreset, "custom"> }[] = [
 const ACTIVE =
   "text-indigo-300 bg-indigo-500/15 border-indigo-500/30 shadow-[0_0_8px_rgba(99,102,241,0.12)]";
 const INACTIVE =
-  "text-slate-500 bg-white/[0.02] border-white/5 hover:border-white/15 hover:text-slate-400";
+  "text-text-muted bg-hover-bg border-border hover:border-border-prominent hover:text-text-secondary";
 
 export function DateRangePicker() {
   const { preset, dateFrom, dateTo, setPreset, setCustomRange } =
@@ -88,26 +88,26 @@ export function DateRangePicker() {
       {showCustom && (
         <div
           ref={popoverRef}
-          className="absolute top-full right-0 mt-2 z-50 bg-[#18181b] border border-white/10 rounded-xl p-3 shadow-xl min-w-[280px]"
+          className="absolute top-full right-0 mt-2 z-50 bg-card border border-border-prominent rounded-xl p-3 shadow-xl min-w-[280px]"
         >
           <div className="flex flex-col gap-2">
-            <label className="text-[9px] font-mono uppercase tracking-widest text-slate-500">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-text-muted">
               From
             </label>
             <input
               type="datetime-local"
               value={localFrom}
               onChange={(e) => setLocalFrom(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-indigo-500/50 [color-scheme:dark]"
+              className="bg-hover-bg border border-border-prominent rounded-lg px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:border-indigo-500/50 [color-scheme:dark]"
             />
-            <label className="text-[9px] font-mono uppercase tracking-widest text-slate-500">
+            <label className="text-[9px] font-mono uppercase tracking-widest text-text-muted">
               To
             </label>
             <input
               type="datetime-local"
               value={localTo}
               onChange={(e) => setLocalTo(e.target.value)}
-              className="bg-white/5 border border-white/10 rounded-lg px-3 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-indigo-500/50 [color-scheme:dark]"
+              className="bg-hover-bg border border-border-prominent rounded-lg px-3 py-1.5 text-xs font-mono text-foreground focus:outline-none focus:border-indigo-500/50 [color-scheme:dark]"
             />
             <button
               type="button"

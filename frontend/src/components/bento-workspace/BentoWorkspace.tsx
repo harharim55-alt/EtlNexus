@@ -22,7 +22,7 @@ export function BentoWorkspace() {
 
   if (!selectedPipelineId) {
     return (
-      <div data-section="bento-workspace" className="flex-1 flex items-center justify-center text-slate-600">
+      <div data-section="bento-workspace" className="flex-1 flex items-center justify-center text-text-faint">
         <p className="text-sm font-mono">Select a pipeline to explore</p>
       </div>
     );
@@ -31,14 +31,14 @@ export function BentoWorkspace() {
   if (isLoading) {
     return (
       <div data-section="bento-workspace" className="flex-1 overflow-y-auto p-8 custom-scrollbar">
-        <Skeleton className="h-8 w-64 bg-white/5 mb-2" />
-        <Skeleton className="h-5 w-96 bg-white/5 mb-8" />
+        <Skeleton className="h-8 w-64 bg-hover-bg mb-2" />
+        <Skeleton className="h-5 w-96 bg-hover-bg mb-8" />
         <div className="grid grid-cols-12 gap-6">
-          <Skeleton className="col-span-12 lg:col-span-8 h-48 bg-white/5 rounded-2xl" />
-          <Skeleton className="col-span-12 lg:col-span-4 h-48 bg-white/5 rounded-2xl" />
-          <Skeleton className="col-span-12 h-36 bg-white/5 rounded-2xl" />
-          <Skeleton className="col-span-12 lg:col-span-7 h-64 bg-white/5 rounded-2xl" />
-          <Skeleton className="col-span-12 lg:col-span-5 h-64 bg-white/5 rounded-2xl" />
+          <Skeleton className="col-span-12 lg:col-span-8 h-48 bg-hover-bg rounded-2xl" />
+          <Skeleton className="col-span-12 lg:col-span-4 h-48 bg-hover-bg rounded-2xl" />
+          <Skeleton className="col-span-12 h-36 bg-hover-bg rounded-2xl" />
+          <Skeleton className="col-span-12 lg:col-span-7 h-64 bg-hover-bg rounded-2xl" />
+          <Skeleton className="col-span-12 lg:col-span-5 h-64 bg-hover-bg rounded-2xl" />
         </div>
       </div>
     );

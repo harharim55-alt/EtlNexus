@@ -2,7 +2,7 @@ import { Activity, CheckCircle, Layers, Timer, Workflow } from "lucide-react";
 import type { DagSummaryAggregate } from "@/types/dag-summary";
 
 function rateColor(rate: number | null): string {
-  if (rate === null) return "text-slate-500";
+  if (rate === null) return "text-text-muted";
   if (rate >= 90) return "text-emerald-400";
   if (rate >= 70) return "text-amber-400";
   return "text-rose-400";
@@ -19,7 +19,7 @@ export function AggregateBar({ aggregate }: AggregateBarProps) {
       label: "Total DAGs",
       value: String(aggregate.total_dags),
       sub: null,
-      color: "text-white",
+      color: "text-foreground",
     },
     {
       icon: Activity,
@@ -51,7 +51,7 @@ export function AggregateBar({ aggregate }: AggregateBarProps) {
       label: `Runs (${aggregate.period_label ?? "30d"})`,
       value: String(aggregate.total_runs_30d),
       sub: null,
-      color: "text-white",
+      color: "text-foreground",
     },
   ];
 
@@ -62,11 +62,11 @@ export function AggregateBar({ aggregate }: AggregateBarProps) {
         return (
           <div
             key={tile.label}
-            className="bg-[#18181b] border border-white/5 rounded-2xl p-4 flex flex-col gap-2"
+            className="bg-card border border-border rounded-2xl p-4 flex flex-col gap-2"
           >
             <div className="flex items-center gap-1.5">
-              <Icon className="w-3 h-3 text-slate-600" />
-              <span className="text-[9px] font-mono uppercase tracking-widest text-slate-600">
+              <Icon className="w-3 h-3 text-text-faint" />
+              <span className="text-[9px] font-mono uppercase tracking-widest text-text-faint">
                 {tile.label}
               </span>
             </div>
@@ -74,7 +74,7 @@ export function AggregateBar({ aggregate }: AggregateBarProps) {
               {tile.value}
             </span>
             {tile.sub && (
-              <span className="text-[10px] font-mono text-slate-600">
+              <span className="text-[10px] font-mono text-text-faint">
                 {tile.sub}
               </span>
             )}

@@ -2,11 +2,16 @@ import { useEffect, useMemo, useCallback } from "react";
 import { usePipelines } from "@/hooks/use-pipelines";
 import { useDagSummary } from "@/hooks/use-dag-summary";
 import { usePipelineStore } from "@/stores/pipeline-store";
+import { useFavoritesStore } from "@/stores/favorites-store";
 import { PipelineSearch } from "./PipelineSearch";
 import { PipelineFilters } from "./PipelineFilters";
 import { PipelineListContent } from "./PipelineListContent";
-import { X } from "lucide-react";
+
+import { Download, X } from "lucide-react";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import { downloadAsCSV } from "@/lib/export";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
+import type { PipelineFilterParams } from "@/api/pipelines";
 
 /* ── Types ────────────────────────────────────────────────────────── */
 
@@ -28,6 +33,15 @@ export function PipelineRegistry() {
     statusFilters,
     clearAllFilters,
   } = usePipelineStore();
+  // Build server-side filter params from store sets
+  const serverFilters = useMemo<PipelineFilterParams | undefined>(() => {
+    const f: PipelineFilterParams = {};
+    if (teamFilters.size > 0) f.team = Array.from(teamFilters);
+    if (dagFilters.size > 0) f.dag_id = Array.from(dagFilters);
+    if (statusFilters.size > 0) f.status = Array.from(statusFilters);
+    return Object.keys(f).length > 0 ? f : undefined;
+  }, [teamFilters, dagFilters, statusFilters]);
+
   const {
     data,
     fetchNextPage,
@@ -36,7 +50,7 @@ export function PipelineRegistry() {
     isLoading,
     isError,
     refetch,
-  } = usePipelines(searchQuery);
+  } = usePipelines(searchQuery, serverFilters);
   const pipelines = useMemo(
     () => data?.pages.flatMap((p) => p.items) ?? [],
     [data],
@@ -106,11 +120,22 @@ export function PipelineRegistry() {
     });
   }, [pipelines, teamFilters, dagFilters, statusFilters, dagToPipelineIds, hasActiveFilters]);
 
+  const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
+
   const groupedPipelines = useMemo<CategoryGroup[]>(() => {
     if (!filteredPipelines.length) return [];
 
-    const groups = new Map<string, PipelineListItemType[]>();
+    const result: CategoryGroup[] = [];
 
+    // Favorites group at top
+    const favSet = new Set(favoriteIds);
+    const favPipelines = filteredPipelines.filter((p) => favSet.has(p.id));
+    if (favPipelines.length > 0) {
+      result.push({ category: "\u2605 Favorites", pipelines: favPipelines });
+    }
+
+    // Regular groups
+    const groups = new Map<string, PipelineListItemType[]>();
     for (const pipeline of filteredPipelines) {
       const group = pipeline.pipeline_type === "api" ? "API" : "ETL";
       if (!groups.has(group)) {
@@ -123,10 +148,13 @@ export function PipelineRegistry() {
       items.sort((a, b) => a.name.localeCompare(b.name));
     }
 
-    return Array.from(groups.entries())
+    const sorted = Array.from(groups.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([category, pipelines]) => ({ category, pipelines }));
-  }, [filteredPipelines]);
+
+    result.push(...sorted);
+    return result;
+  }, [filteredPipelines, favoriteIds]);
 
   // Auto-select first pipeline when list loads and nothing selected
   useEffect(() => {
@@ -173,31 +201,65 @@ export function PipelineRegistry() {
 
   const handleRetry = useCallback(() => refetch(), [refetch]);
 
+  const handleExportCSV = useCallback(() => {
+    const rows = filteredPipelines.map((p) => ({
+      name: p.name,
+      type: p.pipeline_type,
+      team: p.team,
+      status: p.airflow_status,
+      schedule: p.schedule,
+      rows_per_day: p.rows_per_day,
+      success_rate: p.success_rate,
+      last_run_at: p.last_run_at,
+    }));
+    downloadAsCSV(rows, "pipelines");
+  }, [filteredPipelines]);
+
   return (
-    <div data-section="pipeline-registry" className="w-[400px] border-r border-white/5 flex flex-col bg-[#09090b] shrink-0">
-      <div className="p-6 border-b border-white/5">
-        <h2 className="text-xl font-medium text-white tracking-tight mb-4">
-          Pipeline Registry
-        </h2>
+    <div data-section="pipeline-registry" className="w-[400px] border-r border-border flex flex-col bg-background shrink-0">
+      <div className="p-6 border-b border-border">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-medium text-foreground tracking-tight">
+            Pipeline Registry
+          </h2>
+          <Tooltip>
+            <TooltipTrigger
+              className="p-1.5 text-text-muted hover:text-foreground rounded-lg transition-colors cursor-pointer"
+              onClick={handleExportCSV}
+            >
+              <Download className="size-4" />
+            </TooltipTrigger>
+            <TooltipContent>Export CSV</TooltipContent>
+          </Tooltip>
+        </div>
         <PipelineSearch />
       </div>
 
       {/* Filter drawer */}
-      {filtersOpen && (
-        <PipelineFilters availableTeams={availableTeams} availableDags={availableDags} availableStatuses={availableStatuses} />
-      )}
+      <div
+        className="grid transition-all duration-200 border-b"
+        style={{
+          gridTemplateRows: filtersOpen ? "1fr" : "0fr",
+          opacity: filtersOpen ? 1 : 0,
+          borderColor: filtersOpen ? "rgba(255,255,255,0.05)" : "transparent",
+        }}
+      >
+        <div className="overflow-hidden">
+          <PipelineFilters availableTeams={availableTeams} availableDags={availableDags} availableStatuses={availableStatuses} />
+        </div>
+      </div>
 
       {/* Active filter summary strip (when drawer closed) */}
       {!filtersOpen && hasActiveFilters && (
-        <div className="px-6 py-2 border-b border-white/5 flex items-center gap-2 animate-in fade-in duration-150">
-          <span className="text-[10px] font-mono text-slate-500 truncate flex-1">
-            <span className="text-slate-600">Filtered:</span>{" "}
+        <div className="px-6 py-2 border-b border-border flex items-center gap-2 animate-in fade-in duration-150">
+          <span className="text-[10px] font-mono text-text-muted truncate flex-1">
+            <span className="text-text-faint">Filtered:</span>{" "}
             <span className="text-indigo-400">{filterSummary}</span>
           </span>
           <button
             type="button"
             onClick={clearAllFilters}
-            className="text-slate-600 hover:text-slate-400 transition-colors cursor-pointer shrink-0"
+            className="text-text-faint hover:text-text-secondary transition-colors cursor-pointer shrink-0"
           >
             <X className="size-3" />
           </button>
@@ -207,7 +269,7 @@ export function PipelineRegistry() {
       {/* Result count when filtered */}
       {isFiltered && (
         <div className="px-6 py-1.5">
-          <span className="text-[10px] font-mono text-slate-600">
+          <span className="text-[10px] font-mono text-text-faint">
             Showing {filteredPipelines.length} of {pipelines.length}
           </span>
         </div>
