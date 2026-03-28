@@ -80,7 +80,7 @@ interface ResourceChartProps {
   yTickFormatter?: (value: number) => string;
   yDomain?: [number, number];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  tooltipFormatter?: (value: any, name: any) => [string, string];
+  tooltipFormatter?: (value: any, name: any, props?: any) => [string, string];
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   labelFormatter?: (label: any, payload: readonly any[]) => string;
   showLegend?: boolean;
@@ -88,6 +88,9 @@ interface ResourceChartProps {
   gradientDefs?: React.ReactNode;
   /** Horizontal reference lines (e.g. p90 thresholds) */
   referenceLines?: ChartReferenceLine[];
+  /** Click handler for the chart (receives Recharts click event data) */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  onChartClick?: (data: any) => void;
 }
 
 /* ── Panel wrapper ────────────────────────────────────────────────── */
@@ -125,6 +128,7 @@ export function ResourceChart({
   showLegend = false,
   gradientDefs,
   referenceLines,
+  onChartClick,
 }: ResourceChartProps) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const defaultLabelFormatter = (_: any, payload: any) =>
@@ -136,7 +140,7 @@ export function ResourceChart({
     <ChartPanel title={title}>
       <ResponsiveContainer width="100%" height="100%">
         {chartType === "bar" ? (
-          <BarChart data={data}>
+          <BarChart data={data} onClick={onChartClick}>
             <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
             <XAxis dataKey="date" tick={TICK_STYLE} axisLine={false} tickLine={false} />
             <YAxis
@@ -184,7 +188,7 @@ export function ResourceChart({
             ))}
           </BarChart>
         ) : chartType === "area" ? (
-          <AreaChart data={data}>
+          <AreaChart data={data} onClick={onChartClick}>
             {gradientDefs && <defs>{gradientDefs}</defs>}
             <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
             <XAxis dataKey="date" tick={TICK_STYLE} axisLine={false} tickLine={false} />
@@ -235,7 +239,7 @@ export function ResourceChart({
             ))}
           </AreaChart>
         ) : (
-          <LineChart data={data}>
+          <LineChart data={data} onClick={onChartClick}>
             <CartesianGrid strokeDasharray="3 3" stroke={GRID_COLOR} />
             <XAxis dataKey="date" tick={TICK_STYLE} axisLine={false} tickLine={false} />
             <YAxis

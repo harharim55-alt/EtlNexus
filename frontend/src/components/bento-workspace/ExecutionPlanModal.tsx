@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { X, GitMerge, ScanEye } from "lucide-react";
+import { X, GitMerge, ScanEye, Search } from "lucide-react";
 import { formatDuration } from "@/lib/format";
 import { NODE_STYLES } from "./execution-plan/plan-constants";
 import { TreeNode, treeStyles } from "./execution-plan/PlanTree";
@@ -46,6 +46,18 @@ function countNodes(node: ExecutionPlanNode): Record<string, number> {
   return counts;
 }
 
+function countMatches(node: ExecutionPlanNode, query: string): number {
+  if (!query) return 0;
+  const q = query.toLowerCase();
+  let count =
+    node.name.toLowerCase().includes(q) ||
+    (node.detail ?? "").toLowerCase().includes(q)
+      ? 1
+      : 0;
+  for (const child of node.children) count += countMatches(child, q);
+  return count;
+}
+
 /* ── Modal ─────────────────────────────────────────────────────────── */
 
 export function ExecutionPlanModal({
@@ -56,13 +68,17 @@ export function ExecutionPlanModal({
   const [expandedNode, setExpandedNode] = useState<ExecutionPlanNode | null>(
     null,
   );
+  const [searchQuery, setSearchQuery] = useState("");
   const panRef = usePannable<HTMLDivElement>();
   const { containerRef, treeRef, isOverview, toggleOverview, scale } =
     useOverview();
 
   // Reset when modal closes
   useEffect(() => {
-    if (!open) setExpandedNode(null);
+    if (!open) {
+      setExpandedNode(null);
+      setSearchQuery("");
+    }
   }, [open]);
 
   // Escape key
@@ -79,6 +95,7 @@ export function ExecutionPlanModal({
 
   const nodeCounts = countNodes(data.execution_plan);
   const totalNodes = Object.values(nodeCounts).reduce((a, b) => a + b, 0);
+  const matchCount = countMatches(data.execution_plan, searchQuery);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5">
@@ -117,6 +134,23 @@ export function ExecutionPlanModal({
               <span className="px-2 py-1 rounded bg-hover-bg border border-border">
                 {formatDuration(data.duration_seconds)}
               </span>
+            )}
+          </div>
+
+          {/* Search bar */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <Search className="absolute left-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-500" />
+              <input
+                type="text"
+                placeholder="Search nodes..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="h-7 w-44 rounded bg-zinc-800 border border-zinc-700 pl-7 pr-2 text-xs text-zinc-300 placeholder:text-zinc-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+              />
+            </div>
+            {matchCount > 0 && (
+              <span className="text-xs text-indigo-400">{matchCount} found</span>
             )}
           </div>
 
@@ -198,6 +232,7 @@ export function ExecutionPlanModal({
                 <TreeNode
                   node={data.execution_plan}
                   onExpand={setExpandedNode}
+                  searchQuery={searchQuery}
                 />
               </ul>
             </div>

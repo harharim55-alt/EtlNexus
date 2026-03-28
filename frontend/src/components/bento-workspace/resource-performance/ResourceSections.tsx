@@ -1,6 +1,6 @@
-import { CheckCircle, Activity, ArrowDownUp, Database, HardDrive, MemoryStick } from "lucide-react";
+import { CheckCircle, Activity, ArrowDownUp, Database, HardDrive, MemoryStick, TrendingUp, TrendingDown, Minus, AlertTriangle, Lightbulb } from "lucide-react";
 import { formatDuration, formatDateFull } from "@/lib/format";
-import type { ActualUsage, CapacityBar as CapacityBarType, DurationRun, ResourceConfigEntry } from "@/types/resources";
+import type { ActualUsage, CapacityBar as CapacityBarType, DurationRun, ResourceConfigEntry, TrendAnalysis, ResourceRecommendation } from "@/types/resources";
 import {
   RESOURCE_ICONS,
   statusColor,
@@ -11,7 +11,35 @@ import {
 } from "./resource-utils";
 import { ResourceMetricCard, CompactMetricCard } from "./ResourceMetricCard";
 
+// --- Trend Indicator (inline) ---
+function TrendIndicator({ trend }: { trend: TrendAnalysis }) {
+  if (trend.confidence < 0.3) return null;
+  const icon = trend.direction === "increasing"
+    ? <TrendingUp className="h-3 w-3 text-red-400" />
+    : trend.direction === "decreasing"
+    ? <TrendingDown className="h-3 w-3 text-emerald-400" />
+    : <Minus className="h-3 w-3 text-zinc-500" />;
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px]" title={trend.message}>
+      {icon}
+    </span>
+  );
+}
+
 // --- Duration Section ---
+interface DurationSectionProps {
+  avgDuration: number | null;
+  minDuration: number | null;
+  maxDuration: number | null;
+  runCount: number;
+  successRate: number | null;
+  recentRuns: DurationRun[];
+  p50Duration?: number | null;
+  p95Duration?: number | null;
+  p99Duration?: number | null;
+  trends?: TrendAnalysis[];
+}
+
 export function DurationSection({
   avgDuration,
   minDuration,
@@ -19,14 +47,11 @@ export function DurationSection({
   runCount,
   successRate,
   recentRuns,
-}: {
-  avgDuration: number | null;
-  minDuration: number | null;
-  maxDuration: number | null;
-  runCount: number;
-  successRate: number | null;
-  recentRuns: DurationRun[];
-}) {
+  p50Duration,
+  p95Duration,
+  p99Duration,
+  trends,
+}: DurationSectionProps) {
   if (runCount === 0) {
     return (
       <div className="flex items-center justify-center h-full">
@@ -36,6 +61,7 @@ export function DurationSection({
   }
 
   const maxBarDuration = Math.max(...recentRuns.map((r) => r.duration_seconds), 1);
+  const durationTrend = trends?.find((t) => t.metric === "duration");
 
   return (
     <div className="flex flex-col gap-3">
@@ -44,6 +70,7 @@ export function DurationSection({
           {avgDuration != null ? formatDuration(avgDuration) : "\u2014"}
         </span>
         <span className="text-[10px] text-text-muted font-mono uppercase mb-1">avg</span>
+        {durationTrend && <TrendIndicator trend={durationTrend} />}
       </div>
       <div className="flex items-center gap-3 text-[10px] font-mono text-text-muted">
         <span>
@@ -56,6 +83,13 @@ export function DurationSection({
         <span className="text-border-prominent">|</span>
         <span>{runCount} runs</span>
       </div>
+      {(p50Duration != null || p95Duration != null || p99Duration != null) && (
+        <div className="flex items-center gap-3 text-[10px] font-mono text-zinc-500">
+          {p50Duration != null && <span>p50: {formatDuration(p50Duration)}</span>}
+          {p95Duration != null && <span>p95: {formatDuration(p95Duration)}</span>}
+          {p99Duration != null && <span>p99: {formatDuration(p99Duration)}</span>}
+        </div>
+      )}
       {successRate != null && (
         <div className="flex items-center gap-1.5">
           <CheckCircle className="w-3 h-3 text-emerald-500" />
@@ -304,6 +338,24 @@ export function SparkInternalsSection({ actualUsage }: { actualUsage: ActualUsag
           />
         ))}
       </div>
+    </div>
+  );
+}
+
+// --- Recommendations Section ---
+export function RecommendationsSection({ recommendations }: { recommendations: ResourceRecommendation[] }) {
+  if (!recommendations?.length) return null;
+  return (
+    <div className="space-y-2">
+      {recommendations.map((rec, i) => (
+        <div key={i} className={`rounded-md px-3 py-2 text-xs ${rec.severity === "warning" ? "bg-amber-500/10 border border-amber-500/20" : "bg-blue-500/10 border border-blue-500/20"}`}>
+          <div className="flex items-center gap-1.5 font-medium">
+            {rec.severity === "warning" ? <AlertTriangle className="h-3 w-3 text-amber-400" /> : <Lightbulb className="h-3 w-3 text-blue-400" />}
+            <span>{rec.resource}: {rec.current_value} → {rec.recommended_value}</span>
+          </div>
+          <p className="mt-1 text-zinc-400">{rec.reason}</p>
+        </div>
+      ))}
     </div>
   );
 }

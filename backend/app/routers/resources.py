@@ -8,7 +8,7 @@ from app.auth import get_current_user, require_pipeline_visibility
 from app.dependencies import get_resource_service
 from app.models.user import User
 from app.schemas.date_range import DateRangeParams
-from app.schemas.execution_plan import ExecutionPlanResponse, ExecutionPlanRunsResponse
+from app.schemas.execution_plan import ExecutionPlanResponse, ExecutionPlanRunsResponse, PlanDiffResponse
 from app.schemas.resources import (
     PipelineRunDetail,
     PipelineRunsResponse,
@@ -63,6 +63,21 @@ async def get_execution_plan(
     result = await service.get_execution_plan(pipeline_id, dag_run_id=dag_run_id)
     if result is None:
         raise HTTPException(status_code=404, detail="No execution plan found")
+    return result
+
+
+@router.get("/{pipeline_id}/execution-plan/diff", response_model=PlanDiffResponse)
+async def diff_execution_plans(
+    pipeline_id: uuid.UUID,
+    base_run_id: str = Query(...),
+    compare_run_id: str = Query(...),
+    user: User = Depends(require_pipeline_visibility()),
+    service: ResourceService = Depends(get_resource_service),
+) -> PlanDiffResponse:
+    """Compare two execution plans for a pipeline and return a structural diff."""
+    result = await service.compare_execution_plans(pipeline_id, base_run_id, compare_run_id)
+    if not result:
+        raise HTTPException(status_code=404, detail="Plans not found")
     return result
 
 

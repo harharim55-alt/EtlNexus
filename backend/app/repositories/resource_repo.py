@@ -35,6 +35,7 @@ ACTUALS_FIELDS: tuple[str, ...] = (
     "num_stages",
     "metrics_source",
     "execution_plan",
+    "failure_reason",
 )
 
 

@@ -46,6 +46,22 @@ class ActualUsage(BaseModel):
     metrics_source: str | None = None
 
 
+class ResourceRecommendation(BaseModel):
+    resource: str
+    current_value: str
+    recommended_value: str
+    reason: str
+    severity: str = "info"
+
+
+class TrendAnalysis(BaseModel):
+    metric: str
+    direction: str  # "increasing", "decreasing", "stable"
+    slope_per_day: float
+    confidence: float
+    message: str
+
+
 class CapacityBar(BaseModel):
     label: str
     allocated: str
@@ -73,6 +89,20 @@ class ResourceMetricsResponse(BaseModel):
 
     # Capacity utilization (allocated + used vs cluster max)
     capacity: list[CapacityBar] = []
+
+    # Percentile stats
+    p50_duration_seconds: float | None = None
+    p95_duration_seconds: float | None = None
+    p99_duration_seconds: float | None = None
+    p95_driver_memory_mb: float | None = None
+    p95_executor_memory_mb: float | None = None
+    p95_cpu_pct: float | None = None
+
+    # Insights
+    recommendations: list[ResourceRecommendation] = []
+    trends: list[TrendAnalysis] = []
+    input_data_correlation: float | None = None
+    avg_input_bytes: float | None = None
 
 
 class ResourceHistoryRecord(BaseModel):
@@ -112,6 +142,7 @@ class PipelineRunItem(BaseModel):
     end_date: datetime | None = None
     duration_seconds: float | None = None
     has_execution_plan: bool = False
+    failure_reason: str | None = None
 
 
 class PipelineRunsResponse(BaseModel):
@@ -154,3 +185,4 @@ class PipelineRunDetail(BaseModel):
     fields_snapshot: list[FieldSnapshot] | None = None
     source_tables_snapshot: list[str] | None = None
     destination_tables_snapshot: list[str] | None = None
+    failure_reason: str | None = None

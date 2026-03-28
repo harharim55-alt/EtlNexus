@@ -4,17 +4,35 @@ import type { ExecutionPlanNode } from "@/types/execution-plan";
 export function TreeNode({
   node,
   onExpand,
+  searchQuery,
 }: {
   node: ExecutionPlanNode;
   onExpand: (node: ExecutionPlanNode) => void;
+  searchQuery?: string;
 }) {
+  const isMatch =
+    searchQuery != null && searchQuery.length > 0
+      ? node.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (node.detail ?? "").toLowerCase().includes(searchQuery.toLowerCase())
+      : false;
+
   return (
     <li>
-      <NodeCard node={node} onExpand={onExpand} />
+      <NodeCard
+        node={node}
+        onExpand={onExpand}
+        highlighted={isMatch}
+        searchActive={!!searchQuery}
+      />
       {node.children.length > 0 && (
         <ul>
           {node.children.map((child) => (
-            <TreeNode key={child.id} node={child} onExpand={onExpand} />
+            <TreeNode
+              key={child.id}
+              node={child}
+              onExpand={onExpand}
+              searchQuery={searchQuery}
+            />
           ))}
         </ul>
       )}

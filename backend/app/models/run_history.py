@@ -54,6 +54,9 @@ class PipelineRunHistory(Base):
     source_tables_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
     destination_tables_snapshot: Mapped[list | None] = mapped_column(JSON, nullable=True)
 
+    # Failure classification (migration 032)
+    failure_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
     pipeline: Mapped["Pipeline"] = relationship(back_populates="run_history")
 
 

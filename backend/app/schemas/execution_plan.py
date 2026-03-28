@@ -13,6 +13,8 @@ class ExecutionPlanNode(BaseModel):
     full_detail: str = ""
     metrics: dict[str, str] = {}
     children: list[ExecutionPlanNode] = []
+    is_bottleneck: bool = False
+    bottleneck_reason: str | None = None
 
 
 class ExecutionPlanRunSummary(BaseModel):
@@ -35,3 +37,22 @@ class ExecutionPlanResponse(BaseModel):
     duration_seconds: float | None = None
     execution_date: str | None = None
     execution_plan: ExecutionPlanNode | None = None
+    plan_hash: str | None = None
+    plan_stability: str | None = None
+
+
+class PlanDiffNode(BaseModel):
+    name: str
+    type: str
+    status: str = "unchanged"
+    metrics_before: dict[str, str] | None = None
+    metrics_after: dict[str, str] | None = None
+    children: list[PlanDiffNode] = []
+
+
+class PlanDiffResponse(BaseModel):
+    base_run_id: str
+    compare_run_id: str
+    plan_changed: bool
+    diff: PlanDiffNode | None = None
+    summary: str

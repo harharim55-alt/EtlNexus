@@ -1,5 +1,7 @@
 """Resource service — reads allocated configs and run history from DB."""
 
+import copy
+import hashlib
 import json
 import logging
 import re
@@ -10,6 +12,7 @@ from app.config import settings
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
 from app.repositories.resource_stats import ResourceStatsBuilder
+from app.schemas.execution_plan import PlanDiffNode, PlanDiffResponse
 from app.schemas.resources import (
     ActualUsage,
     CapacityBar,
@@ -21,6 +24,8 @@ from app.schemas.resources import (
     ResourceHistoryRecord,
     ResourceHistoryResponse,
     ResourceMetricsResponse,
+    ResourceRecommendation,
+    TrendAnalysis,
 )
 
 logger = logging.getLogger(__name__)
@@ -120,6 +125,8 @@ class ResourceService:
                     break
 
         capacity = self._compute_capacity(configs, actual_usage)
+        recommendations = self._compute_recommendations(configs, actual_usage, stats)
+        trends = self._compute_trends(runs)
 
         return ResourceMetricsResponse(
             avg_duration_seconds=stats.get("avg_duration"),
@@ -132,6 +139,17 @@ class ResourceService:
             resource_configs=resource_configs,
             actual_usage=actual_usage,
             capacity=capacity,
+            # Percentile stats
+            p50_duration_seconds=stats.get("p50_duration"),
+            p95_duration_seconds=stats.get("p95_duration"),
+            p99_duration_seconds=stats.get("p99_duration"),
+            p95_driver_memory_mb=stats.get("p95_driver_mem"),
+            p95_executor_memory_mb=stats.get("p95_executor_mem"),
+            p95_cpu_pct=stats.get("p95_cpu"),
+            # Insights
+            recommendations=recommendations,
+            trends=trends,
+            avg_input_bytes=stats.get("avg_input_bytes"),
         )
 
     async def get_resource_history(
@@ -199,6 +217,14 @@ class ResourceService:
         except (json.JSONDecodeError, TypeError):
             return None
 
+        plan_hash = self._compute_plan_hash(plan_data)
+        # Annotate a deep copy so the original parsed data is not mutated
+        annotated_plan = copy.deepcopy(plan_data)
+        self._annotate_bottlenecks(annotated_plan)
+
+        # Compute plan stability by comparing hashes of the last few plans
+        plan_stability = await self._compute_plan_stability(pipeline_id, plan_hash)
+
         return {
             "dag_id": run.dag_id,
             "dag_run_id": run.dag_run_id,
@@ -206,7 +232,9 @@ class ResourceService:
             "status": run.status,
             "duration_seconds": run.duration_seconds,
             "execution_date": run.start_date.isoformat() if run.start_date else None,
-            "execution_plan": plan_data,
+            "execution_plan": annotated_plan,
+            "plan_hash": plan_hash,
+            "plan_stability": plan_stability,
         }
 
     async def get_execution_plan_runs(
@@ -278,6 +306,7 @@ class ResourceService:
             fields_snapshot=fields_snapshot,
             source_tables_snapshot=run.source_tables_snapshot,
             destination_tables_snapshot=run.destination_tables_snapshot,
+            failure_reason=getattr(run, "failure_reason", None),
         )
 
     @staticmethod
@@ -403,3 +432,426 @@ class ResourceService:
         if unit == "t":
             return val * 1024
         return val  # default is GB
+
+    @staticmethod
+    def _annotate_bottlenecks(plan_data: dict) -> None:
+        """Recursively walk the plan tree dict and flag bottleneck nodes in-place.
+
+        A node is considered a bottleneck when its metrics indicate:
+        - Row count exceeds 10 million rows, or
+        - Shuffle bytes exceed 1 GB.
+
+        Args:
+            plan_data: Mutable plan node dict (modified in place).
+        """
+        if not isinstance(plan_data, dict):
+            return
+
+        metrics = plan_data.get("metrics", {})
+        reasons: list[str] = []
+
+        # Check row count
+        rows_raw = metrics.get("number of output rows", metrics.get("rows", ""))
+        if rows_raw:
+            rows_str = str(rows_raw).replace(",", "").strip()
+            try:
+                rows = int(rows_str)
+                if rows > 10_000_000:
+                    reasons.append(f"High row count: {rows_raw}")
+            except ValueError:
+                pass
+
+        # Check shuffle bytes
+        for key in ("shuffle bytes written", "shuffle read bytes", "data size"):
+            shuffle_raw = metrics.get(key, "")
+            if shuffle_raw:
+                # Parse values like "1.5 GB", "2048 MB", "512 KB"
+                m = re.match(r"([\d.]+)\s*(B|KB|MB|GB|TB)", str(shuffle_raw), re.IGNORECASE)
+                if m:
+                    value = float(m.group(1))
+                    unit = m.group(2).upper()
+                    multipliers = {"B": 1, "KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
+                    bytes_val = value * multipliers.get(unit, 1)
+                    if bytes_val > 1024**3:  # > 1 GB
+                        reasons.append(f"High shuffle: {shuffle_raw}")
+                        break
+
+        if reasons:
+            plan_data["is_bottleneck"] = True
+            plan_data["bottleneck_reason"] = "; ".join(reasons)
+        # Do not add keys when not a bottleneck — Pydantic model defaults handle that
+
+        for child in plan_data.get("children", []):
+            ResourceService._annotate_bottlenecks(child)
+
+    @staticmethod
+    def _compute_plan_hash(plan_data: dict) -> str:
+        """Compute a stable SHA-256 hash of the plan tree topology.
+
+        Only node names and types are hashed (metrics are ignored) so that the
+        hash reflects the logical plan shape rather than runtime values.
+
+        Args:
+            plan_data: Plan node dict (not mutated).
+
+        Returns:
+            Hex-encoded SHA-256 digest string.
+        """
+        def _collect_tokens(node: dict) -> list[str]:
+            if not isinstance(node, dict):
+                return []
+            tokens = [node.get("name", ""), node.get("type", "")]
+            for child in node.get("children", []):
+                tokens.extend(_collect_tokens(child))
+            return tokens
+
+        tokens = _collect_tokens(plan_data)
+        content = "|".join(tokens)
+        return hashlib.sha256(content.encode()).hexdigest()
+
+    @staticmethod
+    def _compute_recommendations(
+        configs: list,
+        actual_usage: ActualUsage,
+        stats: dict,
+    ) -> list[ResourceRecommendation]:
+        """Generate resource sizing recommendations by comparing allocated vs peak usage.
+
+        Rules:
+        - If peak usage < 50% of allocated, recommend halving the resource.
+        - If peak usage > 90% of allocated, warn about OOM/starvation risk.
+
+        Args:
+            configs: List of ``PipelineResourceConfig`` ORM objects.
+            actual_usage: Aggregated actual usage schema.
+            stats: Raw stats dict from ``ResourceStatsBuilder.get_run_stats()``.
+
+        Returns:
+            List of :class:`ResourceRecommendation` instances (may be empty).
+        """
+        if not configs:
+            return []
+
+        best = configs[0]
+        for c in configs:
+            if not c.is_dag_override:
+                best = c
+                break
+
+        recs: list[ResourceRecommendation] = []
+
+        # Driver memory
+        if best.spark_driver_memory and actual_usage.peak_driver_memory_used_mb:
+            alloc_mb = ResourceService._parse_memory_gb(best.spark_driver_memory) * 1024
+            peak_mb = actual_usage.peak_driver_memory_used_mb
+            if alloc_mb > 0:
+                ratio = peak_mb / alloc_mb
+                if ratio < 0.5:
+                    half_gb = alloc_mb / 2 / 1024
+                    recs.append(ResourceRecommendation(
+                        resource="Driver Memory",
+                        current_value=best.spark_driver_memory,
+                        recommended_value=f"{half_gb:.0f}g",
+                        reason=f"Peak usage is only {ratio * 100:.0f}% of allocated — halving would save resources.",
+                        severity="info",
+                    ))
+                elif ratio > 0.9:
+                    recs.append(ResourceRecommendation(
+                        resource="Driver Memory",
+                        current_value=best.spark_driver_memory,
+                        recommended_value=f"{alloc_mb * 1.5 / 1024:.0f}g",
+                        reason=f"Peak usage is {ratio * 100:.0f}% of allocated — at risk of OOM.",
+                        severity="warning",
+                    ))
+
+        # Executor memory
+        if best.spark_executor_memory and actual_usage.peak_executor_memory_mb:
+            alloc_mb = ResourceService._parse_memory_gb(best.spark_executor_memory) * 1024
+            peak_mb = actual_usage.peak_executor_memory_mb
+            if alloc_mb > 0:
+                ratio = peak_mb / alloc_mb
+                if ratio < 0.5:
+                    half_gb = alloc_mb / 2 / 1024
+                    recs.append(ResourceRecommendation(
+                        resource="Executor Memory",
+                        current_value=best.spark_executor_memory,
+                        recommended_value=f"{half_gb:.0f}g",
+                        reason=f"Peak usage is only {ratio * 100:.0f}% of allocated — halving would save resources.",
+                        severity="info",
+                    ))
+                elif ratio > 0.9:
+                    recs.append(ResourceRecommendation(
+                        resource="Executor Memory",
+                        current_value=best.spark_executor_memory,
+                        recommended_value=f"{alloc_mb * 1.5 / 1024:.0f}g",
+                        reason=f"Peak usage is {ratio * 100:.0f}% of allocated — at risk of OOM.",
+                        severity="warning",
+                    ))
+
+        return recs
+
+    @staticmethod
+    def _compute_trends(recent_runs: list) -> list[TrendAnalysis]:
+        """Compute linear regression trends for key metrics over recent runs.
+
+        Uses pure Python (no numpy) to fit a simple least-squares line to
+        each metric series ordered by start_date. Only series with at least
+        3 data points are analysed.
+
+        Args:
+            recent_runs: List of ``PipelineRunHistory`` ORM objects ordered
+                by start_date descending (as returned by ``get_recent_runs``).
+
+        Returns:
+            List of :class:`TrendAnalysis` instances for metrics that have
+            sufficient data, ordered by metric name.
+        """
+        # Reverse to chronological order for regression
+        runs_chron = list(reversed(recent_runs))
+
+        metrics_series: dict[str, list[tuple[float, float]]] = {
+            "duration_seconds": [],
+            "driver_memory_mb": [],
+            "executor_memory_mb": [],
+            "cpu_pct": [],
+        }
+
+        for i, run in enumerate(runs_chron):
+            x = float(i)
+            try:
+                if run.duration_seconds is not None:
+                    metrics_series["duration_seconds"].append((x, float(run.duration_seconds)))
+                if run.driver_memory_used_mb is not None:
+                    metrics_series["driver_memory_mb"].append((x, float(run.driver_memory_used_mb)))
+                if run.executor_memory_peak_mb is not None:
+                    metrics_series["executor_memory_mb"].append((x, float(run.executor_memory_peak_mb)))
+                if run.cpu_utilization_pct is not None:
+                    metrics_series["cpu_pct"].append((x, float(run.cpu_utilization_pct)))
+            except (TypeError, ValueError):
+                # Skip runs where metric attributes are not numeric
+                continue
+
+        trends: list[TrendAnalysis] = []
+        for metric, series in metrics_series.items():
+            if len(series) < 3:
+                continue
+
+            n = len(series)
+            sum_x = sum(p[0] for p in series)
+            sum_y = sum(p[1] for p in series)
+            sum_xy = sum(p[0] * p[1] for p in series)
+            sum_x2 = sum(p[0] ** 2 for p in series)
+
+            denom = n * sum_x2 - sum_x ** 2
+            if denom == 0:
+                continue
+
+            slope = (n * sum_xy - sum_x * sum_y) / denom
+            intercept = (sum_y - slope * sum_x) / n
+
+            # Compute R² as a proxy for confidence
+            y_mean = sum_y / n
+            ss_tot = sum((p[1] - y_mean) ** 2 for p in series)
+            if ss_tot == 0:
+                r_squared = 1.0
+            else:
+                ss_res = sum((p[1] - (slope * p[0] + intercept)) ** 2 for p in series)
+                r_squared = max(0.0, 1.0 - ss_res / ss_tot)
+
+            # Normalise slope to "per day" assuming runs occur daily on average
+            slope_per_day = slope
+
+            if abs(slope_per_day) < 0.01 * (sum_y / n) or abs(slope_per_day) < 1e-6:
+                direction = "stable"
+            elif slope_per_day > 0:
+                direction = "increasing"
+            else:
+                direction = "decreasing"
+
+            message = (
+                f"{metric.replace('_', ' ').title()} is {direction} "
+                f"(~{abs(slope_per_day):.2f}/run, R²={r_squared:.2f})"
+            )
+
+            trends.append(TrendAnalysis(
+                metric=metric,
+                direction=direction,
+                slope_per_day=round(slope_per_day, 4),
+                confidence=round(r_squared, 3),
+                message=message,
+            ))
+
+        return trends
+
+    async def _compute_plan_stability(
+        self,
+        pipeline_id: uuid.UUID,
+        current_hash: str,
+    ) -> str:
+        """Determine plan stability by comparing the current plan hash against recent plans.
+
+        Fetches the last 5 execution plan runs and computes their hashes. If
+        all match, the plan is "stable". If some differ, it is "unstable".
+
+        Args:
+            pipeline_id: Pipeline UUID.
+            current_hash: Hash of the plan being evaluated.
+
+        Returns:
+            "stable", "unstable", or "unknown" when insufficient data exists.
+        """
+        try:
+            items, total = await self.resource_repo.get_execution_plan_runs(
+                pipeline_id, skip=0, limit=5,
+            )
+        except (TypeError, ValueError):
+            return "unknown"
+        if total <= 1:
+            return "unknown"
+
+        # Fetch each plan and compute its hash
+        hashes: set[str] = {current_hash}
+        for item in items[:5]:
+            run = await self.resource_repo.get_execution_plan_by_run(
+                pipeline_id, item["dag_run_id"],
+            )
+            if run and run.execution_plan:
+                try:
+                    plan_data = json.loads(run.execution_plan)
+                    hashes.add(self._compute_plan_hash(plan_data))
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        return "stable" if len(hashes) == 1 else "unstable"
+
+    async def compare_execution_plans(
+        self,
+        pipeline_id: uuid.UUID,
+        base_run_id: str,
+        compare_run_id: str,
+    ) -> PlanDiffResponse | None:
+        """Fetch two execution plans and produce a structural diff.
+
+        Compares the plan trees recursively: nodes with the same position are
+        compared by name/type; changed nodes are flagged with ``status="changed"``;
+        nodes present only in one plan are flagged ``"added"`` or ``"removed"``.
+
+        Args:
+            pipeline_id: Pipeline UUID (used for visibility scoping).
+            base_run_id: DAG run ID for the baseline plan.
+            compare_run_id: DAG run ID for the comparison plan.
+
+        Returns:
+            A :class:`PlanDiffResponse`, or ``None`` if either plan is missing.
+        """
+        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            return None
+
+        base_run = await self.resource_repo.get_execution_plan_by_run(pipeline_id, base_run_id)
+        compare_run = await self.resource_repo.get_execution_plan_by_run(pipeline_id, compare_run_id)
+
+        if not base_run or not compare_run:
+            return None
+        if not base_run.execution_plan or not compare_run.execution_plan:
+            return None
+
+        try:
+            base_plan = json.loads(base_run.execution_plan)
+            compare_plan = json.loads(compare_run.execution_plan)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        base_hash = self._compute_plan_hash(base_plan)
+        compare_hash = self._compute_plan_hash(compare_plan)
+        plan_changed = base_hash != compare_hash
+
+        diff_node = self._diff_nodes(base_plan, compare_plan)
+
+        changed_count = self._count_changed_nodes(diff_node)
+        if plan_changed:
+            summary = f"Plans differ: {changed_count} node(s) changed between runs."
+        else:
+            summary = "Plans are structurally identical."
+
+        return PlanDiffResponse(
+            base_run_id=base_run_id,
+            compare_run_id=compare_run_id,
+            plan_changed=plan_changed,
+            diff=diff_node,
+            summary=summary,
+        )
+
+    @staticmethod
+    def _diff_nodes(base: dict, compare: dict) -> PlanDiffNode:
+        """Recursively diff two plan node dicts and produce a PlanDiffNode tree.
+
+        Args:
+            base: Baseline plan node dict.
+            compare: Comparison plan node dict.
+
+        Returns:
+            A populated :class:`PlanDiffNode` representing the diff.
+        """
+        base_name = base.get("name", "")
+        compare_name = compare.get("name", "")
+        base_type = base.get("type", "")
+        compare_type = compare.get("type", "")
+
+        name_changed = base_name != compare_name
+        type_changed = base_type != compare_type
+        metrics_changed = base.get("metrics", {}) != compare.get("metrics", {})
+
+        if name_changed or type_changed:
+            status = "changed"
+        elif metrics_changed:
+            status = "metrics_changed"
+        else:
+            status = "unchanged"
+
+        # Diff children by position
+        base_children = base.get("children", [])
+        compare_children = compare.get("children", [])
+        max_len = max(len(base_children), len(compare_children))
+
+        diff_children: list[PlanDiffNode] = []
+        for i in range(max_len):
+            if i < len(base_children) and i < len(compare_children):
+                diff_children.append(ResourceService._diff_nodes(base_children[i], compare_children[i]))
+            elif i < len(base_children):
+                diff_children.append(ResourceService._node_to_diff(base_children[i], "removed"))
+            else:
+                diff_children.append(ResourceService._node_to_diff(compare_children[i], "added"))
+
+        return PlanDiffNode(
+            name=compare_name or base_name,
+            type=compare_type or base_type,
+            status=status,
+            metrics_before=base.get("metrics") or None,
+            metrics_after=compare.get("metrics") or None,
+            children=diff_children,
+        )
+
+    @staticmethod
+    def _node_to_diff(node: dict, status: str) -> "PlanDiffNode":
+        """Convert a single plan node dict to a PlanDiffNode with the given status."""
+        children = [
+            ResourceService._node_to_diff(c, status)
+            for c in node.get("children", [])
+        ]
+        return PlanDiffNode(
+            name=node.get("name", ""),
+            type=node.get("type", ""),
+            status=status,
+            metrics_before=node.get("metrics") if status == "removed" else None,
+            metrics_after=node.get("metrics") if status == "added" else None,
+            children=children,
+        )
+
+    @staticmethod
+    def _count_changed_nodes(node: "PlanDiffNode") -> int:
+        """Count nodes with non-'unchanged' status in the diff tree."""
+        count = 0 if node.status == "unchanged" else 1
+        for child in node.children:
+            count += ResourceService._count_changed_nodes(child)
+        return count

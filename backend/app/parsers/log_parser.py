@@ -7,8 +7,42 @@ plans).  These parsers extract that data from raw log text.
 
 import json
 import logging
+import re
 
 logger = logging.getLogger(__name__)
+
+FAILURE_PATTERNS = [
+    (r"java\.lang\.OutOfMemoryError", "OOM: Java heap space exhausted"),
+    (r"Container killed by YARN.*memory", "OOM: Container exceeded memory limit"),
+    (r"TimeoutException|timed?\s*out", "Timeout: Task execution timed out"),
+    (r"ConnectionRefusedError|Connection refused", "Connection refused"),
+    (r"FileNotFoundException|No such file", "File not found"),
+    (r"AnalysisException.*Table.*not found", "Table not found in catalog"),
+    (r"FetchFailedException", "Shuffle failure: Fetch failed"),
+    (r"Permission denied|AccessDenied", "Permission denied"),
+    (r"No space left", "Disk space exhausted"),
+]
+
+
+def parse_failure_reason(log_content: str) -> str | None:
+    """Scan log content for known failure patterns and return a human-readable reason.
+
+    Iterates through ``FAILURE_PATTERNS`` in priority order (first match wins)
+    and returns a concise error description if a pattern matches.
+
+    Args:
+        log_content: Raw task log text to scan.
+
+    Returns:
+        A human-readable failure reason string, or ``None`` if no known
+        pattern is matched or the log is empty.
+    """
+    if not log_content:
+        return None
+    for pattern, reason in FAILURE_PATTERNS:
+        if re.search(pattern, log_content, re.IGNORECASE):
+            return reason
+    return None
 
 
 def parse_log_marker(log_content: str, marker: str) -> str | None:

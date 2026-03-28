@@ -67,11 +67,28 @@ export interface ResourceHistoryRecord {
   memory_bytes_spilled: number | null;
   disk_bytes_spilled: number | null;
   metrics_source: string | null;
+  failure_reason?: string | null;
 }
 
 export interface ResourceHistoryResponse {
   records: ResourceHistoryRecord[];
   total: number;
+}
+
+export interface ResourceRecommendation {
+  resource: string;
+  current_value: string;
+  recommended_value: string;
+  reason: string;
+  severity: "info" | "warning";
+}
+
+export interface TrendAnalysis {
+  metric: string;
+  direction: "increasing" | "decreasing" | "stable";
+  slope_per_day: number;
+  confidence: number;
+  message: string;
 }
 
 export interface ResourceMetrics {
@@ -86,4 +103,15 @@ export interface ResourceMetrics {
   resource_configs: ResourceConfigEntry[];
   actual_usage: ActualUsage;
   capacity: CapacityBar[];
+
+  p50_duration_seconds?: number | null;
+  p95_duration_seconds?: number | null;
+  p99_duration_seconds?: number | null;
+  p95_driver_memory_mb?: number | null;
+  p95_executor_memory_mb?: number | null;
+  p95_cpu_pct?: number | null;
+  recommendations?: ResourceRecommendation[];
+  trends?: TrendAnalysis[];
+  input_data_correlation?: number | null;
+  avg_input_bytes?: number | null;
 }

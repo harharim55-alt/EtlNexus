@@ -79,6 +79,13 @@ class ResourceStatsBuilder:
                     )
                 ).label("peak_executors"),
                 func.max(PipelineRunHistory.peak_execution_memory).label("peak_exec_mem"),
+                # Percentile stats
+                func.percentile_cont(0.5).within_group(PipelineRunHistory.duration_seconds).label("p50_duration"),
+                func.percentile_cont(0.95).within_group(PipelineRunHistory.duration_seconds).label("p95_duration"),
+                func.percentile_cont(0.99).within_group(PipelineRunHistory.duration_seconds).label("p99_duration"),
+                func.percentile_cont(0.95).within_group(PipelineRunHistory.driver_memory_used_mb).label("p95_driver_mem"),
+                func.percentile_cont(0.95).within_group(PipelineRunHistory.executor_memory_peak_mb).label("p95_executor_mem"),
+                func.percentile_cont(0.95).within_group(PipelineRunHistory.cpu_utilization_pct).label("p95_cpu"),
             )
             .where(*conditions)
         )
@@ -115,6 +122,13 @@ class ResourceStatsBuilder:
             "peak_cpu_pct": round(row.peak_cpu, 1) if row.peak_cpu else None,
             "peak_executors_active": round(row.peak_executors) if row.peak_executors else None,
             "peak_execution_memory": round(row.peak_exec_mem) if row.peak_exec_mem else None,
+            # Percentile stats
+            "p50_duration": round(row.p50_duration, 2) if row.p50_duration else None,
+            "p95_duration": round(row.p95_duration, 2) if row.p95_duration else None,
+            "p99_duration": round(row.p99_duration, 2) if row.p99_duration else None,
+            "p95_driver_mem": round(row.p95_driver_mem) if row.p95_driver_mem else None,
+            "p95_executor_mem": round(row.p95_executor_mem) if row.p95_executor_mem else None,
+            "p95_cpu": round(row.p95_cpu, 1) if row.p95_cpu else None,
         }
 
     async def get_dag_run_stats(

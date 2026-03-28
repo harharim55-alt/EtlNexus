@@ -11,6 +11,7 @@ import {
   ResourceSection,
   CapacitySection,
   SparkInternalsSection,
+  RecommendationsSection,
 } from "./resource-performance/ResourceSections";
 import { ResourceHistoryModal } from "./ResourceHistoryModal";
 
@@ -34,6 +35,9 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
           <h3 className="text-[11px] font-mono uppercase tracking-widest text-text-muted">
             Resource & Performance
           </h3>
+          {data?.recommendations && data.recommendations.length > 0 && (
+            <span className="ml-2 rounded-full bg-blue-500/20 px-1.5 py-0.5 text-[10px] text-blue-400">{data.recommendations.length} tips</span>
+          )}
         </div>
           <button
             type="button"
@@ -64,6 +68,7 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
             ? recomputeCapacityBars(filteredConfigs, data.capacity)
             : data.capacity;
           return (
+            <>
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
               {/* Duration */}
               <div className="flex flex-col">
@@ -80,6 +85,10 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
                   runCount={stats ? stats.count : data.run_count}
                   successRate={stats ? stats.successRate : data.success_rate}
                   recentRuns={filteredRuns}
+                  p50Duration={data.p50_duration_seconds}
+                  p95Duration={data.p95_duration_seconds}
+                  p99Duration={data.p99_duration_seconds}
+                  trends={data.trends}
                 />
               </div>
 
@@ -109,6 +118,12 @@ export function ResourcePerformanceCard({ pipelineId }: ResourcePerformanceCardP
                 <CapacitySection bars={filteredCapacity} />
               </div>
             </div>
+            {data.recommendations && data.recommendations.length > 0 && (
+              <div className="mt-4 pt-4 border-t border-border">
+                <RecommendationsSection recommendations={data.recommendations} />
+              </div>
+            )}
+            </>
           );
         })()
       ) : (

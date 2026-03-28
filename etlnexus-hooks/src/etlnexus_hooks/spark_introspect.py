@@ -657,6 +657,7 @@ def _extract_join_strategy(node_name: str) -> str:
         "shuffledhashjoin": "Shuffled Hash",
         "broadcastnestedloopjoin": "Broadcast Nested Loop",
         "cartesianproduct": "Cartesian",
+        "lateraljoin": "Lateral",
     }
     return strategies.get(node_name.lower(), "")
 
@@ -1192,14 +1193,14 @@ def _parse_simple_node_detail(node_name: str, s: str) -> str:
 def _parse_set_op_detail(node_name: str, s: str) -> str:
     lower = node_name.lower()
     op = "except" if "except" in lower else "intersect"
-    is_all = "true" in s.lower().split("All")[-1] if "All" in s else ("all" in lower)
+    is_all = "all" in lower  # ExceptAll / IntersectAll
     return f"{op} all" if is_all else op
 
 
 def _parse_set_op_full(node_name: str, s: str) -> str:
     lower = node_name.lower()
     op = "except" if "except" in lower else "intersect"
-    is_all = "true" in s.lower().split("All")[-1] if "All" in s else ("all" in lower)
+    is_all = "all" in lower
     return f"{op} all" if is_all else op
 
 
@@ -1222,13 +1223,20 @@ def _parse_deduplicate_full(s: str) -> str:
     return ""
 
 
+_SAMPLE_RE = re.compile(
+    r"Sample\s+"
+    r"([\d.eE+-]+)[,\s]+"       # lowerBound
+    r"([\d.eE+-]+)[,\s]+"       # upperBound
+    r"(true|false)"              # withReplacement
+    r"(?:[,\s]+(-?\d+))?",       # optional seed
+    re.IGNORECASE,
+)
+
+
 def _parse_sample_detail(s: str) -> str:
-    # Sample node format: Sample <lowerBound>, <upperBound>, <withReplacement>, <seed>
-    m = re.search(r"Sample\s+([\d.]+),?\s*([\d.]+),?\s*(true|false)(?:,?\s*(-?\d+))?", s, re.IGNORECASE)
+    m = _SAMPLE_RE.search(s)
     if m:
-        lower_bound = float(m.group(1))
-        upper_bound = float(m.group(2))
-        fraction = upper_bound - lower_bound
+        fraction = float(m.group(2)) - float(m.group(1))
         pct = f"{fraction * 100:.0f}%"
         with_replacement = m.group(3).lower() == "true"
         seed = m.group(4)
@@ -1242,11 +1250,9 @@ def _parse_sample_detail(s: str) -> str:
 
 
 def _parse_sample_full(s: str) -> str:
-    m = re.search(r"Sample\s+([\d.]+),?\s*([\d.]+),?\s*(true|false)(?:,?\s*(-?\d+))?", s, re.IGNORECASE)
+    m = _SAMPLE_RE.search(s)
     if m:
-        lower_bound = float(m.group(1))
-        upper_bound = float(m.group(2))
-        fraction = upper_bound - lower_bound
+        fraction = float(m.group(2)) - float(m.group(1))
         pct = f"{fraction * 100:.0f}%"
         with_replacement = m.group(3).lower() == "true"
         seed = m.group(4)
@@ -1338,6 +1344,20 @@ def _parse_subquery_detail(s: str) -> str:
     return "subquery"
 
 
+def _parse_subquery_full(s: str) -> str:
+    parts = []
+    m = re.search(r"[Ss]ubquery\s*#?(\d+)", s)
+    if m:
+        parts.append(f"subquery #{m.group(1)}")
+    # Extract the referenced output columns if present
+    brackets = _extract_top_brackets(s)
+    if brackets:
+        cols = [c.strip() for c in brackets[0].split(",") if c.strip()]
+        if cols:
+            parts.append(f"output: {', '.join(cols)}")
+    return "\n".join(parts) if parts else "subquery"
+
+
 def _parse_collect_metrics_detail(s: str) -> str:
     m = re.search(r"CollectMetrics\s+(\w+)", s)
     name = m.group(1) if m else ""
@@ -1351,12 +1371,39 @@ def _parse_collect_metrics_detail(s: str) -> str:
     return " | ".join(parts) if parts else "observe"
 
 
+def _parse_collect_metrics_full(s: str) -> str:
+    parts = []
+    m = re.search(r"CollectMetrics\s+(\w+)", s)
+    if m:
+        parts.append(f"name: {m.group(1)}")
+    funcs = re.findall(r"(\w+)\(([^)]*)\)", s)
+    metrics = [(f, a) for f, a in funcs if f not in ("CollectMetrics",)]
+    if metrics:
+        parts.append("metrics:")
+        for func_name, args in metrics:
+            parts.append(f"  {func_name}({args})")
+    return "\n".join(parts) if parts else "observe"
+
+
 def _parse_map_partitions_detail(s: str) -> str:
-    # Try to extract class/function info
     m = re.search(r"MapPartitions\s+(\w+)", s) or re.search(r"MapElements\s+(\w+)", s)
     if m:
         return f"map: {m.group(1)}"
     return "map partitions"
+
+
+def _parse_map_partitions_full(s: str) -> str:
+    parts = []
+    m = re.search(r"MapPartitions\s+(\w+)", s) or re.search(r"MapElements\s+(\w+)", s)
+    if m:
+        parts.append(f"function: {m.group(1)}")
+    # Extract output schema if visible: obj#id: type
+    schemas = re.findall(r"(\w+):\s*([\w\[\]]+)", s)
+    if schemas:
+        parts.append("output schema:")
+        for name, dtype in schemas[:5]:
+            parts.append(f"  {name}: {dtype}")
+    return "\n".join(parts) if parts else "map partitions"
 
 
 def _parse_unpivot_detail(s: str) -> str:

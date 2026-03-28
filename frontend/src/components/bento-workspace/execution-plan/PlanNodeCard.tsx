@@ -1,13 +1,17 @@
-import { Maximize2 } from "lucide-react";
+import { Maximize2, TriangleAlert } from "lucide-react";
 import { NODE_STYLES, TIME_KEYS, HIDDEN_KEYS } from "./plan-constants";
 import type { ExecutionPlanNode } from "@/types/execution-plan";
 
 export function NodeCard({
   node,
   onExpand,
+  highlighted,
+  searchActive,
 }: {
   node: ExecutionPlanNode;
   onExpand: (node: ExecutionPlanNode) => void;
+  highlighted?: boolean;
+  searchActive?: boolean;
 }) {
   const style = NODE_STYLES[node.type] ?? NODE_STYLES.transform;
   const Icon = style.icon;
@@ -19,9 +23,26 @@ export function NodeCard({
   );
   const hasContent = node.detail || entries.length > 0;
 
+  const bottleneckClasses = node.is_bottleneck
+    ? "border-amber-500/50 bg-amber-500/10"
+    : "";
+  const searchClasses = searchActive
+    ? highlighted
+      ? "ring-2 ring-indigo-500"
+      : "opacity-30"
+    : "";
+
+  const tooltipParts: string[] = [node.name];
+  if (timeEntry) tooltipParts.push(`Time: ${timeEntry[1]}`);
+  if (rows) tooltipParts.push(`Rows: ${rows}`);
+  rest.forEach(([k, v]) => tooltipParts.push(`${k}: ${v}`));
+  if (node.is_bottleneck && node.bottleneck_reason)
+    tooltipParts.push(`Bottleneck: ${node.bottleneck_reason}`);
+
   return (
     <div
-      className={`group/card relative inline-flex flex-col gap-1.5 px-4 py-3 rounded-xl border ${style.bg} ${style.border} min-w-[170px] max-w-[260px]`}
+      className={`group/card relative inline-flex flex-col gap-1.5 px-4 py-3 rounded-xl border ${style.bg} ${style.border} min-w-[170px] max-w-[260px] transition-all ${bottleneckClasses} ${searchClasses}`}
+      title={tooltipParts.join(" | ")}
     >
       {hasContent && (
         <button
@@ -37,7 +58,15 @@ export function NodeCard({
         <span className={`text-xs font-semibold truncate ${style.text}`}>
           {node.name}
         </span>
+        {node.is_bottleneck && (
+          <TriangleAlert className="w-3.5 h-3.5 shrink-0 text-amber-400" />
+        )}
       </div>
+      {node.is_bottleneck && node.bottleneck_reason && (
+        <span className="text-[10px] font-mono text-amber-400/80 leading-tight line-clamp-1">
+          {node.bottleneck_reason}
+        </span>
+      )}
       {node.detail && (
         <span
           className="text-[10px] font-mono text-text-secondary leading-tight line-clamp-2"

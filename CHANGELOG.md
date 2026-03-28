@@ -6,6 +6,26 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.14.0] — 2026-03-29 — Resource Intelligence & Execution Plan Analysis
+
+### Added
+- **Percentile stats (p50/p95/p99)** for duration, memory, and CPU across pipeline runs via PostgreSQL `percentile_cont` aggregates
+- **Execution plan bottleneck highlighting**: auto-detect nodes with >10M rows or >1GB shuffle; display amber glow + warning badge in plan tree
+- **Execution plan diff**: `GET /api/pipelines/{id}/execution-plan/diff` endpoint compares plans between two runs, marks added/removed/changed nodes
+- **Plan stability tracking**: SHA-256 hash of plan structure detects whether execution plan changed between runs
+- **Resource right-sizing recommendations**: suggest downsizing when peak usage <50% of allocated, warn when >90% (OOM risk)
+- **Trend analysis**: pure-Python linear regression on duration/memory/CPU detects increasing/decreasing trends with R² confidence
+- **Input data correlation**: Pearson correlation between input_bytes and duration to explain slow runs
+- **Failure root cause extraction**: parse Airflow task logs for OOM, timeout, connection refused, shuffle failure, permission denied, disk exhaustion patterns; stored as `failure_reason` field (migration 034)
+- **Plan node search/filter**: text search in execution plan modal highlights matching nodes, dims non-matches
+- **Hover metrics on plan nodes**: compact tooltip showing rows, bytes, and time on hover
+- **Run comparison in history modal**: click two data points to see side-by-side metrics with delta percentages
+- **Trend indicators**: directional arrows (TrendingUp/Down) with confidence gating in resource performance card
+- **Recommendations panel**: severity-colored cards with Lightbulb/AlertTriangle icons below capacity bars
+- **Percentile row**: p50/p95/p99 display in duration section
+
+---
+
 ## [0.13.0] — 2026-03-29 — Sync Performance: Batch Upserts & Actuals
 
 ### Performance

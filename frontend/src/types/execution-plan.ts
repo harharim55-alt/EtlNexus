@@ -5,6 +5,8 @@ export interface ExecutionPlanNode {
   detail: string;
   full_detail: string;
   metrics: Record<string, string>;
+  is_bottleneck?: boolean;
+  bottleneck_reason?: string | null;
   children: ExecutionPlanNode[];
 }
 
