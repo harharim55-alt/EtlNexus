@@ -16,6 +16,16 @@ export function stripDummy(name: string): string {
   return name.replace(/Dummy$/i, "");
 }
 
+/**
+ * Compact number: 1234567 → "1.2M", 12345 → "12.3k", 999 → "999".
+ * Good for rows/day counts, usage metrics, and other large numbers.
+ */
+export function formatCount(count: number): string {
+  if (count >= 1_000_000) return `${(count / 1_000_000).toFixed(1)}M`;
+  if (count >= 1_000) return `${(count / 1000).toFixed(1)}k`;
+  return count.toString();
+}
+
 /* ── Date Formatting ─────────────────────────────────────────────── */
 
 const EM_DASH = "\u2014";
