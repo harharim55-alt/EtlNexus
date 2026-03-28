@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { useRunSelectorStore } from "./run-selector-store";
+import { buildHash } from "./navigation-store";
 
 export interface PipelineState {
   selectedPipelineId: string | null;
@@ -34,6 +35,7 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   setSelectedPipelineId: (id) => {
     useRunSelectorStore.getState().clearRun();
     set({ selectedPipelineId: id, selectedDagId: null });
+    window.location.hash = buildHash("catalog", id);
   },
   setSelectedDagId: (dagId) => set({ selectedDagId: dagId }),
   setSearchQuery: (query) => set({ searchQuery: query }),

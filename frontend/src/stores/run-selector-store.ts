@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { buildHash, parseHash } from "./navigation-store";
 
 export interface RunSelectorState {
   /** null = "Latest" (current/live data) */
@@ -26,21 +27,32 @@ export const useRunSelectorStore = create<RunSelectorState>((set) => ({
   selectedRunDate: null,
   selectedRunStatus: null,
 
-  selectRun: (dagRunId, dagId, date, status) =>
+  selectRun: (dagRunId, dagId, date, status) => {
     set({
       selectedDagRunId: dagRunId,
       selectedRunDagId: dagId,
       selectedRunDate: date,
       selectedRunStatus: status,
-    }),
+    });
+    // Read pipelineId from current hash to avoid circular import with pipeline-store
+    const parsed = parseHash();
+    if (parsed.pipelineId) {
+      window.location.hash = buildHash("catalog", parsed.pipelineId, dagRunId);
+    }
+  },
 
-  clearRun: () =>
+  clearRun: () => {
     set({
       selectedDagRunId: null,
       selectedRunDagId: null,
       selectedRunDate: null,
       selectedRunStatus: null,
-    }),
+    });
+    const parsed = parseHash();
+    if (parsed.pipelineId) {
+      window.location.hash = buildHash("catalog", parsed.pipelineId);
+    }
+  },
 }));
 
 /**
