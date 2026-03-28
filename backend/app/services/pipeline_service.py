@@ -39,10 +39,13 @@ class PipelineService:
         limit: int = 200,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
+        team_names: list[str] | None = None,
+        dag_ids: list[str] | None = None,
+        statuses: list[str] | None = None,
     ) -> PipelineListResponse:
-        # Build cache key — only cache unfiltered (no search query, no date range) requests
+        # Build cache key — only cache unfiltered (no search query, no date range, no filters) requests
         cache_key: str | None = None
-        if not query and not date_from and not date_to:
+        if not query and not date_from and not date_to and not team_names and not dag_ids and not statuses:
             if is_admin:
                 cache_key = f"all:{skip}:{limit}"
             elif user_team_ids:
@@ -65,6 +68,9 @@ class PipelineService:
             limit=limit,
             last_run_after=date_from,
             last_run_before=date_to,
+            team_names=team_names,
+            dag_ids=dag_ids,
+            statuses=statuses,
         )
 
         items = [self._to_list_item(p) for p in pipelines]

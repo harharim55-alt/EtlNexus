@@ -238,6 +238,9 @@ class PipelineRepository:
         limit: int = 200,
         last_run_after: datetime | None = None,
         last_run_before: datetime | None = None,
+        team_names: list[str] | None = None,
+        dag_ids: list[str] | None = None,
+        statuses: list[str] | None = None,
     ) -> tuple[list[Pipeline], int]:
         """Return pipelines filtered by team visibility + optional text search.
 
@@ -276,6 +279,34 @@ class PipelineRepository:
                     Pipeline.id.in_(field_subq),
                 )
             )
+
+        # Server-side filters: team, status, dag_id
+        if team_names:
+            conditions.append(Pipeline.team.in_(team_names))
+
+        if statuses:
+            from app.models.airflow_status import AirflowRunStatus
+
+            status_subq = (
+                select(AirflowRunStatus.pipeline_id)
+                .where(AirflowRunStatus.status.in_(statuses))
+                .scalar_subquery()
+            )
+            conditions.append(Pipeline.id.in_(status_subq))
+
+        if dag_ids:
+            from app.models.dag_task import DagTask
+
+            dag_subq = (
+                select(DagTask.pipeline_id)
+                .where(
+                    DagTask.dag_id.in_(dag_ids),
+                    DagTask.pipeline_id.isnot(None),
+                )
+                .distinct()
+                .scalar_subquery()
+            )
+            conditions.append(Pipeline.id.in_(dag_subq))
 
         if not is_admin:
             visibility_conditions = await VisibilityFilter.build_batch_visibility_conditions(
@@ -375,3 +406,4 @@ class PipelineRepository:
             }
             for row in result.all()
         ]
+

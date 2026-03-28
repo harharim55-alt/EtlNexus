@@ -36,6 +36,9 @@ async def list_pipelines(
     q: str | None = None,
     skip: int = Query(0, ge=0),
     limit: int = Query(settings.default_page_limit, ge=1, le=500),
+    team: list[str] | None = Query(None),
+    dag_id: list[str] | None = Query(None),
+    status: list[str] | None = Query(None),
     dates: DateRangeParams = Depends(),
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
@@ -55,6 +58,9 @@ async def list_pipelines(
         limit=limit,
         date_from=dates.date_from,
         date_to=dates.date_to,
+        team_names=team,
+        dag_ids=dag_id,
+        statuses=status,
     )
 
 

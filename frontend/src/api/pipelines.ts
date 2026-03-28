@@ -8,14 +8,24 @@ import type {
   RevisionListResponse,
 } from "@/types/pipeline";
 
+export interface PipelineFilterParams {
+  team?: string[];
+  dag_id?: string[];
+  status?: string[];
+}
+
 export async function fetchPipelines(
   query?: string,
   skip = 0,
   limit = 50,
   dateParams?: Record<string, string>,
+  filters?: PipelineFilterParams,
 ): Promise<PipelineListResponse> {
   const { data } = await apiClient.get<PipelineListResponse>("/pipelines", {
-    params: { q: query, skip, limit, ...dateParams },
+    params: { q: query, skip, limit, ...dateParams, ...filters },
+    paramsSerializer: {
+      indexes: null, // serialize arrays as team=a&team=b (no bracket indices)
+    },
   });
   return data;
 }
