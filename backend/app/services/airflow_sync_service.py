@@ -17,6 +17,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.exceptions import AirflowSyncError, PipelineNotFoundError
 from app.integrations.airflow_client import airflow_client, strip_group_prefix
+from app.models.pipeline import Pipeline
 from app.parsers.log_parser import (
     parse_bouncer_description,
     parse_description,
@@ -446,41 +447,39 @@ class AirflowSyncService:
         discovery: _TaskDiscoveryResult,
         dag_defs_by_id: dict[str, dict] | None = None,
     ) -> tuple[dict[str, uuid.UUID], int]:
-        """Pass 1 + 2 + 3: upsert pipelines, assign teams, build lineage edges, resolve source IDs.
+        """Batch upsert pipelines, assign teams, and rebuild lineage edges.
+
+        Replaces ~1000 sequential DB round-trips with ~10-20 batch operations:
+        - 2 SELECT queries to pre-fetch all existing pipelines (by name + task_id).
+        - 1 INSERT for new pipelines (ON CONFLICT DO NOTHING).
+        - 1 SELECT + 1 flush for team resolution via get_or_create_many.
+        - 1 SELECT + 1 flush for team assignment via bulk_set_teams.
+        - 1 DELETE for all stale lineage edges across all pipelines.
+        - Chunked bulk INSERT for all new edges.
 
         Returns a tuple of (task_id -> pipeline UUID mapping, synced_count) where
-        synced_count is the number of pipelines whose lineage was saved successfully.
+        synced_count is the number of pipelines whose lineage was committed.
         """
-        # Load known teams for task_group prefix matching
+        # --- Phase A: collect all pipeline data dicts (pure Python, no DB) ---
         known_teams = await self.team_repo.get_all_names()
 
-        synced = 0
-        task_id_to_pipeline_id: dict[str, uuid.UUID] = {}
+        pipeline_entries: list[dict] = []
+        team_name_by_task_id: dict[str, str] = {}
 
-        # TODO: Pipeline upserts are sequential because PipelineRepository.upsert()
-        # has complex logic (name+task_id fallback lookup, description_edited_by_user
-        # conditional skip). Batching via a single INSERT ... ON CONFLICT would require
-        # replicating that logic in raw SQL. Consider batching if this becomes a
-        # bottleneck at scale (currently ~100-200 pipelines per full sync).
-
-        # Pass 1: Upsert pipelines and lineage
         for task_id, meta in discovery.seen_tasks.items():
             display_name = task_id_to_display_name(task_id)
-
-            pipeline = await self.pipeline_repo.upsert({
+            pipeline_entries.append({
                 "name": display_name,
                 "task_id": task_id,
                 "description": meta["description"],
                 "category": meta["category"],
                 "schedule": meta["schedule"],
             })
-            task_id_to_pipeline_id[task_id] = pipeline.id
 
-            # Assign team from task_group prefix, fall back to DAG tags
+            # Resolve team name in memory — no DB call yet
             task_group = meta.get("task_group")
             team_name = extract_team_from_task_group(task_group, known_teams)
             if not team_name and dag_defs_by_id is not None:
-                # Fall back to DAG tags (e.g., "team:Dagger")
                 for proc in discovery.dag_processed:
                     if task_id in proc["canonical_by_airflow_tid"].values():
                         dag_def = dag_defs_by_id.get(proc["dag_id"], {})
@@ -489,45 +488,73 @@ class AirflowSyncService:
                         if team_name:
                             break
             if team_name:
-                team = await self.team_repo.get_or_create(team_name, source="airflow")
+                team_name_by_task_id[task_id] = team_name
                 known_teams.add(team_name)
-                await self.pipeline_repo.set_team(pipeline.id, team_name, team.id)
 
-            # Primary table = task_id (naming convention)
+        # --- Phase B: batch-resolve all teams in two DB round-trips ---
+        unique_team_names = list({n for n in team_name_by_task_id.values()})
+        teams_by_name = {
+            t.name: t
+            for t in await self.team_repo.get_or_create_many(unique_team_names, source="airflow")
+        }
+
+        # --- Phase C: batch upsert all pipelines (2 SELECTs + 1 INSERT + 1 flush) ---
+        task_id_to_pipeline: dict[str, Pipeline] = (
+            await self.pipeline_repo.bulk_upsert_pipelines(pipeline_entries)
+        )
+        task_id_to_pipeline_id: dict[str, uuid.UUID] = {
+            tid: p.id for tid, p in task_id_to_pipeline.items()
+        }
+
+        # --- Phase D: batch set team assignments (1 SELECT + 1 flush) ---
+        team_assignments: list[tuple[uuid.UUID, str, uuid.UUID]] = []
+        for task_id, team_name in team_name_by_task_id.items():
+            pipeline_id = task_id_to_pipeline_id.get(task_id)
+            team = teams_by_name.get(team_name)
+            if pipeline_id and team:
+                team_assignments.append((pipeline_id, team_name, team.id))
+        await self.pipeline_repo.bulk_set_teams(team_assignments)
+
+        # --- Phase E: build all lineage edges in memory, then batch delete + insert ---
+        all_edges: list[dict] = []
+        for task_id, meta in discovery.seen_tasks.items():
+            pipeline_id = task_id_to_pipeline_id.get(task_id)
+            if not pipeline_id:
+                continue
             primary_table = task_id
-
-            # Build edge data before deleting old edges
-            edges_to_create: list[dict] = []
-
             for upstream_task_id in meta["needs"]:
-                edges_to_create.append({
+                all_edges.append({
                     "source_pipeline_id": None,
-                    "target_pipeline_id": pipeline.id,
+                    "target_pipeline_id": pipeline_id,
                     "source_table": upstream_task_id,
                     "target_table": primary_table,
                     "edge_type": "reads_from",
                 })
-
             if not is_api(task_id):
                 for dest in meta["destination_tables"]:
-                    edges_to_create.append({
-                        "source_pipeline_id": pipeline.id,
+                    all_edges.append({
+                        "source_pipeline_id": pipeline_id,
                         "target_pipeline_id": None,
                         "source_table": primary_table,
                         "target_table": dest,
                         "edge_type": "writes_to",
                     })
 
-            # Atomic delete + bulk recreate within a savepoint
-            try:
-                async with self.session.begin_nested():
-                    await self.lineage_repo.delete_by_pipeline_id(pipeline.id)
-                    await self.lineage_repo.bulk_insert_edges(edges_to_create)
-                synced += 1
-            except Exception:
-                logger.exception("Failed to sync lineage for pipeline %s", display_name)
+        synced = 0
+        all_pipeline_ids = list(task_id_to_pipeline_id.values())
+        try:
+            async with self.session.begin_nested():
+                # Single DELETE for all synced pipelines instead of one per pipeline
+                await self.lineage_repo.delete_by_pipeline_ids(all_pipeline_ids)
+                await self.lineage_repo.bulk_insert_edges(all_edges)
+            synced = len(task_id_to_pipeline_id)
+        except Exception:
+            logger.exception(
+                "Failed to sync lineage for %d pipelines — rolling back lineage changes",
+                len(all_pipeline_ids),
+            )
 
-        # Pass 2: Resolve source_pipeline_id on reads_from edges (bulk)
+        # --- Pass 2: Resolve source_pipeline_id on reads_from edges (bulk) ---
         resolve_edges: list[dict] = []
         pipelines_with_reads: set[str] = set()
         for task_id, meta in discovery.seen_tasks.items():
@@ -548,7 +575,7 @@ class AirflowSyncService:
         if resolve_edges:
             await self.lineage_repo.bulk_insert_edges(resolve_edges)
 
-        # Pass 3: Infer reads_from edges from DAG task graph (opt-in, bulk)
+        # --- Pass 3: Infer reads_from edges from DAG task graph (opt-in, bulk) ---
         if settings.infer_lineage_from_dag_graph:
             upstream_map: dict[str, set[str]] = {}
             for entry in discovery.dag_task_graph:

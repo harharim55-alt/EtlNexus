@@ -201,6 +201,8 @@ class AirflowService:
                 for dag_id, run_id, tid, _, _ in log_fetch_requests
             ])
 
+            # Collect all parsed actuals, then apply in a single batch update
+            actuals_batch: list[dict] = []
             for (dag_id, dag_run_id, airflow_task_id, pipeline, _), log_content in zip(
                 log_fetch_requests, log_results
             ):
@@ -211,14 +213,18 @@ class AirflowService:
                         actuals = actuals or {}
                         actuals["execution_plan"] = plan_json
                     if actuals:
-                        await self.resource_repo.update_run_actuals(
-                            pipeline.id, dag_id, dag_run_id, actuals
-                        )
+                        actuals["pipeline_id"] = pipeline.id
+                        actuals["dag_id"] = dag_id
+                        actuals["dag_run_id"] = dag_run_id
+                        actuals_batch.append(actuals)
                 except Exception:
                     logger.debug(
                         "Could not parse resource actuals for %s/%s/%s",
                         dag_id, dag_run_id, airflow_task_id,
                     )
+
+            if actuals_batch:
+                await self.resource_repo.bulk_update_run_actuals(actuals_batch)
 
         # Phase 5: Batch upsert all collected statuses
         if best:

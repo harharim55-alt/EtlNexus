@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import case, func, over, select
+from sqlalchemy import case, func, over, select, tuple_
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -11,6 +11,31 @@ from app.models.pipeline import Pipeline
 from app.models.resource_config import PipelineResourceConfig
 from app.models.run_history import PipelineRunHistory
 from app.repositories.base import apply_updates
+
+# All mutable "actuals" fields on PipelineRunHistory. Used by both
+# update_run_actuals (single-row) and bulk_update_run_actuals (batch).
+ACTUALS_FIELDS: tuple[str, ...] = (
+    "driver_memory_used_mb",
+    "executor_memory_peak_mb",
+    "cpu_utilization_pct",
+    "executors_active",
+    "spark_application_id",
+    "executor_run_time_ms",
+    "executor_cpu_time_ms",
+    "jvm_gc_time_ms",
+    "shuffle_read_bytes",
+    "shuffle_write_bytes",
+    "input_bytes",
+    "output_bytes",
+    "memory_bytes_spilled",
+    "disk_bytes_spilled",
+    "peak_execution_memory",
+    "result_size_bytes",
+    "num_tasks",
+    "num_stages",
+    "metrics_source",
+    "execution_plan",
+)
 
 
 class ResourceRepository:
@@ -153,7 +178,6 @@ class ResourceRepository:
         if not run_keys:
             return set()
         # Build OR conditions for all keys
-        from sqlalchemy import tuple_
         conditions = tuple_(
             PipelineRunHistory.pipeline_id,
             PipelineRunHistory.dag_id,
@@ -186,28 +210,63 @@ class ResourceRepository:
         result = await self.session.execute(stmt)
         run = result.scalar_one_or_none()
         if run:
-            run.driver_memory_used_mb = actuals.get("driver_memory_used_mb")
-            run.executor_memory_peak_mb = actuals.get("executor_memory_peak_mb")
-            run.cpu_utilization_pct = actuals.get("cpu_utilization_pct")
-            run.executors_active = actuals.get("executors_active")
-            # sparkMeasure extended metrics
-            run.spark_application_id = actuals.get("spark_application_id")
-            run.executor_run_time_ms = actuals.get("executor_run_time_ms")
-            run.executor_cpu_time_ms = actuals.get("executor_cpu_time_ms")
-            run.jvm_gc_time_ms = actuals.get("jvm_gc_time_ms")
-            run.shuffle_read_bytes = actuals.get("shuffle_read_bytes")
-            run.shuffle_write_bytes = actuals.get("shuffle_write_bytes")
-            run.input_bytes = actuals.get("input_bytes")
-            run.output_bytes = actuals.get("output_bytes")
-            run.memory_bytes_spilled = actuals.get("memory_bytes_spilled")
-            run.disk_bytes_spilled = actuals.get("disk_bytes_spilled")
-            run.peak_execution_memory = actuals.get("peak_execution_memory")
-            run.result_size_bytes = actuals.get("result_size_bytes")
-            run.num_tasks = actuals.get("num_tasks")
-            run.num_stages = actuals.get("num_stages")
-            run.metrics_source = actuals.get("metrics_source")
-            run.execution_plan = actuals.get("execution_plan")
+            for field in ACTUALS_FIELDS:
+                setattr(run, field, actuals.get(field))
             await self.session.flush()
+
+    async def bulk_update_run_actuals(self, actuals_batch: list[dict]) -> int:
+        """Batch update resource actuals for multiple runs.
+
+        Replaces N sequential SELECT+flush pairs with a single batch SELECT
+        followed by a single flush, reducing ~2N queries to 2 total.
+
+        Each dict in ``actuals_batch`` must contain the composite-key fields
+        ``pipeline_id``, ``dag_id``, and ``dag_run_id``, plus any subset of
+        the metric fields defined in ``ACTUALS_FIELDS``.
+
+        Args:
+            actuals_batch: List of actuals dicts, each keyed by pipeline_id /
+                dag_id / dag_run_id plus optional metric fields.
+
+        Returns:
+            The number of run records that were updated.
+        """
+        if not actuals_batch:
+            return 0
+
+        keys = [
+            (a["pipeline_id"], a["dag_id"], a["dag_run_id"])
+            for a in actuals_batch
+        ]
+        actuals_by_key = {
+            (a["pipeline_id"], a["dag_id"], a["dag_run_id"]): a
+            for a in actuals_batch
+        }
+
+        stmt = select(PipelineRunHistory).where(
+            tuple_(
+                PipelineRunHistory.pipeline_id,
+                PipelineRunHistory.dag_id,
+                PipelineRunHistory.dag_run_id,
+            ).in_(keys)
+        )
+        result = await self.session.execute(stmt)
+        runs = result.scalars().all()
+
+        updated = 0
+        for run in runs:
+            key = (run.pipeline_id, run.dag_id, run.dag_run_id)
+            actuals = actuals_by_key.get(key)
+            if actuals is None:
+                continue
+            for field in ACTUALS_FIELDS:
+                if field in actuals:
+                    setattr(run, field, actuals[field])
+            updated += 1
+
+        if updated:
+            await self.session.flush()
+        return updated
 
     async def get_latest_execution_plan(
         self, pipeline_id: uuid.UUID
@@ -386,8 +445,6 @@ class ResourceRepository:
 
         if not latest_pairs:
             return {}
-
-        from sqlalchemy import tuple_
 
         stmt = (
             select(PipelineRunHistory)

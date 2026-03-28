@@ -85,3 +85,22 @@ class LineageRepository(UpsertMixin):
                 | (LineageEdge.target_pipeline_id == pipeline_id)
             )
         )
+
+    async def delete_by_pipeline_ids(self, pipeline_ids: list[uuid.UUID]) -> None:
+        """Batch-delete all lineage edges that reference any of the given pipeline IDs.
+
+        Issues a single DELETE statement instead of one per pipeline, reducing
+        N round-trips to 1.
+
+        Args:
+            pipeline_ids: List of pipeline UUIDs whose edges should be removed
+                (both source and target sides).
+        """
+        if not pipeline_ids:
+            return
+        await self.session.execute(
+            delete(LineageEdge).where(
+                (LineageEdge.source_pipeline_id.in_(pipeline_ids))
+                | (LineageEdge.target_pipeline_id.in_(pipeline_ids))
+            )
+        )

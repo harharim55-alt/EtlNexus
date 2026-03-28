@@ -3,6 +3,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 from sqlalchemy import case, func, or_, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -139,6 +140,123 @@ class PipelineRepository:
 
         await self.session.flush()
         return pipeline
+
+    async def bulk_upsert_pipelines(self, entries: list[dict]) -> dict[str, Pipeline]:
+        """Batch upsert pipelines in two SELECT + one INSERT round-trip.
+
+        Replaces N sequential ``upsert()`` calls with:
+        1. One SELECT by all names.
+        2. One SELECT by task_id for any entries not matched by name.
+        3. In-memory ORM updates for existing rows (preserving ``description_edited_by_user``).
+        4. One ``INSERT … ON CONFLICT DO NOTHING`` for genuinely new pipelines.
+        5. A single flush.
+
+        Args:
+            entries: List of pipeline data dicts, each containing at least
+                ``name`` and optionally ``task_id``, ``description``,
+                ``category``, and ``schedule``.
+
+        Returns:
+            Mapping of ``task_id -> Pipeline`` for every entry that has a
+            ``task_id`` value.  Entries without a ``task_id`` are excluded.
+        """
+        if not entries:
+            return {}
+
+        def _skip_user_edited(m: Pipeline, k: str, v: object) -> bool:
+            return not (k == "description" and m.description_edited_by_user)
+
+        # --- Step 1: batch-fetch by name ---
+        names = [d["name"] for d in entries]
+        stmt = select(Pipeline).where(Pipeline.name.in_(names))
+        result = await self.session.execute(stmt)
+        by_name: dict[str, Pipeline] = {p.name: p for p in result.scalars().all()}
+
+        # --- Step 2: batch-fetch by task_id for entries not matched by name ---
+        unmatched_task_ids = [
+            d["task_id"]
+            for d in entries
+            if d["name"] not in by_name and d.get("task_id")
+        ]
+        by_task_id: dict[str, Pipeline] = {}
+        if unmatched_task_ids:
+            stmt2 = select(Pipeline).where(Pipeline.task_id.in_(unmatched_task_ids))
+            result2 = await self.session.execute(stmt2)
+            by_task_id = {p.task_id: p for p in result2.scalars().all() if p.task_id}
+
+        # --- Step 3: separate updates vs new inserts ---
+        new_values: list[dict] = []
+        new_pipeline_data: list[dict] = []  # Kept for post-insert re-fetch by name
+
+        for data in entries:
+            existing = by_name.get(data["name"]) or by_task_id.get(data.get("task_id", ""))
+            if existing:
+                apply_updates(existing, data, exclude_keys={"name"}, condition_fn=_skip_user_edited)
+            else:
+                row = {k: v for k, v in data.items()}
+                row.setdefault("id", uuid.uuid4())
+                new_values.append(row)
+                new_pipeline_data.append(data)
+
+        # --- Step 4: bulk INSERT new rows, ignoring conflicts on name ---
+        if new_values:
+            insert_stmt = pg_insert(Pipeline).values(new_values)
+            insert_stmt = insert_stmt.on_conflict_do_nothing(index_elements=["name"])
+            await self.session.execute(insert_stmt)
+
+        # --- Step 5: single flush to materialise all changes ---
+        await self.session.flush()
+
+        # --- Step 6: re-fetch newly inserted rows so ORM objects are live ---
+        if new_pipeline_data:
+            new_names = [d["name"] for d in new_pipeline_data]
+            refetch_stmt = select(Pipeline).where(Pipeline.name.in_(new_names))
+            refetch_result = await self.session.execute(refetch_stmt)
+            for p in refetch_result.scalars().all():
+                by_name[p.name] = p
+
+        # --- Build task_id -> Pipeline return map ---
+        task_id_map: dict[str, Pipeline] = {}
+        for data in entries:
+            tid = data.get("task_id")
+            if not tid:
+                continue
+            pipeline = by_name.get(data["name"]) or by_task_id.get(tid)
+            if pipeline:
+                task_id_map[tid] = pipeline
+        return task_id_map
+
+    async def bulk_set_teams(
+        self,
+        assignments: list[tuple[uuid.UUID, str, uuid.UUID]],
+    ) -> None:
+        """Batch update team assignments for multiple pipelines.
+
+        Applies ORM-level updates in memory and issues a single flush, which
+        collapses all dirty-row writes into one database round-trip.
+
+        Args:
+            assignments: List of ``(pipeline_id, team_name, team_id)`` tuples.
+                Pipelines absent from the session identity map are skipped
+                (they were never loaded, so there is nothing to update here —
+                the caller is responsible for ensuring pipelines are in-session).
+        """
+        if not assignments:
+            return
+
+        # Build a lookup so we can match loaded ORM objects by primary key.
+        pipeline_ids = [pid for pid, _, _ in assignments]
+        stmt = select(Pipeline).where(Pipeline.id.in_(pipeline_ids))
+        result = await self.session.execute(stmt)
+        by_id: dict[uuid.UUID, Pipeline] = {p.id: p for p in result.scalars().all()}
+
+        for pipeline_id, team_name, team_id in assignments:
+            pipeline = by_id.get(pipeline_id)
+            if pipeline:
+                pipeline.team = team_name
+                pipeline.team_id = team_id
+
+        await self.session.flush()
 
     async def get_success_rates(
         self,
