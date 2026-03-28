@@ -35,5 +35,5 @@ class DagTask(Base):
     bouncer: Mapped["Bouncer | None"] = relationship(foreign_keys=[bouncer_id])
 
 
-from app.models.bouncer import Bouncer  # noqa: E402, F401
-from app.models.pipeline import Pipeline  # noqa: E402, F401
+from app.models.bouncer import Bouncer  # noqa: E402
+from app.models.pipeline import Pipeline  # noqa: E402

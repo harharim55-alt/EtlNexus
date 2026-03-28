@@ -7,15 +7,13 @@ pipeline_run_history).
 
 import asyncio
 import logging
-from datetime import UTC, datetime, timedelta
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler import AsyncScheduler
+from apscheduler.triggers.interval import IntervalTrigger
 
 from app.config import settings
 
 logger = logging.getLogger(__name__)
-
-scheduler = AsyncIOScheduler()
 
 # Separate locks allow sync and poll to run independently
 _sync_lock = asyncio.Lock()
@@ -31,6 +29,8 @@ async def _guarded_sync() -> None:
         from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
         try:
             await sync_pipelines_from_airflow()
+            from app.routers.health import report_sync_completed
+            report_sync_completed()
         except Exception:
             logger.exception("Scheduled pipeline sync failed")
         finally:
@@ -47,6 +47,8 @@ async def _guarded_poll() -> None:
         from app.tasks.airflow_poll_task import poll_airflow_statuses
         try:
             await poll_airflow_statuses()
+            from app.routers.health import report_sync_completed
+            report_sync_completed()
         except Exception:
             logger.exception("Scheduled status poll failed")
         finally:
@@ -124,7 +126,7 @@ async def run_startup_sync() -> None:
         clear_all()
 
 
-def setup_scheduler() -> AsyncIOScheduler:
+async def setup_scheduler() -> AsyncScheduler:
     """Configure and return the scheduler with all background tasks.
 
     Jobs start after their first interval, NOT immediately — the initial
@@ -133,53 +135,39 @@ def setup_scheduler() -> AsyncIOScheduler:
     """
     from app.tasks.catalog_sync_task import sync_from_catalog
 
-    now = datetime.now(UTC)
+    scheduler = AsyncScheduler()
+    # APScheduler 4.x requires entering the context manager before adding schedules
+    await scheduler.__aenter__()
 
     # Airflow pipeline discovery (independent from poll)
-    scheduler.add_job(
+    await scheduler.add_schedule(
         _guarded_sync,
-        "interval",
-        minutes=settings.airflow_poll_interval_minutes,
+        IntervalTrigger(minutes=settings.airflow_poll_interval_minutes),
         id="airflow_pipeline_sync",
-        name="Airflow Pipeline Discovery",
-        replace_existing=True,
-        next_run_time=now + timedelta(minutes=settings.airflow_poll_interval_minutes),
     )
 
-    # Airflow status poll (runs independently, offset by 2 min)
-    scheduler.add_job(
+    # Airflow status poll (runs independently)
+    await scheduler.add_schedule(
         _guarded_poll,
-        "interval",
-        minutes=settings.airflow_poll_interval_minutes,
+        IntervalTrigger(minutes=settings.airflow_poll_interval_minutes),
         id="airflow_status_poll",
-        name="Airflow Status Poll",
-        replace_existing=True,
-        next_run_time=now + timedelta(minutes=settings.airflow_poll_interval_minutes, seconds=120),
     )
 
     # Catalog sync (every 2 hours)
-    scheduler.add_job(
+    await scheduler.add_schedule(
         sync_from_catalog,
-        "interval",
-        hours=2,
+        IntervalTrigger(hours=2),
         id="catalog_sync",
-        name="Iceberg Catalog Sync",
-        replace_existing=True,
-        next_run_time=now + timedelta(hours=1),
     )
 
     # Run history retention (daily)
     if settings.run_history_retention_days > 0:
         from app.tasks.run_history_retention import cleanup_run_history
 
-        scheduler.add_job(
+        await scheduler.add_schedule(
             cleanup_run_history,
-            "interval",
-            hours=24,
+            IntervalTrigger(hours=24),
             id="run_history_retention",
-            name="Run History Retention Cleanup",
-            replace_existing=True,
-            next_run_time=now + timedelta(hours=6),
         )
 
     logger.info(

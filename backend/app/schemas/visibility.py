@@ -4,7 +4,7 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, model_validator
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class GrantListResponse(BaseModel):
@@ -47,4 +47,4 @@ class VisibilityGrantResponse(BaseModel):
     granted_by_user_id: uuid.UUID | None = None
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)

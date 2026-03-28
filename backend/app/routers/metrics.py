@@ -6,6 +6,7 @@ New metric keys are rejected when the cardinality cap is reached.
 """
 
 import logging
+import re
 from collections import defaultdict
 
 from fastapi import APIRouter, Depends, Response
@@ -22,6 +23,7 @@ _request_duration_count: dict[str, int] = defaultdict(int)
 
 _MAX_METRIC_KEYS = 10_000
 _cardinality_warned = False
+_UUID_RE = re.compile(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$', re.IGNORECASE)
 
 
 def record_request(method: str, path: str, status_code: int, duration_seconds: float) -> None:
@@ -58,9 +60,7 @@ def _normalize_path(path: str) -> str:
     normalized = []
     for part in parts:
         # UUID pattern (8-4-4-4-12 hex)
-        if len(part) == 36 and part.count("-") == 4:
-            normalized.append("{id}")
-        elif part.isdigit():
+        if _UUID_RE.match(part) or part.isdigit():
             normalized.append("{id}")
         else:
             normalized.append(part)

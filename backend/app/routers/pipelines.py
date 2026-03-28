@@ -2,7 +2,12 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
-from app.auth import get_current_user, require_pipeline_visibility, require_team_membership, require_team_membership_or_editor_grant
+from app.auth import (
+    get_current_user,
+    require_pipeline_visibility,
+    require_team_membership,
+    require_team_membership_or_editor_grant,
+)
 from app.config import settings
 from app.dependencies import (
     get_airflow_sync_service,

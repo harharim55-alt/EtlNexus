@@ -6,7 +6,7 @@ no SQLAlchemy imports, and no schema-object construction — those concerns
 remain in topology_service.py.
 """
 
-from collections import defaultdict, deque
+from collections import deque
 
 
 def bfs_find_bouncers(

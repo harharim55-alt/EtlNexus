@@ -1,7 +1,11 @@
+from typing import Annotated
+
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.auth import get_current_user
 from app.database import get_db_session
+from app.models.user import User
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.dag_task_repo import DagTaskRepository
@@ -18,6 +22,7 @@ from app.services.airflow_sync_service import AirflowSyncService
 from app.services.bouncer_service import BouncerService
 from app.services.consumer_service import ConsumerService
 from app.services.dag_summary_service import DagSummaryService
+from app.services.lineage_service import LineageService
 from app.services.pipeline_service import PipelineService
 from app.services.resource_service import ResourceService
 from app.services.schema_matrix_service import SchemaMatrixService
@@ -55,6 +60,13 @@ def get_pipeline_service(
     revision_repo: RevisionRepository = Depends(get_revision_repo),
 ) -> PipelineService:
     return PipelineService(pipeline_repo, lineage_repo, revision_repo=revision_repo)
+
+
+def get_lineage_service(
+    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
+    lineage_repo: LineageRepository = Depends(get_lineage_repo),
+) -> LineageService:
+    return LineageService(pipeline_repo, lineage_repo)
 
 
 def get_schema_matrix_service(
@@ -175,3 +187,11 @@ def get_visibility_service(
     team_repo: TeamRepository = Depends(get_team_repo),
 ) -> VisibilityService:
     return VisibilityService(grant_repo, team_repo)
+
+
+# ---------------------------------------------------------------------------
+# Annotated dependency aliases — ready for routers to adopt (BP-03)
+# ---------------------------------------------------------------------------
+
+DbSession = Annotated[AsyncSession, Depends(get_db_session)]
+CurrentUser = Annotated[User, Depends(get_current_user)]

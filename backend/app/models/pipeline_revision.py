@@ -25,4 +25,4 @@ class PipelineRevision(Base):
     pipeline: Mapped["Pipeline"] = relationship()
 
 
-from app.models.pipeline import Pipeline  # noqa: E402, F401
+from app.models.pipeline import Pipeline  # noqa: E402

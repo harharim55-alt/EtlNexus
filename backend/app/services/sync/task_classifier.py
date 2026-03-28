@@ -7,6 +7,11 @@ task groups and DAG definitions, and converting task IDs to display names.
 import re
 from datetime import datetime
 
+# PascalCase component pattern — matches "Api" or "API" as a PascalCase
+# segment anywhere in the task_id (e.g. "NetworkIntelApiDummy" or
+# "SomeAPIDummy").  Lowercase "api" does NOT match (case-sensitive).
+_API_PATTERN = re.compile(r"Api|API")
+
 
 def is_bouncer(task_id: str) -> bool:
     """Check if a task_id represents a bouncer (data ingestion root task)."""
@@ -15,7 +20,7 @@ def is_bouncer(task_id: str) -> bool:
 
 def is_api(task_id: str) -> bool:
     """Check if a task_id represents an API task (skip writes_to lineage)."""
-    return "Api" in task_id or "API" in task_id
+    return bool(_API_PATTERN.search(task_id))
 
 
 def task_id_to_display_name(task_id: str) -> str:

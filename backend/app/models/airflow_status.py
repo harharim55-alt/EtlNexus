@@ -22,4 +22,4 @@ class AirflowRunStatus(Base):
     pipeline: Mapped["Pipeline"] = relationship(back_populates="airflow_status")
 
 
-from app.models.pipeline import Pipeline  # noqa: E402, F401
+from app.models.pipeline import Pipeline  # noqa: E402

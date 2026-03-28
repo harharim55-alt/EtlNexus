@@ -30,4 +30,4 @@ class LineageEdge(Base):
     )
 
 
-from app.models.pipeline import Pipeline  # noqa: E402, F401
+from app.models.pipeline import Pipeline  # noqa: E402

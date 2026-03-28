@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import TYPE_CHECKING, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 if TYPE_CHECKING:
     from app.models.user import User
@@ -23,7 +23,7 @@ class TeamMembershipResponse(BaseModel):
     name: str = Field(description="Team display name")
     role_in_team: str = Field(description="User's role within this team")
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserResponse(BaseModel):
@@ -34,7 +34,7 @@ class UserResponse(BaseModel):
     is_active: bool = Field(description="Whether the user account is active")
     teams: list[TeamMembershipResponse] = Field(description="Teams the user belongs to")
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class UserListResponse(BaseModel):

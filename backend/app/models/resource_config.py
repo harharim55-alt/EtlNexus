@@ -28,4 +28,4 @@ class PipelineResourceConfig(Base):
     pipeline: Mapped["Pipeline"] = relationship(back_populates="resource_configs")
 
 
-from app.models.pipeline import Pipeline  # noqa: E402, F401
+from app.models.pipeline import Pipeline  # noqa: E402

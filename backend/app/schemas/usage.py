@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class PipelineUsageSchema(BaseModel):
@@ -15,7 +15,7 @@ class PipelineUsageSchema(BaseModel):
     dag_id: str | None = None
     is_current: bool = False
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PipelineUsageResponse(BaseModel):

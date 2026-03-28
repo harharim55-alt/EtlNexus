@@ -1,6 +1,6 @@
 """Pydantic schemas for bouncer endpoints."""
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class BouncerResponse(BaseModel):
@@ -13,7 +13,7 @@ class BouncerResponse(BaseModel):
     status: str | None = None
     dag_ids: list[str] = []
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class BouncerListResponse(BaseModel):

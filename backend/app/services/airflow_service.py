@@ -17,6 +17,7 @@ logger = logging.getLogger(__name__)
 
 # Limits concurrent Airflow API calls during poll (mirrors sync semaphore)
 from app.config import settings
+
 _POLL_SEMAPHORE = asyncio.Semaphore(settings.airflow_semaphore_limit)
 
 

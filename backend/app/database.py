@@ -1,7 +1,11 @@
+import logging
+
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase
 
 from app.config import settings
+
+logger = logging.getLogger(__name__)
 
 engine = create_async_engine(
     settings.database_url,
@@ -24,6 +28,10 @@ async def get_db_session():
         try:
             yield session
             if session.dirty or session.new or session.deleted:
+                logger.debug(
+                    "Auto-committing session: dirty=%d new=%d deleted=%d",
+                    len(session.dirty), len(session.new), len(session.deleted),
+                )
                 await session.commit()
         except Exception:
             await session.rollback()

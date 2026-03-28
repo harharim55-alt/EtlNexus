@@ -154,6 +154,7 @@ class UserAuthService:
                 await self.session.delete(ut)
 
         await self.session.flush()
+        await self.session.commit()
 
         # Expire cached relationship so selectinload re-executes
         self.session.expire(user, ["team_memberships"])
@@ -179,6 +180,7 @@ class UserAuthService:
             )
             self.session.add(user)
             await self.session.flush()
+            await self.session.commit()
             # Reload with selectinload(team_memberships) via the repo
             user = await self._user_repo.get_by_sub("default-admin")
 

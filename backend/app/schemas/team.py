@@ -2,7 +2,7 @@
 
 import uuid
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class TeamMemberInfo(BaseModel):
@@ -12,7 +12,7 @@ class TeamMemberInfo(BaseModel):
     role: str
     role_in_team: str
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamResponse(BaseModel):
@@ -22,7 +22,7 @@ class TeamResponse(BaseModel):
     source: str
     member_count: int
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class TeamDetailResponse(BaseModel):
@@ -32,4 +32,4 @@ class TeamDetailResponse(BaseModel):
     source: str
     members: list[TeamMemberInfo]
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)

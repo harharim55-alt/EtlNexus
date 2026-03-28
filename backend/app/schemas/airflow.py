@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict
 
 
 class AirflowStatusSchema(BaseModel):
@@ -10,7 +10,7 @@ class AirflowStatusSchema(BaseModel):
     execution_date: datetime | None = None
     last_checked_at: datetime | None = None
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AirflowStatusesResponse(BaseModel):

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, func
+from sqlalchemy import JSON, BigInteger, DateTime, Float, ForeignKey, Integer, String, Text, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -57,4 +57,4 @@ class PipelineRunHistory(Base):
     pipeline: Mapped["Pipeline"] = relationship(back_populates="run_history")
 
 
-from app.models.pipeline import Pipeline  # noqa: E402, F401
+from app.models.pipeline import Pipeline  # noqa: E402

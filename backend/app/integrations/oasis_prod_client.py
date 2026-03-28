@@ -120,8 +120,14 @@ class OasisProdClient:
                 await session.execute(text("SELECT 1"))
             self._connected = True
             logger.info("Oasis Prod DB connected")
+        except ConnectionRefusedError:
+            logger.warning("Oasis Prod DB connection refused — metrics disabled")
+            self._connected = False
+        except OSError as exc:
+            logger.warning("Oasis Prod DB unreachable (%s) — metrics disabled", exc)
+            self._connected = False
         except Exception:
-            logger.exception("Failed to connect to Oasis Prod DB")
+            logger.exception("Unexpected error connecting to Oasis Prod DB")
             self._connected = False
 
     async def get_usage_metrics(
