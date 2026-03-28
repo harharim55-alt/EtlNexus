@@ -39,6 +39,7 @@ function SSOGuard({ children }: { children: React.ReactNode }) {
   const auth = useAuth();
   const setToken = useAuthStore((s) => s.setToken);
   const setOidcSignout = useAuthStore((s) => s.setOidcSignout);
+  const setOidcSigninSilent = useAuthStore((s) => s.setOidcSigninSilent);
   const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
   const { isLoading: isLoadingUser, isError: isUserError } = useCurrentUser();
 
@@ -56,6 +57,14 @@ function SSOGuard({ children }: { children: React.ReactNode }) {
     }
     return () => setOidcSignout(null);
   }, [auth.isAuthenticated, auth.removeUser, setOidcSignout]);
+
+  // Register OIDC signinSilent callback for axios 401 token refresh
+  useEffect(() => {
+    if (auth.isAuthenticated) {
+      setOidcSigninSilent(() => auth.signinSilent());
+    }
+    return () => setOidcSigninSilent(null);
+  }, [auth.isAuthenticated, auth.signinSilent, setOidcSigninSilent]);
 
   // Handle OIDC callback (remove code/state from URL)
   useEffect(() => {

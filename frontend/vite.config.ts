@@ -24,6 +24,13 @@ export default defineConfig({
             "clsx",
             "tailwind-merge",
           ],
+          "vendor-markdown": [
+            "react-markdown",
+            "rehype-highlight",
+            "rehype-raw",
+            "rehype-sanitize",
+            "remark-gfm",
+          ],
         },
       },
     },

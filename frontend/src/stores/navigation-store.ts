@@ -29,11 +29,6 @@ export function parseHash(): ParsedHash {
   return result;
 }
 
-/** @deprecated Use parseHash() for full context */
-export function getTabFromHash(): TabType {
-  return parseHash().tab;
-}
-
 /** Build a hash string from parts */
 export function buildHash(
   tab: TabType,
@@ -62,12 +57,17 @@ interface NavigationState {
   clearBreadcrumbs: () => void;
 }
 
+// NOTE: This store intentionally writes to window.location.hash as part of a
+// bidirectional sync pattern. App.tsx listens for "hashchange" events and
+// propagates the parsed hash back into the relevant stores, enabling browser
+// back/forward navigation. Stores are the "source of truth" for programmatic
+// navigation; the URL hash is kept in sync as a side effect.
 export const useNavigationStore = create<NavigationState>((set, get) => ({
   activeTab: parseHash().tab,
   breadcrumbs: [],
   setActiveTab: (tab) => {
     set({ activeTab: tab, breadcrumbs: [] });
-    // When switching tabs, don't carry pipeline context to non-catalog tabs
+    // Sync hash so the URL reflects the active tab (bidirectional sync with App.tsx)
     window.location.hash = tab;
   },
   pushBreadcrumb: (crumb) => {

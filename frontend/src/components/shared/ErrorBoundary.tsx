@@ -39,7 +39,9 @@ export class ErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundarySt
             </p>
             {this.state.error && (
               <pre className="text-[11px] font-mono text-rose-400/70 bg-rose-500/5 border border-rose-500/10 rounded-lg p-3 mb-6 text-left overflow-auto max-h-40">
-                {this.state.error.message}
+                {import.meta.env.PROD
+                  ? "An unexpected error occurred. Please reload the page."
+                  : this.state.error.message}
               </pre>
             )}
             <button

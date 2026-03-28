@@ -24,6 +24,10 @@ const FILTER_KEYS = {
   status: "statusFilters",
 } as const;
 
+// NOTE: This store writes to window.location.hash when the selected pipeline
+// changes, as part of a bidirectional sync pattern with App.tsx (which listens
+// for "hashchange" to propagate URL changes back into stores). This keeps the
+// URL in sync for bookmarking and browser back/forward navigation.
 export const usePipelineStore = create<PipelineState>((set) => ({
   selectedPipelineId: null,
   selectedDagId: null,
