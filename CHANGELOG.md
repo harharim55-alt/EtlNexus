@@ -6,6 +6,104 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.12.0] — 2026-03-29 — Comprehensive Security, Performance & Architecture Overhaul
+
+### Security
+- Add SSO startup guard: non-development deployments refuse to start without `SSO_ENABLED=true`
+- Fix rate limiter: validate `X-Forwarded-For` against trusted proxy depth instead of blindly trusting
+- Add field_name allowlist on revision restore to prevent arbitrary attribute overwrites via `setattr`
+- Disable OpenAPI/Swagger docs (`/api/docs`, `/api/redoc`) in production (only enabled when `DEBUG=true`)
+- Add visibility filtering to aggregate endpoints: schema matrix, DAG summary, bouncers, and Airflow status now respect team-based access control
+- Split health endpoint: `GET /api/health` returns minimal public response; `GET /api/health/detail` requires admin role and includes scheduler liveness
+- Sanitize error details in sync endpoint (no longer exposes raw exception messages with hostnames)
+- Add `max_length` constraints on `PipelineUpdateRequest` fields (description: 5K, documentation: 100K)
+- Add 1MB request body size limit middleware
+- Fix CORS: reject `allow_credentials=True` with wildcard origins
+- Fix visibility bypass: `get_join_suggestions()` now denies access (fail-closed) when `grant_repo` is not provided for non-admin users
+- Add anti-injection preamble to AI system prompt to mitigate prompt injection via catalog data
+- Expand AI catalog context from 20 to all pipelines (names always included; descriptions for first 50)
+
+### Performance
+- Wrap Iceberg catalog client calls with `asyncio.to_thread()` to prevent event loop starvation during sync
+- Fix TTL cache thread safety: remove inline deletion race in `get()`, add `threading.Lock` to `set()`/`clear()`
+- Batch DAG summary queries: 4 new batch repository methods reduce queries from 4*N+4 to ~8 total
+- Add composite index on `pipeline_run_history(dag_id, start_date DESC)` (migration 033)
+- Always apply LIMIT to `get_recent_runs()` even with date range (max 500)
+- Column projection in `get_resource_history()` — omit TEXT execution_plan and JSON snapshots
+- Combine two visibility queries into one in `get_pipeline_detail_for_user()`
+- Cache AI catalog context string with TTL to avoid rebuilding on every chat message
+- Add circuit breaker check to `AirflowClient.get_task_log()` (was bypassing circuit breaker)
+
+### Architecture
+- **Redis cache invalidation**: Add `CacheInvalidationBus` with pub/sub for cross-instance cache coherence in multi-replica production deployments. Optional — falls back to in-memory when `REDIS_URL` not configured
+- **APScheduler 4.x migration**: Upgrade from EOL APScheduler 3.x to 4.x with async-native `AsyncScheduler`
+- **Pure ASGI middleware**: Replace 3 `@app.middleware("http")` decorators with proper ASGI middleware classes (`BodySizeLimitMiddleware`, `RequestIdMiddleware`, `RequestLoggingMiddleware`) avoiding deprecated `BaseHTTPMiddleware`
+- Extract `LineageService` from lineage router (restores three-layer pattern consistency)
+- Extract topology status map builder and cache key helper (eliminates duplication)
+- Extract resource capacity bar builder (replaces 4 copy-paste blocks)
+- Add `StrEnum` definitions (`UserRole`, `GrantLevel`, `PipelineType`) replacing magic strings
+- Add `apply_updates()` column allowlist validation against `__table__.columns`
+- Add explicit `session.commit()` to all write-path services (auto-commit remains as safety net with debug logging)
+- Add `Annotated` DI type aliases (`DbSession`, `CurrentUser`) for modern FastAPI pattern
+- Manual sync now triggers Iceberg catalog sync after Airflow pipeline discovery
+- Add scheduler liveness tracking to health detail endpoint
+
+### Infrastructure
+- Add Redis 7 service to both dev and prod Docker Compose
+- Add Docker network isolation in production (frontend/backend/database segments)
+- Bind all dev Docker ports to localhost only (PostgreSQL, Airflow, Keycloak, Iceberg)
+- Pin pnpm version in frontend Dockerfile for reproducible builds
+- Sync version numbers to 0.11.0 across pyproject.toml, package.json, and FastAPI app
+- Add Ruff lint rules: ASYNC, S (security), PT (pytest), RUF
+- Add Vitest coverage configuration
+- Upgrade TypeScript target to ES2022
+
+### Frontend
+- Fix token refresh: use OIDC `signinSilent()` instead of fixed 2-second timeout
+- Restrict 5xx retries to idempotent HTTP methods only (GET, HEAD, OPTIONS, PUT)
+- Add type-safe Axios retry config (eliminate `as any` casts)
+- Add retry jitter to prevent thundering herd on 5xx errors
+- Sanitize error messages in ErrorBoundary for production builds
+- Add Vite manual chunk for react-markdown/rehype plugins
+- Remove deprecated `getTabFromHash()` function
+
+### Documentation
+- Fix ARCHITECTURE.md: rename all "sensor" references to "bouncer" (25+ occurrences), fix lineage source from `op_kwargs` to `params`, update version/router count
+- Fix USER_GUIDE.md: rename all "sensor" references to "bouncer"
+- Fix PRODUCTION_DEPLOYMENT.md: document health endpoint, SCHEDULER_ENABLED, Oasis Prod config, connection pool sizing, migration count update
+- Fix API_REFERENCE.md: correct default page limit from 50 to 200
+- Add 12 missing config variables to .env.example
+- Add `Pydantic ConfigDict` across all schema files (replaces dict-based model_config)
+- Add `SuccessResponse` typed model for mutation endpoints
+- Improve Oasis Prod client logging (warning for expected failures, exception for unexpected)
+- Fix UUID detection regex in metrics path normalizer
+
+---
+
+## [0.11.0] — 2026-03-28 — UX Features & Discoverability
+
+### Added
+- Cmd+K global command palette for cross-entity search (pipelines, DAGs, bouncers) with keyboard navigation
+- Theme system: Dark, Light, and Pink themes with full color audit across 100+ files via CSS custom properties
+- Favorites system: star pipelines with localStorage persistence and pinned group in registry
+- Pipeline comparison: side-by-side schema diff, metadata, and resource comparison
+- CSV export buttons on Pipeline Registry, DAG Summary, and Schema Matrix views
+- Executive health dashboard: KPI cards (Total Active, Success Rate, Avg Duration, Pipeline Coverage) above DAG grid
+- Lineage visual export: SVG, PNG, and interactive HTML with pan/zoom using html-to-image
+- Visibility grants matrix: cross-tabulation view of team permissions with viewer/editor level badges
+- Breadcrumbs: navigation trail with back navigation for cross-pipeline jumps in lineage topology
+- Data freshness indicators ("Last synced" badges) in BentoHeader, Sidebar, and DAG dashboard
+- Pipeline health tooltips: success rate % and last execution date on hover
+- Text search in Bouncers view (client-side filtering by name, display name, description)
+- Deep linking: encode pipeline and run selection in URL hash for shareable URLs
+
+### Changed
+- Move pipeline filters (team, DAG, status) from client-only to server-side SQL queries for correct pagination
+- Schema matrix search: server-side ILIKE filter with 300ms debounced frontend input
+- Sync-all now invalidates pipeline detail, schema-matrix, and bouncers queries so freshness timestamps update immediately
+
+---
+
 ## [0.10.0] — 2026-03-27 — Security, Performance & Architecture Hardening
 
 ### Security

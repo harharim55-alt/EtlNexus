@@ -20,6 +20,8 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}
     volumes:
       - pgdata:/var/lib/postgresql/data
+    networks:
+      - database
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etlnexus}"]
       interval: 10s
@@ -36,6 +38,27 @@ services:
         max-size: "50m"
         max-file: "5"
 
+  redis:
+    image: redis:7-alpine
+    command: redis-server --maxmemory 128mb --maxmemory-policy noeviction
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
   backend-api:
     image: etlnexus-backend
     build:
@@ -45,8 +68,14 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-etlnexus}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}@db:5432/${POSTGRES_DB:-etlnexus}
       SCHEDULER_ENABLED: "false"
+      REDIS_URL: redis://redis:6379/0
+    networks:
+      - backend
+      - database
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -75,8 +104,14 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-etlnexus}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}@db:5432/${POSTGRES_DB:-etlnexus}
       SCHEDULER_ENABLED: "true"
+      REDIS_URL: redis://redis:6379/0
+    networks:
+      - backend
+      - database
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
@@ -106,6 +141,9 @@ services:
     environment:
       VITE_AIRFLOW_URL: ${VITE_AIRFLOW_URL:-}
       BACKEND_HOST: backend-api
+    networks:
+      - frontend
+      - backend
     ports:
       - "80:80"
     depends_on:
@@ -124,6 +162,8 @@ services:
   db-backup:
     container_name: db-backup
     image: postgres:16-alpine
+    networks:
+      - database
     depends_on:
       db:
         condition: service_healthy
@@ -153,3 +193,8 @@ services:
 volumes:
   pgdata:
   db-backups:
+
+networks:
+  frontend:
+  backend:
+  database:
