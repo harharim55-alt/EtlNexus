@@ -13,7 +13,8 @@ router = APIRouter(prefix="/api/schema-matrix", tags=["schema-matrix"])
 async def get_schema_matrix(
     skip: int = Query(0, ge=0),
     limit: int = Query(200, ge=1, le=500),
+    q: str | None = Query(None, max_length=200),
     user: User = Depends(get_current_user),
     service: SchemaMatrixService = Depends(get_schema_matrix_service),
 ):
-    return await service.get_schema_matrix(skip=skip, limit=limit)
+    return await service.get_schema_matrix(skip=skip, limit=limit, q=q)

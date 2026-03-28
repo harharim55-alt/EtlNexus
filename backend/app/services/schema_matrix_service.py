@@ -12,15 +12,15 @@ class SchemaMatrixService:
         self.field_freq_repo = field_freq_repo
 
     async def get_schema_matrix(
-        self, skip: int = 0, limit: int = 200
+        self, skip: int = 0, limit: int = 200, q: str | None = None
     ) -> SchemaMatrixResponse:
-        cache_key = f"matrix:{skip}:{limit}"
+        cache_key = f"matrix:{skip}:{limit}:{q or ''}"
         cached = schema_matrix_cache.get(cache_key)
         if cached is not None:
             return cached
 
         frequencies, total = await self.field_freq_repo.get_field_frequencies(
-            skip=skip, limit=limit
+            skip=skip, limit=limit, q=q
         )
         rows = [
             FieldFrequencyRow(

@@ -11,7 +11,7 @@ class FieldFrequencyRepository:
         self.session = session
 
     async def get_field_frequencies(
-        self, skip: int = 0, limit: int = 200
+        self, skip: int = 0, limit: int = 200, q: str | None = None
     ) -> tuple[list[dict], int]:
         """Get field name frequencies across all pipelines, sorted desc.
 
@@ -31,6 +31,11 @@ class FieldFrequencyRepository:
             .group_by(PipelineField.name)
             .having(func.count(PipelineField.pipeline_id.distinct()) > 1)
         )
+
+        if q:
+            shared_fields_base = shared_fields_base.where(
+                PipelineField.name.ilike(f"%{q}%")
+            )
 
         # Count total shared field names
         count_stmt = select(func.count()).select_from(

@@ -3,10 +3,11 @@ import { fetchSchemaMatrix } from "@/api/schema-matrix";
 
 const PAGE_SIZE = 100;
 
-export function useSchemaMatrix() {
+export function useSchemaMatrix(searchQuery?: string) {
+  const q = searchQuery?.trim() || undefined;
   return useInfiniteQuery({
-    queryKey: ["schema-matrix"],
-    queryFn: ({ pageParam = 0 }) => fetchSchemaMatrix(pageParam, PAGE_SIZE),
+    queryKey: ["schema-matrix", q ?? ""],
+    queryFn: ({ pageParam = 0 }) => fetchSchemaMatrix(pageParam, PAGE_SIZE, q),
     initialPageParam: 0,
     getNextPageParam: (lastPage, allPages) => {
       const loaded = allPages.reduce((sum, p) => sum + p.fields.length, 0);
