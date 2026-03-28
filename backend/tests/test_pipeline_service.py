@@ -186,7 +186,8 @@ class TestGetPipelineDetailForUser:
         lineage_repo.get_by_pipeline_id.return_value = {"reads_from": [], "writes_to": []}
 
         grant_repo = AsyncMock()
-        grant_repo.user_can_see_pipeline.return_value = False
+        # get_grant_level_for_pipeline returns None when user has no grant
+        grant_repo.get_grant_level_for_pipeline.return_value = None
 
         result = await service.get_pipeline_detail_for_user(
             pipeline.id, uuid.uuid4(), set(), is_admin=False, grant_repo=grant_repo,
@@ -254,7 +255,7 @@ class TestGetJoinSuggestions:
             {"pipeline_id": uuid.uuid4(), "pipeline_name": "P2", "shared_fields": ["ip_address"]},
         ]
 
-        result = await service.get_join_suggestions(pipeline.id)
+        result = await service.get_join_suggestions(pipeline.id, is_admin=True)
         assert result is not None
         assert len(result.schema_matches) == 1
         assert "ip_address" in result.schema_matches[0].shared_fields

@@ -69,14 +69,14 @@ class TestGetSchemaMatrix:
 
         await service.get_schema_matrix(skip=50, limit=100)
 
-        field_freq_repo.get_field_frequencies.assert_awaited_once_with(skip=50, limit=100)
+        field_freq_repo.get_field_frequencies.assert_awaited_once_with(skip=50, limit=100, q=None, visible_pipeline_ids=None)
 
     async def test_default_pagination_values(self, service, field_freq_repo):
         field_freq_repo.get_field_frequencies.return_value = ([], 0)
 
         await service.get_schema_matrix()
 
-        field_freq_repo.get_field_frequencies.assert_awaited_once_with(skip=0, limit=200)
+        field_freq_repo.get_field_frequencies.assert_awaited_once_with(skip=0, limit=200, q=None, visible_pipeline_ids=None)
 
     async def test_result_is_cached(self, service, field_freq_repo):
         field_freq_repo.get_field_frequencies.return_value = ([], 0)

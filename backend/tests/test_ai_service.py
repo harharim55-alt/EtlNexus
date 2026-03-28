@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.cache import task_id_map_cache
 from app.services.ai_service import AIService
 from tests.conftest import make_pipeline
 
@@ -27,6 +28,14 @@ def make_pipeline_with_fields(*, name: str = "Port Scan Collector", task_id: str
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def clear_cache():
+    """Clear the catalog context cache before and after each test."""
+    task_id_map_cache.clear()
+    yield
+    task_id_map_cache.clear()
 
 
 @pytest.fixture
@@ -261,21 +270,24 @@ class TestBuildCatalogContext:
 
         assert "Route Table Sync" in context
 
-    async def test_limits_context_to_20_pipelines(
+    async def test_includes_all_pipeline_names_in_context(
         self, service, pipeline_repo
     ):
-        # Create 25 pipelines
+        # Create 60 pipelines — all should appear (names always included)
         pipeline_map = {}
-        for i in range(25):
+        for i in range(60):
             p = make_pipeline(name=f"Pipeline {i}", task_id=f"Pipeline{i}")
             p.category = "Test"
-            p.description = None
+            p.description = f"Description for pipeline {i}"
             pipeline_map[f"Pipeline{i}"] = p
 
         pipeline_repo.get_task_id_map.return_value = pipeline_map
 
         context = await service._build_catalog_context()
 
-        # Count occurrences of "Pipeline" (one per line entry)
+        # All 60 pipeline names should appear
         lines = [line for line in context.split("\n") if line.startswith("- Pipeline")]
-        assert len(lines) <= 20
+        assert len(lines) == 60
+        # But descriptions are only included for the first 50
+        desc_lines = [line for line in lines if "Description for" in line]
+        assert len(desc_lines) == 50

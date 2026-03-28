@@ -185,16 +185,18 @@ class TestGetDagSummaries:
         dag_task_repo.count_pipelines_per_dag.return_value = {"network_recon": 4}
 
         task = make_dag_task_with_pipeline()
-        dag_task_repo.get_tasks_for_dag_with_pipeline.return_value = [task]
+        dag_task_repo.get_tasks_for_dags_with_pipeline.return_value = {"network_recon": [task]}
 
         run = make_run_history()
-        stats_builder.get_dag_run_stats.return_value = {
-            "dag_run_count": 10,
-            "avg_duration": 120.0,
-            "success_rate": 90.0,
+        stats_builder.get_dag_run_stats_batch.return_value = {
+            "network_recon": {
+                "dag_run_count": 10,
+                "avg_duration": 120.0,
+                "success_rate": 90.0,
+            },
         }
-        resource_repo.get_latest_runs_by_dag.return_value = [run]
-        stats_builder.get_typical_finish_hour.return_value = "06:00"
+        resource_repo.get_latest_runs_by_dags.return_value = {"network_recon": [run]}
+        stats_builder.get_typical_finish_hours_batch.return_value = {"network_recon": "06:00"}
 
         airflow_repo.get_all.return_value = []
 
@@ -232,7 +234,7 @@ class TestGetDagSummaries:
             make_dag_task_with_pipeline(task_id=f"Task{i}", pipeline_id=p)
             for i, p in enumerate([pid1, pid2, pid3, pid4], 1)
         ]
-        dag_task_repo.get_tasks_for_dag_with_pipeline.return_value = tasks
+        dag_task_repo.get_tasks_for_dags_with_pipeline.return_value = {"test_dag": tasks}
 
         statuses = [
             make_airflow_status(pipeline_id=pid1, status="success"),
@@ -242,11 +244,11 @@ class TestGetDagSummaries:
         ]
         airflow_repo.get_all.return_value = statuses
 
-        stats_builder.get_dag_run_stats.return_value = {
-            "dag_run_count": 5, "avg_duration": None, "success_rate": None,
+        stats_builder.get_dag_run_stats_batch.return_value = {
+            "test_dag": {"dag_run_count": 5, "avg_duration": None, "success_rate": None},
         }
-        resource_repo.get_latest_runs_by_dag.return_value = []
-        stats_builder.get_typical_finish_hour.return_value = None
+        resource_repo.get_latest_runs_by_dags.return_value = {"test_dag": []}
+        stats_builder.get_typical_finish_hours_batch.return_value = {"test_dag": None}
 
         with patch(
             "app.services.dag_summary_service.airflow_client.get_all_dags",
@@ -268,13 +270,11 @@ class TestGetDagSummaries:
         dag_task_repo.count_pipelines_per_dag.return_value = {
             "active_dag": 3, "paused_dag": 2,
         }
-        dag_task_repo.get_tasks_for_dag_with_pipeline.return_value = []
+        dag_task_repo.get_tasks_for_dags_with_pipeline.return_value = {}
         airflow_repo.get_all.return_value = []
-        stats_builder.get_dag_run_stats.return_value = {
-            "dag_run_count": 0, "avg_duration": None, "success_rate": None,
-        }
-        resource_repo.get_latest_runs_by_dag.return_value = []
-        stats_builder.get_typical_finish_hour.return_value = None
+        stats_builder.get_dag_run_stats_batch.return_value = {}
+        resource_repo.get_latest_runs_by_dags.return_value = {}
+        stats_builder.get_typical_finish_hours_batch.return_value = {}
 
         with patch(
             "app.services.dag_summary_service.airflow_client.get_all_dags",
@@ -296,9 +296,10 @@ class TestGetDagSummaries:
         dag_task_repo.count_tasks_per_dag.return_value = {}
         dag_task_repo.count_pipelines_per_dag.return_value = {}
         airflow_repo.get_all.return_value = []
-        stats_builder.get_dag_run_stats.return_value = {
-            "dag_run_count": 0, "avg_duration": None, "success_rate": None,
-        }
+        stats_builder.get_dag_run_stats_batch.return_value = {}
+        resource_repo.get_latest_runs_by_dags.return_value = {}
+        stats_builder.get_typical_finish_hours_batch.return_value = {}
+        dag_task_repo.get_tasks_for_dags_with_pipeline.return_value = {}
 
         with patch(
             "app.services.dag_summary_service.airflow_client.get_all_dags",
@@ -316,13 +317,11 @@ class TestGetDagSummaries:
         dag_task_repo.get_all_dag_ids.return_value = ["test_dag"]
         dag_task_repo.count_tasks_per_dag.return_value = {"test_dag": 0}
         dag_task_repo.count_pipelines_per_dag.return_value = {"test_dag": 0}
-        dag_task_repo.get_tasks_for_dag_with_pipeline.return_value = []
+        dag_task_repo.get_tasks_for_dags_with_pipeline.return_value = {}
         airflow_repo.get_all.return_value = []
-        stats_builder.get_dag_run_stats.return_value = {
-            "dag_run_count": 0, "avg_duration": None, "success_rate": None,
-        }
-        resource_repo.get_latest_runs_by_dag.return_value = []
-        stats_builder.get_typical_finish_hour.return_value = None
+        stats_builder.get_dag_run_stats_batch.return_value = {}
+        resource_repo.get_latest_runs_by_dags.return_value = {}
+        stats_builder.get_typical_finish_hours_batch.return_value = {}
 
         with patch(
             "app.services.dag_summary_service.airflow_client.get_all_dags",

@@ -92,38 +92,15 @@ async def member_client(app) -> AsyncGenerator[AsyncClient, None]:
 class TestHealthCheck:
     async def test_health_returns_200(self, client: AsyncClient):
         """Health endpoint must respond 200 without authentication."""
-        from app.database import get_db_session
-
-        mock_session = AsyncMock()
-        mock_session.execute = AsyncMock()
-
-        async def _fake_session():
-            yield mock_session
-
-        client.app.dependency_overrides[get_db_session] = _fake_session  # type: ignore[attr-defined]
-        with patch("app.routers.health.airflow_client.check_health", new_callable=AsyncMock, return_value=True):
-            response = await client.get("/api/health")
-        client.app.dependency_overrides.pop(get_db_session, None)  # type: ignore[attr-defined]
+        response = await client.get("/api/health")
 
         assert response.status_code == 200
         body = response.json()
-        assert "status" in body
-        assert "services" in body
+        assert body["status"] == "ok"
 
     async def test_health_includes_request_id_header(self, client: AsyncClient):
         """Request ID middleware must inject X-Request-ID on every response."""
-        from app.database import get_db_session
-
-        mock_session = AsyncMock()
-        mock_session.execute = AsyncMock()
-
-        async def _fake_session():
-            yield mock_session
-
-        client.app.dependency_overrides[get_db_session] = _fake_session  # type: ignore[attr-defined]
-        with patch("app.routers.health.airflow_client.check_health", new_callable=AsyncMock, return_value=False):
-            response = await client.get("/api/health")
-        client.app.dependency_overrides.pop(get_db_session, None)  # type: ignore[attr-defined]
+        response = await client.get("/api/health")
 
         assert "x-request-id" in response.headers
 

@@ -338,7 +338,7 @@ class TestBouncerEndpoints:
         app.dependency_overrides.pop(get_bouncer_service, None)
 
         assert response.status_code == 200
-        mock_service.get_all_bouncers.assert_awaited_once_with(team="Dagger")
+        mock_service.get_all_bouncers.assert_awaited_once_with(team="Dagger", visible_dag_ids=None)
 
     async def test_bouncer_topology_returns_200(self, admin_client: AsyncClient, app):
         from app.dependencies import get_bouncer_service
@@ -425,10 +425,13 @@ class TestSchemaMatrixEndpoint:
         app.dependency_overrides.pop(get_schema_matrix_service, None)
 
         assert response.status_code == 200
-        mock_service.get_schema_matrix.assert_awaited_once_with(skip=50, limit=50)
+        mock_service.get_schema_matrix.assert_awaited_once_with(skip=50, limit=50, q=None, visible_pipeline_ids=None)
 
     async def test_schema_matrix_member_can_access(self, member_client: AsyncClient, app):
         """Regular members must be able to access the schema matrix endpoint."""
+        from unittest.mock import MagicMock
+
+        from app.database import get_db_session
         from app.dependencies import get_schema_matrix_service
         from app.schemas.schema_matrix import SchemaMatrixResponse
         from app.services.schema_matrix_service import SchemaMatrixService
@@ -437,11 +440,22 @@ class TestSchemaMatrixEndpoint:
         mock_service = AsyncMock(spec=SchemaMatrixService)
         mock_service.get_schema_matrix.return_value = mock_result
 
+        # Mock the DB session so the visibility query doesn't hit a real database.
+        mock_session = AsyncMock()
+        mock_execute_result = MagicMock()
+        mock_execute_result.all.return_value = []
+        mock_session.execute.return_value = mock_execute_result
+
+        async def _fake_session():
+            yield mock_session
+
         app.dependency_overrides[get_schema_matrix_service] = lambda: mock_service
+        app.dependency_overrides[get_db_session] = _fake_session
 
         response = await member_client.get("/api/schema-matrix")
 
         app.dependency_overrides.pop(get_schema_matrix_service, None)
+        app.dependency_overrides.pop(get_db_session, None)
 
         assert response.status_code == 200
 
