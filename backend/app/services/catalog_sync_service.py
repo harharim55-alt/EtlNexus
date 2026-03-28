@@ -1,5 +1,6 @@
 """Catalog sync service — discovers pipelines from Iceberg catalog via PyIceberg."""
 
+import asyncio
 import logging
 
 from sqlalchemy import delete, select
@@ -22,7 +23,7 @@ class CatalogSyncService:
         Uses PyIceberg REST catalog to read table schemas.
         Returns the number of pipelines synced.
         """
-        schemas = iceberg_client.get_all_schemas()
+        schemas = await asyncio.to_thread(iceberg_client.get_all_schemas)
         if not schemas:
             logger.info("No table schemas discovered from Iceberg catalog")
             return 0

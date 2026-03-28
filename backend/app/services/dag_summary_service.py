@@ -8,7 +8,7 @@ from app.integrations.airflow_client import airflow_client
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.resource_repo import ResourceRepository
-from app.repositories.resource_stats import ResourceStatsBuilder
+from app.repositories.resource_stats import _EMPTY_DAG_RUN_STATS, ResourceStatsBuilder
 from app.schemas.dag_summary import (
     DagSummary,
     DagSummaryAggregate,
@@ -54,13 +54,25 @@ class DagSummaryService:
         self,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
+        visible_dag_ids: set[str] | None = None,
     ) -> DagSummaryResponse:
-        cache_key = f"dag_summary:{date_from}:{date_to}"
+        """Return DAG-level summaries, optionally scoped to a set of visible DAGs.
+
+        Args:
+            date_from: Start of the date range filter.
+            date_to: End of the date range filter.
+            visible_dag_ids: When provided, restricts results to these DAG IDs
+                (non-admin visibility scoping).  ``None`` means no restriction.
+        """
+        scope = "all" if visible_dag_ids is None else str(sorted(visible_dag_ids))
+        cache_key = f"dag_summary:{date_from}:{date_to}:{scope}"
         cached = dag_summary_cache.get(cache_key)
         if cached is not None:
             return cached
 
-        result = await self._build_dag_summaries(date_from=date_from, date_to=date_to)
+        result = await self._build_dag_summaries(
+            date_from=date_from, date_to=date_to, visible_dag_ids=visible_dag_ids,
+        )
         dag_summary_cache.set(cache_key, result)
         return result
 
@@ -68,9 +80,15 @@ class DagSummaryService:
         self,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
+        visible_dag_ids: set[str] | None = None,
     ) -> DagSummaryResponse:
         # Batch fetch all required data
-        all_dag_ids = await self.dag_task_repo.get_all_dag_ids()
+        all_dag_ids_unfiltered = await self.dag_task_repo.get_all_dag_ids()
+        # Apply visibility filter when provided
+        if visible_dag_ids is not None:
+            all_dag_ids = [d for d in all_dag_ids_unfiltered if d in visible_dag_ids]
+        else:
+            all_dag_ids = all_dag_ids_unfiltered
         task_counts = await self.dag_task_repo.count_tasks_per_dag()
         pipeline_counts = await self.dag_task_repo.count_pipelines_per_dag()
 
@@ -81,6 +99,16 @@ class DagSummaryService:
         # Airflow statuses for per-task status lookup
         all_statuses = await self.airflow_repo.get_all()
         status_by_pipeline = {str(s.pipeline_id): s for s in all_statuses}
+
+        # Batch queries — 4 queries regardless of how many DAGs exist
+        all_run_stats = await self.stats.get_dag_run_stats_batch(
+            all_dag_ids, date_from=date_from, date_to=date_to,
+        )
+        all_latest_runs = await self.resource_repo.get_latest_runs_by_dags(all_dag_ids)
+        all_finish_hours = await self.stats.get_typical_finish_hours_batch(
+            all_dag_ids, date_from=date_from, date_to=date_to,
+        )
+        all_tasks_by_dag = await self.dag_task_repo.get_tasks_for_dags_with_pipeline(all_dag_ids)
 
         dags: list[DagSummary] = []
         total_pipelines = 0
@@ -99,22 +127,13 @@ class DagSummaryService:
             pc = pipeline_counts.get(dag_id, 0)
             total_pipelines += pc
 
-            # Run stats (date range or default 30d)
-            run_stats = await self.stats.get_dag_run_stats(
-                dag_id, date_from=date_from, date_to=date_to,
-            )
+            # Dict lookups instead of per-DAG awaits
+            run_stats = all_run_stats.get(dag_id, dict(_EMPTY_DAG_RUN_STATS))
             total_runs_30d += run_stats["dag_run_count"]
 
-            # Latest run tasks
-            latest_runs = await self.resource_repo.get_latest_runs_by_dag(dag_id)
-
-            # Typical finish hour
-            finish_hour = await self.stats.get_typical_finish_hour(
-                dag_id, date_from=date_from, date_to=date_to,
-            )
-
-            # Tasks in this DAG (eager-load pipeline for name lookup)
-            tasks_in_dag = await self.dag_task_repo.get_tasks_for_dag_with_pipeline(dag_id)
+            latest_runs = all_latest_runs.get(dag_id, [])
+            finish_hour = all_finish_hours.get(dag_id)
+            tasks_in_dag = all_tasks_by_dag.get(dag_id, [])
 
             # Build per-task summaries
             task_summaries: list[DagTaskSummary] = []

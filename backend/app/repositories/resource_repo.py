@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import case, func, select
+from sqlalchemy import case, func, over, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -153,7 +153,7 @@ class ResourceRepository:
         if not run_keys:
             return set()
         # Build OR conditions for all keys
-        from sqlalchemy import and_, or_, tuple_
+        from sqlalchemy import tuple_
         conditions = tuple_(
             PipelineRunHistory.pipeline_id,
             PipelineRunHistory.dag_id,
@@ -319,10 +319,9 @@ class ResourceRepository:
             .where(*conditions)
             .order_by(PipelineRunHistory.start_date.desc().nullslast())
         )
-        # When a custom date range is given, return all runs in that range;
-        # otherwise fall back to the fixed limit.
-        if not date_from and not date_to:
-            stmt = stmt.limit(limit)
+        # Always apply a limit to prevent unbounded results
+        effective_limit = limit if (not date_from and not date_to) else max(limit, 500)
+        stmt = stmt.limit(effective_limit)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
@@ -350,6 +349,65 @@ class ResourceRepository:
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_latest_runs_by_dags(
+        self, dag_ids: list[str]
+    ) -> dict[str, list[PipelineRunHistory]]:
+        """For each dag_id, return all task runs belonging to the most recent dag_run_id.
+
+        Uses a window function (``rank() OVER (PARTITION BY dag_id ORDER BY
+        start_date DESC)``) to identify the latest dag_run_id per dag_id, then
+        fetches all matching records in one round-trip.
+
+        Returns a dict keyed by dag_id.  DAGs with no run history are absent
+        from the result; callers should fall back to an empty list.
+        """
+        if not dag_ids:
+            return {}
+
+        # Rank dag_run_ids within each dag_id by start_date descending.
+        # Rows with rank == 1 belong to the most recent dag_run.
+        rank_col = over(
+            func.rank(),
+            partition_by=PipelineRunHistory.dag_id,
+            order_by=PipelineRunHistory.start_date.desc().nullslast(),
+        ).label("rn")
+
+        subq = (
+            select(PipelineRunHistory.dag_id, PipelineRunHistory.dag_run_id, rank_col)
+            .where(PipelineRunHistory.dag_id.in_(dag_ids))
+            .distinct(PipelineRunHistory.dag_id, PipelineRunHistory.dag_run_id)
+            .subquery()
+        )
+
+        latest_ids_stmt = select(subq.c.dag_id, subq.c.dag_run_id).where(subq.c.rn == 1)
+        id_result = await self.session.execute(latest_ids_stmt)
+        latest_pairs = id_result.all()  # list of (dag_id, dag_run_id)
+
+        if not latest_pairs:
+            return {}
+
+        from sqlalchemy import tuple_
+
+        stmt = (
+            select(PipelineRunHistory)
+            .where(
+                tuple_(PipelineRunHistory.dag_id, PipelineRunHistory.dag_run_id).in_(
+                    [(row.dag_id, row.dag_run_id) for row in latest_pairs]
+                )
+            )
+            .order_by(
+                PipelineRunHistory.dag_id,
+                PipelineRunHistory.start_date.asc().nullslast(),
+            )
+        )
+        result = await self.session.execute(stmt)
+        runs = result.scalars().all()
+
+        out: dict[str, list[PipelineRunHistory]] = {}
+        for run in runs:
+            out.setdefault(run.dag_id, []).append(run)
+        return out
 
     # ── Run-centric queries ──────────────────────────────────────────
 

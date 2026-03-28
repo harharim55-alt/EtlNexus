@@ -41,6 +41,34 @@ class DagTaskRepository(UpsertMixin):
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_tasks_for_dags_with_pipeline(
+        self, dag_ids: list[str]
+    ) -> dict[str, list[DagTask]]:
+        """Load DagTask rows for multiple DAGs with their pipeline eagerly loaded.
+
+        Performs a single query using ``dag_id IN (...)`` with a
+        ``selectinload`` for the pipeline relationship, then groups results by
+        dag_id.
+
+        Returns a dict keyed by dag_id.  DAGs with no tasks are absent from the
+        result; callers should fall back to an empty list.
+        """
+        if not dag_ids:
+            return {}
+
+        stmt = (
+            select(DagTask)
+            .where(DagTask.dag_id.in_(dag_ids))
+            .options(selectinload(DagTask.pipeline))
+        )
+        result = await self.session.execute(stmt)
+        tasks = result.scalars().all()
+
+        out: dict[str, list[DagTask]] = {}
+        for task in tasks:
+            out.setdefault(task.dag_id, []).append(task)
+        return out
+
     async def get_downstream_of(self, task_id: str) -> list[DagTask]:
         """Find all DagTask rows where task_id appears in another row's downstream_task_ids."""
         # Get all rows where this task_id has downstream tasks
@@ -64,6 +92,22 @@ class DagTaskRepository(UpsertMixin):
         stmt = select(distinct(DagTask.dag_id)).order_by(DagTask.dag_id)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def get_dag_ids_for_pipelines(
+        self, pipeline_ids: set[uuid.UUID]
+    ) -> set[str]:
+        """Return the set of DAG IDs that contain at least one of the given pipelines.
+
+        Used to restrict the DAG summary list to DAGs visible to a non-admin user.
+        """
+        if not pipeline_ids:
+            return set()
+        stmt = (
+            select(distinct(DagTask.dag_id))
+            .where(DagTask.pipeline_id.in_(pipeline_ids))
+        )
+        result = await self.session.execute(stmt)
+        return {row[0] for row in result.all()}
 
     async def count_tasks_per_dag(self) -> dict[str, int]:
         stmt = (

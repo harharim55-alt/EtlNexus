@@ -280,6 +280,46 @@ class ResourceService:
             destination_tables_snapshot=run.destination_tables_snapshot,
         )
 
+    @staticmethod
+    def _make_capacity_bar(
+        label: str,
+        alloc_numeric: float,
+        allocated_label: str,
+        used_raw: float,
+        max_val: float,
+        *,
+        format_as_memory: bool = False,
+    ) -> CapacityBar:
+        """Build a single ``CapacityBar`` from pre-computed values.
+
+        Args:
+            label: Human-readable resource label (e.g. ``"Driver Memory"``).
+            alloc_numeric: Allocated amount as a float in the same unit as
+                ``max_val`` (used for percentage calculation).
+            allocated_label: Display string for the allocated amount (e.g.
+                the raw config string ``"8g"`` or a stringified integer).
+            used_raw: Observed peak usage in the same unit as ``max_val``.
+            max_val: Cluster-wide maximum for this resource.
+            format_as_memory: When ``True`` the ``used`` label is formatted as
+                ``"{used_raw:.1f}g"`` and ``max_capacity`` as ``"{max_val}g"``;
+                otherwise both are stringified as integers.
+
+        Returns:
+            A populated :class:`CapacityBar` instance.
+        """
+        used_str = (
+            f"{used_raw:.1f}g" if format_as_memory and used_raw
+            else (str(int(used_raw)) if used_raw else "—")
+        )
+        return CapacityBar(
+            label=label,
+            allocated=allocated_label,
+            used=used_str,
+            max_capacity=f"{max_val}g" if format_as_memory else str(int(max_val)),
+            allocated_pct=round((alloc_numeric / max_val) * 100, 1) if max_val else 0,
+            used_pct=round((used_raw / max_val) * 100, 1) if max_val else 0,
+        )
+
     def _compute_capacity(
         self,
         configs: list,
@@ -305,18 +345,12 @@ class ResourceService:
             used_gb = (
                 actual_usage.peak_driver_memory_used_mb / 1024
                 if actual_usage.peak_driver_memory_used_mb
-                else 0
+                else 0.0
             )
-            bars.append(
-                CapacityBar(
-                    label="Driver Memory",
-                    allocated=best.spark_driver_memory,
-                    used=f"{used_gb:.1f}g" if used_gb else "—",
-                    max_capacity=f"{max_gb}g",
-                    allocated_pct=round((alloc_gb / max_gb) * 100, 1) if max_gb else 0,
-                    used_pct=round((used_gb / max_gb) * 100, 1) if max_gb else 0,
-                )
-            )
+            bars.append(self._make_capacity_bar(
+                "Driver Memory", alloc_gb, best.spark_driver_memory, used_gb, max_gb,
+                format_as_memory=True,
+            ))
 
         # Executor Memory — use peak values for capacity
         if best.spark_executor_memory:
@@ -325,54 +359,34 @@ class ResourceService:
             used_gb = (
                 actual_usage.peak_executor_memory_mb / 1024
                 if actual_usage.peak_executor_memory_mb
-                else 0
+                else 0.0
             )
-            bars.append(
-                CapacityBar(
-                    label="Executor Memory",
-                    allocated=best.spark_executor_memory,
-                    used=f"{used_gb:.1f}g" if used_gb else "—",
-                    max_capacity=f"{max_gb}g",
-                    allocated_pct=round((alloc_gb / max_gb) * 100, 1) if max_gb else 0,
-                    used_pct=round((used_gb / max_gb) * 100, 1) if max_gb else 0,
-                )
-            )
+            bars.append(self._make_capacity_bar(
+                "Executor Memory", alloc_gb, best.spark_executor_memory, used_gb, max_gb,
+                format_as_memory=True,
+            ))
 
         # Executor Cores — use peak CPU for capacity
         if best.spark_executor_cores:
-            alloc = best.spark_executor_cores
-            max_val = settings.spark_max_executor_cores
-            used = (
+            alloc = float(best.spark_executor_cores)
+            max_val = float(settings.spark_max_executor_cores)
+            used = float(
                 round(alloc * (actual_usage.peak_cpu_utilization_pct / 100))
                 if actual_usage.peak_cpu_utilization_pct
                 else 0
             )
-            bars.append(
-                CapacityBar(
-                    label="CPU Cores",
-                    allocated=str(alloc),
-                    used=str(used) if used else "—",
-                    max_capacity=str(max_val),
-                    allocated_pct=round((alloc / max_val) * 100, 1) if max_val else 0,
-                    used_pct=round((used / max_val) * 100, 1) if max_val else 0,
-                )
-            )
+            bars.append(self._make_capacity_bar(
+                "CPU Cores", alloc, str(best.spark_executor_cores), used, max_val,
+            ))
 
         # Num Executors — use peak for capacity
         if best.spark_num_executors:
-            alloc = best.spark_num_executors
-            max_val = settings.spark_max_total_executors
-            used = actual_usage.peak_executors_active or 0
-            bars.append(
-                CapacityBar(
-                    label="Executors",
-                    allocated=str(alloc),
-                    used=str(used) if used else "—",
-                    max_capacity=str(max_val),
-                    allocated_pct=round((alloc / max_val) * 100, 1) if max_val else 0,
-                    used_pct=round((used / max_val) * 100, 1) if max_val else 0,
-                )
-            )
+            alloc = float(best.spark_num_executors)
+            max_val = float(settings.spark_max_total_executors)
+            used = float(actual_usage.peak_executors_active or 0)
+            bars.append(self._make_capacity_bar(
+                "Executors", alloc, str(best.spark_num_executors), used, max_val,
+            ))
 
         return bars
 

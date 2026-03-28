@@ -61,6 +61,11 @@ class IcebergClient:
 
     async def check_health(self) -> bool:
         """Check if we can reach the Iceberg catalog."""
+        import asyncio
+        return await asyncio.to_thread(self._check_health_sync)
+
+    def _check_health_sync(self) -> bool:
+        """Synchronous health check (runs in thread pool)."""
         try:
             catalog = self._get_catalog()
             if catalog is None:

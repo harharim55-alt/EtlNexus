@@ -36,6 +36,40 @@ class TopologyService:
         self.bouncer_repo = bouncer_repo
         self.resource_repo = resource_repo
 
+    async def _build_status_map(
+        self,
+        dag_run_id: str | None,
+        task_id_to_pipeline: dict,
+    ) -> dict[str, str]:
+        """Build a task_id -> status mapping.
+
+        When ``dag_run_id`` is provided the historical run status table is
+        used as the primary source; live ``AirflowRunStatus`` values are used
+        to fill any gaps (e.g. still-running tasks not yet persisted).
+        Without a ``dag_run_id`` only live statuses are used.
+
+        Args:
+            dag_run_id: Optional historical DAG run identifier.
+            task_id_to_pipeline: Lightweight pipeline projection keyed by task_id.
+
+        Returns:
+            Mapping of task_id to status string.
+        """
+        if dag_run_id:
+            run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
+            status_map: dict[str, str] = dict(run_statuses)
+            # Fill gaps from live AirflowRunStatus for tasks without a run
+            # history entry yet (e.g. running/queued/scheduled tasks).
+            for tid, p in task_id_to_pipeline.items():
+                if tid not in status_map and p.status and p.status != "unknown":
+                    status_map[tid] = p.status
+        else:
+            status_map = {}
+            for tid, p in task_id_to_pipeline.items():
+                if p.status and p.status != "unknown":
+                    status_map[tid] = p.status
+        return status_map
+
     async def build_pipeline_topology(
         self, pipeline_id: uuid.UUID, dag_id: str | None = None,
         dag_run_id: str | None = None,
@@ -108,24 +142,13 @@ class TopologyService:
         upstream_bouncers_list = await self._enrich_bouncers(found_bouncers)
 
         # Build status map — historical (per-run) or current (live Airflow)
+        status_map = await self._build_status_map(dag_run_id, task_id_to_pipeline)
         if dag_run_id:
-            run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
-            status_map: dict[str, str] = dict(run_statuses)
-            # Fill gaps from live AirflowRunStatus for tasks without a run
-            # history entry yet (e.g. running/queued/scheduled tasks)
-            for tid, p in task_id_to_pipeline.items():
-                if tid not in status_map and p.status and p.status != "unknown":
-                    status_map[tid] = p.status
             pipeline_status = status_map.get(my_task_id, "unknown")
         else:
             pipeline_status = "unknown"
             if pipeline.airflow_status:
                 pipeline_status = pipeline.airflow_status.status
-            # Build status map from lightweight task_id_map (status is a direct attribute)
-            status_map = {}
-            for tid, p in task_id_to_pipeline.items():
-                if p.status and p.status != "unknown":
-                    status_map[tid] = p.status
 
         merged_needs: dict[str, TopologyTask] = {}
         merged_prefers: dict[str, TopologyTask] = {}
@@ -181,18 +204,11 @@ class TopologyService:
         if not my_task_id:
             return None
 
-        # Resolve pipeline status — will be overridden by status_map if dag_run_id
-        if dag_run_id:
-            run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
-            _run_status_map = dict(run_statuses)
-            pipeline_status = _run_status_map.get(my_task_id, "unknown")
-            # Fall back to live AirflowRunStatus if no run history entry yet
-            if pipeline_status == "unknown" and pipeline.airflow_status:
-                pipeline_status = pipeline.airflow_status.status
-        else:
-            pipeline_status = "unknown"
-            if pipeline.airflow_status:
-                pipeline_status = pipeline.airflow_status.status
+        # Resolve pipeline status — derived from status_map built later.
+        # We compute it eagerly here only for the early-return (no dag_entries) path.
+        pipeline_status = "unknown"
+        if pipeline.airflow_status:
+            pipeline_status = pipeline.airflow_status.status
 
         dag_entries = await self.dag_task_repo.get_dags_for_task(my_task_id)
         if not dag_entries:
@@ -241,20 +257,9 @@ class TopologyService:
         task_id_to_pipeline = await self.pipeline_repo.get_task_id_map()
 
         # Status map — historical or current
+        status_map = await self._build_status_map(dag_run_id, task_id_to_pipeline)
         if dag_run_id:
-            run_statuses = await self.resource_repo.get_statuses_for_dag_run(dag_run_id)
-            status_map: dict[str, str] = dict(run_statuses)
-            # Fill gaps from live AirflowRunStatus for tasks without a run
-            # history entry yet (e.g. running/queued/scheduled tasks)
-            for tid, p in task_id_to_pipeline.items():
-                if tid not in status_map and p.status and p.status != "unknown":
-                    status_map[tid] = p.status
-        else:
-            # Build status map from lightweight task_id_map (status is a direct attribute)
-            status_map = {}
-            for tid, p in task_id_to_pipeline.items():
-                if p.status and p.status != "unknown":
-                    status_map[tid] = p.status
+            pipeline_status = status_map.get(my_task_id, "unknown")
 
         # BFS through needs/prefers (semantic data dependencies)
         visited, raw_edges = bfs_upstream_semantic(

@@ -170,6 +170,10 @@ class AirflowClient:
         self, dag_id: str, dag_run_id: str, task_id: str, try_number: int = 1
     ) -> str:
         """Fetch the log content for a specific task instance attempt."""
+        # Respect the circuit breaker — fast-fail when Airflow is known to be down.
+        if time.monotonic() < self._circuit_open_until:
+            return ""
+
         url = (
             f"{self.base_url}/dags/{dag_id}/dagRuns/{dag_run_id}"
             f"/taskInstances/{quote(task_id, safe='')}/logs/{try_number}"
