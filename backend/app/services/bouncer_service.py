@@ -28,13 +28,31 @@ class BouncerService:
         self.dag_task_repo = dag_task_repo
         self.pipeline_repo = pipeline_repo
 
-    async def get_all_bouncers(self, team: str | None = None) -> BouncerListResponse:
-        cache_key = f"bouncers:{team or 'all'}"
+    async def get_all_bouncers(
+        self,
+        team: str | None = None,
+        visible_dag_ids: set[str] | None = None,
+    ) -> BouncerListResponse:
+        """Return the bouncer list, optionally restricted to visible DAGs.
+
+        Args:
+            team: Optional team name filter.
+            visible_dag_ids: When provided, restricts results to bouncers
+                associated with at least one of these DAGs (non-admin
+                visibility scoping).  ``None`` means no restriction.
+        """
+        scope = "all" if visible_dag_ids is None else str(sorted(visible_dag_ids))
+        cache_key = f"bouncers:{team or 'all'}:{scope}"
         cached = bouncer_cache.get(cache_key)
         if cached is not None:
             return cached
 
-        if team:
+        if visible_dag_ids is not None:
+            # Visibility-scoped: filter by DAG overlap, then optionally by team
+            bouncers = await self.bouncer_repo.get_all_for_dag_ids(visible_dag_ids)
+            if team:
+                bouncers = [b for b in bouncers if b.team == team]
+        elif team:
             bouncers = await self.bouncer_repo.get_by_team(team)
         else:
             bouncers = await self.bouncer_repo.get_all()

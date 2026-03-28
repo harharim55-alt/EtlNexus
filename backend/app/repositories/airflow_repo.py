@@ -12,8 +12,20 @@ class AirflowRepository(UpsertMixin):
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def get_all(self) -> list[AirflowRunStatus]:
+    async def get_all(
+        self,
+        visible_pipeline_ids: set[uuid.UUID] | None = None,
+    ) -> list[AirflowRunStatus]:
+        """Return all (or visibility-filtered) Airflow run statuses.
+
+        Args:
+            visible_pipeline_ids: When provided, restricts results to statuses
+                for these pipelines (non-admin visibility scoping).
+                ``None`` means no restriction (admin path).
+        """
         stmt = select(AirflowRunStatus)
+        if visible_pipeline_ids is not None:
+            stmt = stmt.where(AirflowRunStatus.pipeline_id.in_(visible_pipeline_ids))
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

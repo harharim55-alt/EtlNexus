@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class PipelineFieldSchema(BaseModel):
@@ -10,7 +10,7 @@ class PipelineFieldSchema(BaseModel):
     data_type: str | None = None
     ordinal_position: int = 0
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PipelineListItem(BaseModel):
@@ -27,7 +27,7 @@ class PipelineListItem(BaseModel):
     last_run_at: datetime | None = None
     execution_date: datetime | None = None
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PipelineListResponse(BaseModel):
@@ -59,12 +59,12 @@ class PipelineDetail(BaseModel):
     execution_date: datetime | None = None
     last_checked_at: datetime | None = None
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class PipelineUpdateRequest(BaseModel):
-    description: str | None = None
-    documentation: str | None = None
+    description: str | None = Field(None, max_length=5_000)
+    documentation: str | None = Field(None, max_length=100_000)
 
 
 class PipelineUpdateResponse(BaseModel):
@@ -89,7 +89,7 @@ class PipelineRevisionResponse(BaseModel):
     change_source: str
     created_at: datetime
 
-    model_config = {"from_attributes": True}
+    model_config = ConfigDict(from_attributes=True)
 
 
 class RevisionListResponse(BaseModel):

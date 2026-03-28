@@ -72,6 +72,7 @@ class VisibilityService:
                 granted_by_user_id=granted_by_user_id,
             )
 
+        await self.grant_repo.session.commit()
         grant_level_cache.clear()
         return grant
 
@@ -79,5 +80,6 @@ class VisibilityService:
         """Delete a visibility grant. Returns True if deleted, False if not found."""
         deleted = await self.grant_repo.delete_grant(grant_id)
         if deleted:
+            await self.grant_repo.session.commit()
             grant_level_cache.clear()
         return deleted

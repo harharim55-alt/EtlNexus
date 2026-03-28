@@ -23,6 +23,25 @@ class BouncerRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_all_for_dag_ids(self, dag_ids: set[str]) -> list[Bouncer]:
+        """Return bouncers whose dag_ids list overlaps with the given DAG IDs.
+
+        Fetches all bouncers and filters in Python because ``dag_ids`` is
+        stored as a JSON column, which does not support native array overlap
+        SQL operators without casting.  The bouncer table is expected to remain
+        small (O(tens)), making the in-Python filter negligible.
+
+        Args:
+            dag_ids: DAG IDs visible to the requesting user.
+
+        Returns:
+            Bouncers that participate in at least one of the given DAGs.
+        """
+        if not dag_ids:
+            return []
+        all_bouncers = await self.get_all(skip=0, limit=10_000)
+        return [b for b in all_bouncers if dag_ids.intersection(b.dag_ids or [])]
+
     async def get_by_team(self, team: str) -> list[Bouncer]:
         stmt = (
             select(Bouncer)

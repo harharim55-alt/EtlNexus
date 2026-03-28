@@ -21,6 +21,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.database import get_db_session
+from app.enums import UserRole
 from app.integrations.oidc_client import oidc_client
 from app.models.user import User
 from app.repositories.pipeline_repo import PipelineRepository
@@ -175,7 +176,7 @@ def require_team_membership(pipeline_id_param: str = "pipeline_id"):
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
         # Admins can always proceed
-        if user.role == "admin":
+        if user.role == UserRole.ADMIN:
             return user
 
         pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
@@ -206,7 +207,7 @@ def require_team_membership_or_editor_grant(pipeline_id_param: str = "pipeline_i
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        if user.role == "admin":
+        if user.role == UserRole.ADMIN:
             return user
 
         pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
@@ -267,7 +268,7 @@ def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        if user.role == "admin":
+        if user.role == UserRole.ADMIN:
             return user
 
         pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
@@ -322,7 +323,7 @@ def require_pipeline_visibility_by_name(param_name: str = "etl_name"):
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        if user.role == "admin":
+        if user.role == UserRole.ADMIN:
             return user
 
         etl_name: str | None = request.path_params.get(param_name)

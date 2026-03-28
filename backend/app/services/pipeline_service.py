@@ -1,7 +1,9 @@
+import re
 import uuid
 from datetime import datetime
 
 from app.cache import join_suggestions_cache, pipeline_list_cache
+from app.enums import GrantLevel, PipelineType
 from app.models.pipeline import Pipeline
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
@@ -16,6 +18,13 @@ from app.schemas.pipeline import (
     PipelineUpdateRequest,
     PipelineUpdateResponse,
 )
+
+RESTORABLE_FIELDS = frozenset({"description", "documentation"})
+
+# PascalCase component pattern for API task detection — matches "Api" or
+# "API" as a PascalCase segment anywhere in the task_id.  Lowercase "api"
+# does NOT match (case-sensitive).
+_API_PATTERN = re.compile(r"Api|API")
 
 
 class PipelineService:
@@ -134,6 +143,7 @@ class PipelineService:
         )
         if not pipeline:
             return None
+        await self.pipeline_repo.session.commit()
         pipeline_list_cache.clear()
         return PipelineUpdateResponse(
             id=pipeline.id,
@@ -162,6 +172,9 @@ class PipelineService:
         if not revision or revision.pipeline_id != pipeline_id:
             return None
 
+        if revision.field_name not in RESTORABLE_FIELDS:
+            return None
+
         # Snapshot current state before restoring
         field_name = revision.field_name
         current_content = getattr(pipeline, field_name)
@@ -184,6 +197,7 @@ class PipelineService:
         )
         if not pipeline:
             return None
+        await self.pipeline_repo.session.commit()
         pipeline_list_cache.clear()
         return PipelineUpdateResponse(
             id=pipeline.id,
@@ -272,27 +286,23 @@ class PipelineService:
 
         pipeline_team_id = result.team_id
 
-        # Enforce visibility — return None to prevent UUID enumeration
-        can_see = await grant_repo.user_can_see_pipeline(
-            pipeline_id=pipeline_id,
-            pipeline_team_id=pipeline_team_id,
-            user_id=user_id,
-            user_team_ids=user_team_ids,
-        )
-        if not can_see:
-            return None
-
         if pipeline_team_id in user_team_ids:
             result.can_edit = True
-        else:
-            grant_level = await grant_repo.get_grant_level_for_pipeline(
-                pipeline_id=pipeline_id,
-                user_id=user_id,
-                user_team_ids=user_team_ids,
-                pipeline_team_id=pipeline_team_id,
-            )
-            result.can_edit = grant_level == "editor"
+            return result
 
+        # A single query proves visibility AND returns the grant level.
+        # If no grant exists the user cannot see the pipeline — return None
+        # to prevent UUID enumeration.
+        grant_level = await grant_repo.get_grant_level_for_pipeline(
+            pipeline_id=pipeline_id,
+            user_id=user_id,
+            user_team_ids=user_team_ids,
+            pipeline_team_id=pipeline_team_id,
+        )
+        if not grant_level:
+            return None
+
+        result.can_edit = grant_level == GrantLevel.EDITOR
         return result
 
     async def get_join_suggestions(
@@ -328,7 +338,9 @@ class PipelineService:
         if not pipeline:
             return None
 
-        if not is_admin and grant_repo is not None:
+        if not is_admin:
+            if grant_repo is None:
+                return None  # Fail closed — deny if no grant_repo provided
             can_see = await grant_repo.user_can_see_pipeline(
                 pipeline_id=pipeline_id,
                 pipeline_team_id=pipeline.team_id,
@@ -355,10 +367,10 @@ class PipelineService:
 
     @staticmethod
     def _detect_pipeline_type(task_id: str | None) -> str:
-        """Derive pipeline type from task_id (same logic as AirflowSyncService._is_api)."""
-        if task_id and ("Api" in task_id or "API" in task_id):
-            return "api"
-        return "etl"
+        """Derive pipeline type from task_id using word-boundary matching."""
+        if task_id and _API_PATTERN.search(task_id):
+            return PipelineType.API
+        return PipelineType.ETL
 
     @staticmethod
     def _to_list_item(pipeline: Pipeline) -> PipelineListItem:

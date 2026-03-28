@@ -15,6 +15,7 @@ from app.schemas.auth import (
     UserListResponse,
     user_to_response,
 )
+from app.schemas.common import SuccessResponse
 from app.services.user_auth_service import invalidate_user_cache
 
 audit_logger = logging.getLogger("audit")
@@ -37,13 +38,13 @@ async def list_users(
     )
 
 
-@router.patch("/{user_id}/role")
+@router.patch("/{user_id}/role", response_model=SuccessResponse)
 async def update_user_role(
     user_id: uuid.UUID,
     body: RoleUpdateRequest,
     user: User = Depends(require_role("admin")),
     repo: UserRepository = Depends(get_user_repo),
-) -> dict:
+) -> SuccessResponse:
     """Change a user's global role (admin only)."""
     # SEC-08: Block self-demotion
     if user_id == user.id and body.role != user.role:
@@ -68,19 +69,20 @@ async def update_user_role(
     updated = await repo.update_role(user_id, body.role)
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
+    await repo.session.commit()
 
     audit_logger.info("role_changed", extra={"target_user_id": str(user_id), "new_role": body.role, "changed_by": user.display_name})
     await invalidate_user_cache()
-    return {"ok": True}
+    return SuccessResponse()
 
 
-@router.patch("/{user_id}/active")
+@router.patch("/{user_id}/active", response_model=SuccessResponse)
 async def update_user_active(
     user_id: uuid.UUID,
     body: ActiveUpdateRequest,
     user: User = Depends(require_role("admin")),
     repo: UserRepository = Depends(get_user_repo),
-) -> dict:
+) -> SuccessResponse:
     """Activate or deactivate a user account (admin only)."""
     if user_id == user.id and not body.is_active:
         raise HTTPException(
@@ -91,6 +93,7 @@ async def update_user_active(
     updated = await repo.update_active(user_id, body.is_active)
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
+    await repo.session.commit()
 
     await invalidate_user_cache()
-    return {"ok": True}
+    return SuccessResponse()

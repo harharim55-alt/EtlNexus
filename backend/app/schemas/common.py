@@ -9,3 +9,7 @@ class ErrorResponse(BaseModel):
 class HealthCheckResponse(BaseModel):
     status: str
     services: dict[str, str]
+
+
+class SuccessResponse(BaseModel):
+    ok: bool = True

@@ -1,3 +1,4 @@
+import uuid
 from itertools import groupby
 
 from sqlalchemy import func, select
@@ -11,9 +12,13 @@ class FieldFrequencyRepository:
         self.session = session
 
     async def get_field_frequencies(
-        self, skip: int = 0, limit: int = 200, q: str | None = None
+        self,
+        skip: int = 0,
+        limit: int = 200,
+        q: str | None = None,
+        visible_pipeline_ids: set[uuid.UUID] | None = None,
     ) -> tuple[list[dict], int]:
-        """Get field name frequencies across all pipelines, sorted desc.
+        """Get field name frequencies across pipelines, sorted desc.
 
         Returns (frequencies, total_count) where total_count is the number
         of unique shared field names (for pagination).
@@ -21,6 +26,14 @@ class FieldFrequencyRepository:
         Uses a single query with a subquery filter instead of N+1:
         1. Subquery identifies field names appearing in 2+ pipelines
         2. Main query joins fields → pipelines for those names only
+
+        Args:
+            skip: Pagination offset.
+            limit: Maximum rows to return.
+            q: Optional field name substring filter.
+            visible_pipeline_ids: When provided, restricts results to fields
+                belonging to these pipelines (non-admin visibility filtering).
+                ``None`` means no restriction (admin path).
         """
         # Subquery: field names that appear in more than one pipeline
         shared_fields_base = (
@@ -31,6 +44,11 @@ class FieldFrequencyRepository:
             .group_by(PipelineField.name)
             .having(func.count(PipelineField.pipeline_id.distinct()) > 1)
         )
+
+        if visible_pipeline_ids is not None:
+            shared_fields_base = shared_fields_base.where(
+                PipelineField.pipeline_id.in_(visible_pipeline_ids)
+            )
 
         if q:
             shared_fields_base = shared_fields_base.where(

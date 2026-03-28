@@ -1,8 +1,6 @@
 import asyncio
 import logging
 import logging.config
-import time
-import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -13,7 +11,8 @@ from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
 from app.exceptions import AirflowSyncError, AuthorizationError, PipelineNotFoundError
-from app.logging_config import build_log_config, request_id_var
+from app.logging_config import build_log_config
+from app.middleware import BodySizeLimitMiddleware, RequestIdMiddleware, RequestLoggingMiddleware
 from app.rate_limit import limiter
 from app.routers import (
     ai,
@@ -34,7 +33,6 @@ from app.routers import (
     users,
     visibility,
 )
-from app.routers.metrics import record_request
 
 # Structured logging
 logging.config.dictConfig(build_log_config(
@@ -50,6 +48,19 @@ async def lifespan(app: FastAPI):
     # Startup
     logger.info("ETL Explorer Hub starting up")
 
+    # Refuse to start without SSO in non-development environments
+    if settings.deployment_env != "development" and not settings.sso_enabled:
+        logger.critical(
+            "FATAL: SSO_ENABLED=false in %s environment. "
+            "Set SSO_ENABLED=true or DEPLOYMENT_ENV=development.",
+            settings.deployment_env,
+        )
+        raise SystemExit(1)
+    if not settings.sso_enabled:
+        logger.warning(
+            "SSO disabled — all requests get admin access (development only)"
+        )
+
     # Initialize OIDC client (no-op if SSO_ENABLED=false)
     from app.integrations.oidc_client import oidc_client
     await oidc_client.initialize()
@@ -57,6 +68,19 @@ async def lifespan(app: FastAPI):
     # Initialize Oasis Prod client (no-op if URL not configured)
     from app.integrations.oasis_prod_client import oasis_prod_client
     await oasis_prod_client.initialize()
+
+    # Start Redis cache invalidation bus (no-op if REDIS_URL not set)
+    if settings.redis_url:
+        from app.cache import invalidation_bus
+        try:
+            await invalidation_bus.start(settings.redis_url)
+        except Exception:
+            logger.warning(
+                "Failed to connect to Redis at %s — running without "
+                "cross-instance cache invalidation",
+                settings.redis_url,
+                exc_info=True,
+            )
 
     startup_task = None
     sched = None
@@ -78,9 +102,8 @@ async def lifespan(app: FastAPI):
 
         startup_task.add_done_callback(_on_startup_done)
 
-        # Start background scheduler
-        sched = setup_scheduler()
-        sched.start()
+        # Start background scheduler (APScheduler 4.x — async)
+        sched = await setup_scheduler()
         logger.info("Background scheduler started")
     else:
         logger.info("Scheduler disabled — running in API-only mode")
@@ -92,7 +115,7 @@ async def lifespan(app: FastAPI):
         startup_task.cancel()
         logger.info("Cancelled in-progress startup sync")
     if sched is not None:
-        sched.shutdown(wait=False)
+        await sched.__aexit__(None, None, None)
     from app.integrations.airflow_client import airflow_client
     await airflow_client.close()
     from app.integrations.oidc_client import oidc_client as _oidc
@@ -103,17 +126,20 @@ async def lifespan(app: FastAPI):
     await _oasis.close()
     from app.integrations.iceberg_client import iceberg_client
     iceberg_client.stop()
+    if settings.redis_url:
+        from app.cache import invalidation_bus
+        await invalidation_bus.stop()
     logger.info("ETL Explorer Hub shutting down")
 
 
 app = FastAPI(
     title="ETL Explorer Hub",
     description="Data architecture command center API",
-    version="0.1.0",
+    version="0.11.0",
     lifespan=lifespan,
-    docs_url="/api/docs",
-    redoc_url="/api/redoc",
-    openapi_url="/api/openapi.json",
+    docs_url="/api/docs" if settings.debug else None,
+    redoc_url="/api/redoc" if settings.debug else None,
+    openapi_url="/api/openapi.json" if settings.debug else None,
 )
 
 app.state.limiter = limiter
@@ -121,39 +147,16 @@ app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.cors_origins,
-    allow_credentials=True,
+    allow_origins=settings.cors_origins if "*" not in settings.cors_origins else ["*"],
+    allow_credentials="*" not in settings.cors_origins,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "X-Request-ID", "Accept"],
 )
 
-
-@app.middleware("http")
-async def request_id_middleware(request: Request, call_next):
-    rid = str(uuid.uuid4())
-    request_id_var.set(rid)
-    response = await call_next(request)
-    response.headers["X-Request-ID"] = rid
-    return response
-
-
-# Request logging middleware
-@app.middleware("http")
-async def request_logging_middleware(request: Request, call_next):
-    if request.url.path == "/api/health":
-        return await call_next(request)
-    start = time.monotonic()
-    response = await call_next(request)
-    duration = time.monotonic() - start
-    logger.info(
-        "%s %s %d %.0fms",
-        request.method,
-        request.url.path,
-        response.status_code,
-        duration * 1000,
-    )
-    record_request(request.method, request.url.path, response.status_code, duration)
-    return response
+# Pure ASGI middleware (added innermost-first; last = outermost)
+app.add_middleware(BodySizeLimitMiddleware, max_size=1_048_576)
+app.add_middleware(RequestIdMiddleware)
+app.add_middleware(RequestLoggingMiddleware)
 
 
 # Exception handlers

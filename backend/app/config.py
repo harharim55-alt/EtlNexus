@@ -32,6 +32,8 @@ class Settings(BaseSettings):
     debug: bool = False
     log_format: str = "auto"  # "json", "text", or "auto" (json unless debug)
     scheduler_enabled: bool = True  # Set to false for API-only mode (no background tasks)
+    deployment_env: str = "development"  # "development", "staging", "production"
+    trusted_proxy_depth: int = 1  # Trusted reverse proxy hops; 0 = ignore X-Forwarded-For
 
     # Tuning
     airflow_semaphore_limit: int = 6
@@ -53,6 +55,9 @@ class Settings(BaseSettings):
 
     # Run history retention
     run_history_retention_days: int = 90  # Delete run history older than this; 0 = keep forever
+
+    # Redis (optional — cross-instance cache invalidation)
+    redis_url: str = ""  # Empty = disabled, pure in-memory fallback
 
     # Cache TTLs (seconds) and page limits
     cache_ttl_short: int = 30
