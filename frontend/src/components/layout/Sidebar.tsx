@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Activity, BarChart3, Database, HelpCircle, LogOut, Network, Radio, RefreshCw, Shield, Sparkles } from "lucide-react";
+import { Activity, BarChart3, Database, HelpCircle, LogOut, Moon, Network, Palette, Radio, RefreshCw, Shield, Sparkles, Sun } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useNavigationStore } from "@/stores/navigation-store";
@@ -9,6 +9,8 @@ import { useOnboardingStore } from "@/stores/onboarding-store";
 import { isAdmin } from "@/lib/permissions";
 import { AIRFLOW_URL } from "@/lib/config";
 import { syncAllPipelines } from "@/api/airflow";
+import { formatRelativeTime } from "@/lib/format";
+import { useThemeStore } from "@/stores/theme-store";
 import { useAuth } from "react-oidc-context";
 import { NavIcon } from "./NavIcon";
 import {
@@ -32,14 +34,14 @@ function SsoLogoutButton() {
   return (
     <Tooltip>
       <TooltipTrigger
-        className="p-1.5 text-slate-600 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200 cursor-pointer"
+        className="p-1.5 text-text-faint hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-all duration-200 cursor-pointer"
         onClick={handleLogout}
       >
         <LogOut className="size-4" />
       </TooltipTrigger>
       <TooltipContent
         side="right"
-        className="bg-[#18181b] border-white/10 text-white text-xs font-medium"
+        className="bg-card border-border-prominent text-foreground text-xs font-medium"
       >
         Sign out
       </TooltipContent>
@@ -49,14 +51,19 @@ function SsoLogoutButton() {
 
 export function Sidebar() {
   const { activeTab, setActiveTab } = useNavigationStore();
-  const { data: airflowData } = useAirflowStatuses();
+  const { data: airflowData, dataUpdatedAt } = useAirflowStatuses();
   const user = useAuthStore((s) => s.user);
   const ssoEnabled = useAuthStore((s) => s.ssoEnabled);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const queryClient = useQueryClient();
+  const theme = useThemeStore((s) => s.theme);
+  const cycleTheme = useThemeStore((s) => s.cycleTheme);
+
+  const themeIcon = theme === "dark" ? <Moon className="size-4" /> : theme === "light" ? <Sun className="size-4" /> : <Palette className="size-4" />;
+  const themeLabel = theme === "dark" ? "Dark theme" : theme === "light" ? "Light theme" : "Pink theme";
 
   return (
-    <nav className="w-20 border-r border-white/5 bg-[#09090b] flex flex-col items-center py-6 z-20 shrink-0">
+    <nav className="w-20 border-r border-border bg-background flex flex-col items-center py-6 z-20 shrink-0">
       {/* Logo */}
       <div className="mb-8">
         <img src="/logo.svg" alt="ETL Nexus" className="w-11 h-11" />
@@ -124,7 +131,7 @@ export function Sidebar() {
               className={`p-1.5 rounded-lg transition-all duration-200 cursor-pointer ${
                 isSyncingAll
                   ? "text-amber-400 bg-amber-500/10"
-                  : "text-slate-600 hover:text-amber-400 hover:bg-amber-500/10"
+                  : "text-text-faint hover:text-amber-400 hover:bg-amber-500/10"
               }`}
               onClick={async () => {
                 if (isSyncingAll) return;
@@ -133,6 +140,7 @@ export function Sidebar() {
                   const result = await syncAllPipelines();
                   toast.success(`Synced ${result.synced} pipelines from Airflow`);
                   queryClient.invalidateQueries({ queryKey: ["pipelines"] });
+                  queryClient.invalidateQueries({ queryKey: ["pipeline"] });
                   queryClient.invalidateQueries({ queryKey: ["airflow-statuses"] });
                   queryClient.invalidateQueries({ queryKey: ["dag-summary"] });
                   queryClient.invalidateQueries({ queryKey: ["topology"] });
@@ -142,6 +150,8 @@ export function Sidebar() {
                   queryClient.invalidateQueries({ queryKey: ["execution-plan"] });
                   queryClient.invalidateQueries({ queryKey: ["execution-plan-runs"] });
                   queryClient.invalidateQueries({ queryKey: ["resource-history"] });
+                  queryClient.invalidateQueries({ queryKey: ["schema-matrix"] });
+                  queryClient.invalidateQueries({ queryKey: ["bouncers"] });
                 } catch {
                   toast.error("Failed to sync pipelines from Airflow");
                 } finally {
@@ -153,7 +163,7 @@ export function Sidebar() {
             </TooltipTrigger>
             <TooltipContent
               side="right"
-              className="bg-[#18181b] border-white/10 text-white text-xs font-medium"
+              className="bg-card border-border-prominent text-foreground text-xs font-medium"
             >
               {isSyncingAll ? "Syncing all pipelines..." : "Sync all pipelines"}
             </TooltipContent>
@@ -162,14 +172,29 @@ export function Sidebar() {
 
         <Tooltip>
           <TooltipTrigger
-            className="p-1.5 text-slate-600 hover:text-indigo-400 hover:bg-indigo-500/10 rounded-lg transition-all duration-200 cursor-pointer"
+            className="p-1.5 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-all duration-200 cursor-pointer"
+            onClick={cycleTheme}
+          >
+            {themeIcon}
+          </TooltipTrigger>
+          <TooltipContent
+            side="right"
+            className="bg-card border-border-prominent text-foreground text-xs font-medium"
+          >
+            {themeLabel} (click to switch)
+          </TooltipContent>
+        </Tooltip>
+
+        <Tooltip>
+          <TooltipTrigger
+            className="p-1.5 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-all duration-200 cursor-pointer"
             onClick={() => useOnboardingStore.getState().startOnboarding()}
           >
             <HelpCircle className="size-4" />
           </TooltipTrigger>
           <TooltipContent
             side="right"
-            className="bg-[#18181b] border-white/10 text-white text-xs font-medium"
+            className="bg-card border-border-prominent text-foreground text-xs font-medium"
           >
             Restart tour
           </TooltipContent>
@@ -187,16 +212,23 @@ export function Sidebar() {
                 className={`w-5 h-5 ${
                   airflowData?.airflow_connected
                     ? "text-emerald-400"
-                    : "text-slate-600"
+                    : "text-text-faint"
                 }`}
               />
             </a>
           </TooltipTrigger>
           <TooltipContent
             side="right"
-            className="bg-[#18181b] border-white/10 text-white text-xs font-medium"
+            className="bg-card border-border-prominent text-foreground text-xs font-medium"
           >
-            Airflow: {airflowData?.airflow_connected ? "Online" : "Offline"}
+            <div className="flex flex-col gap-0.5">
+              <span>Airflow: {airflowData?.airflow_connected ? "Online" : "Offline"}</span>
+              {dataUpdatedAt > 0 && (
+                <span className="text-text-secondary">
+                  Checked {formatRelativeTime(new Date(dataUpdatedAt).toISOString())}
+                </span>
+              )}
+            </div>
           </TooltipContent>
         </Tooltip>
 
@@ -209,11 +241,11 @@ export function Sidebar() {
               </TooltipTrigger>
               <TooltipContent
                 side="right"
-                className="bg-[#18181b] border-white/10 text-white text-xs font-medium"
+                className="bg-card border-border-prominent text-foreground text-xs font-medium"
               >
                 <div className="flex flex-col gap-0.5">
                   <span className="font-semibold">{user.display_name}</span>
-                  <span className="text-slate-400">{user.email}</span>
+                  <span className="text-text-secondary">{user.email}</span>
                   <span className="text-[10px] text-indigo-400 uppercase tracking-wider mt-0.5">
                     {user.role}
                   </span>

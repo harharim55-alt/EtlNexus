@@ -19,6 +19,7 @@ export function useSyncPipeline(pipelineId: string) {
       queryClient.invalidateQueries({ queryKey: ["execution-plan-runs", pipelineId] });
       queryClient.invalidateQueries({ queryKey: ["pipeline-runs", pipelineId] });
       queryClient.invalidateQueries({ queryKey: ["resource-history", pipelineId] });
+      queryClient.invalidateQueries({ queryKey: ["schema-matrix"] });
     },
     onError: () => {
       toast.error("Failed to sync pipeline from Airflow");
