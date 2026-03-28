@@ -31,6 +31,9 @@ Format based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - Always apply LIMIT to `get_recent_runs()` even with date range (max 500)
 - Column projection in `get_resource_history()` — omit TEXT execution_plan and JSON snapshots
 - Combine two visibility queries into one in `get_pipeline_detail_for_user()`
+- Batch pipeline upserts: replace sequential per-pipeline sync (~1000 queries for 200 pipelines) with batched operations (~10 queries) via `bulk_upsert_pipelines()`, `bulk_set_teams()`, and `delete_by_pipeline_ids()`
+- Batch run actuals updates: replace sequential per-run updates (~400 queries for 200 runs) with single batch SELECT + flush via `bulk_update_run_actuals()`
+- Manual sync now triggers Iceberg catalog sync after Airflow pipeline discovery to ensure schema completeness
 - Cache AI catalog context string with TTL to avoid rebuilding on every chat message
 - Add circuit breaker check to `AirflowClient.get_task_log()` (was bypassing circuit breaker)
 
