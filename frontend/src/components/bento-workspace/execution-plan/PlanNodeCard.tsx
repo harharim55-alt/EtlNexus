@@ -32,17 +32,9 @@ export function NodeCard({
       : "opacity-30"
     : "";
 
-  const tooltipParts: string[] = [node.name];
-  if (timeEntry) tooltipParts.push(`Time: ${timeEntry[1]}`);
-  if (rows) tooltipParts.push(`Rows: ${rows}`);
-  rest.forEach(([k, v]) => tooltipParts.push(`${k}: ${v}`));
-  if (node.is_bottleneck && node.bottleneck_reason)
-    tooltipParts.push(`Bottleneck: ${node.bottleneck_reason}`);
-
   return (
     <div
       className={`group/card relative inline-flex flex-col gap-1.5 px-4 py-3 rounded-xl border ${style.bg} ${style.border} min-w-[170px] max-w-[260px] transition-all ${bottleneckClasses} ${searchClasses}`}
-      title={tooltipParts.join(" | ")}
     >
       {hasContent && (
         <button
