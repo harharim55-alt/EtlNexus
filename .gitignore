@@ -66,9 +66,7 @@ htmlcov/
 # Generated docs / review artifacts
 .full-review/
 C4-Documentation/
-docs/
-!docs/ONBOARDING.md
-!docs/EXECUTION_PLANS.md
+
 
 # Claude Code
 .claude/

@@ -1,0 +1,2892 @@
+openapi: 3.0.3
+
+info:
+  title: EtlNexus API
+  version: 1.0.0
+  description: >
+    ETL Explorer Hub — data architecture command center for discovering,
+    understanding, and utilizing ETL pipelines.
+
+
+    Provides a pipeline registry, lineage visualization, schema browsing,
+    join intelligence, resource metrics, Spark execution plan inspection,
+    DAG summaries, sensor management, AI architect chat, SSO authentication
+    via Keycloak OIDC, and team-based RBAC with visibility grants.
+
+
+    **Authentication**
+
+
+    When `sso_enabled` is `true` (returned by `GET /api/auth/config`), every
+    protected endpoint requires an `Authorization: Bearer <jwt>` header
+    containing a valid Keycloak-issued JWT.  When `sso_enabled` is `false`
+    a default admin identity is assumed and no token is required.
+
+servers:
+  - url: /api
+    description: Application API (relative — served by FastAPI)
+
+tags:
+  - name: health
+    description: Service health and connectivity probes
+  - name: auth
+    description: SSO configuration and current-user identity
+  - name: pipelines
+    description: Pipeline registry — list, detail, update, and sync
+  - name: lineage
+    description: Data lineage graphs showing source and destination tables
+  - name: topology
+    description: Airflow task dependency graphs (upstream/downstream)
+  - name: airflow
+    description: Real-time Airflow task run statuses
+  - name: resources
+    description: Spark resource allocation, run history, and capacity metrics
+  - name: execution-plan
+    description: Spark physical execution plan trees from the latest run
+  - name: schema-matrix
+    description: Cross-pipeline field frequency and entity mapping
+  - name: usage
+    description: Pipeline usage records and consumers
+  - name: consumers
+    description: Downstream pipeline consumers discovered from Airflow
+  - name: dag-summary
+    description: Aggregate DAG-level run statistics and task breakdowns
+  - name: sensors
+    description: Sensor registry and sensor-to-ETL topology
+  - name: ai
+    description: AI Architect terminal — natural-language catalog queries
+  - name: teams
+    description: Team registry and team membership (requires auth)
+  - name: users
+    description: User management — list and role updates (admin only)
+  - name: visibility
+    description: Cross-team visibility grants (admin only)
+
+security:
+  - BearerAuth: []
+
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
+paths:
+
+  # ---- Health ---------------------------------------------------------------
+
+  /health:
+    get:
+      tags: [health]
+      summary: Health check
+      description: >
+        Returns the connectivity status of the database, Airflow, and the
+        Iceberg REST catalog.  This endpoint is always public — no
+        authentication is required.
+      operationId: healthCheck
+      security: []
+      responses:
+        "200":
+          description: Service status report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+              example:
+                status: healthy
+                services:
+                  database: connected
+                  airflow: connected
+                  iceberg: connected
+
+  # ---- Auth -----------------------------------------------------------------
+
+  /auth/config:
+    get:
+      tags: [auth]
+      summary: Get SSO configuration
+      description: >
+        Returns the current SSO/OIDC configuration so the frontend can
+        initialize the Keycloak client.  Always public — no token required.
+      operationId: getAuthConfig
+      security: []
+      responses:
+        "200":
+          description: SSO configuration
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AuthConfigResponse"
+              example:
+                sso_enabled: true
+                issuer_url: "http://localhost:8090/realms/etlnexus"
+                client_id: etlnexus-frontend
+                audience: etlnexus-frontend
+
+  /auth/me:
+    get:
+      tags: [auth]
+      summary: Get current user
+      description: >
+        Returns the authenticated user's profile including their global role
+        and all team memberships with per-team roles.
+      operationId: getCurrentUser
+      responses:
+        "200":
+          description: Current user profile
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+
+  # ---- Pipelines ------------------------------------------------------------
+
+  /pipelines:
+    get:
+      tags: [pipelines]
+      summary: List pipelines
+      description: >
+        Returns all pipelines visible to the authenticated user based on
+        their team membership and any visibility grants.  Supports
+        full-text search across pipeline name, description, and field names.
+      operationId: listPipelines
+      parameters:
+        - name: q
+          in: query
+          required: false
+          description: Search term matched against name, description, and field names
+          schema:
+            type: string
+            example: switch_port
+      responses:
+        "200":
+          description: List of pipelines
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PipelineListItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /pipelines/{pipeline_id}:
+    get:
+      tags: [pipelines]
+      summary: Get pipeline detail
+      description: >
+        Returns full pipeline detail including schema fields, lineage tables,
+        documentation, and whether the authenticated user may edit the record.
+      operationId: getPipeline
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+      responses:
+        "200":
+          description: Pipeline detail
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineDetail"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    patch:
+      tags: [pipelines]
+      summary: Update pipeline
+      description: >
+        Updates the description and/or documentation Markdown for a pipeline.
+        The caller must be a member of the pipeline's owning team or hold an
+        `editor` visibility grant.  Admins may always edit.
+
+
+        The `last_updated_by` field is derived from the authenticated user's
+        display name — it is not accepted in the request body.
+      operationId: updatePipeline
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PipelineUpdateRequest"
+            example:
+              description: Collects switch-port utilisation counters from SNMP every 15 minutes.
+              documentation: "## Overview\n\nThis pipeline reads..."
+      responses:
+        "200":
+          description: Updated pipeline metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineUpdateResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /pipelines/{pipeline_id}/sync:
+    post:
+      tags: [pipelines]
+      summary: Sync pipeline from Airflow
+      description: >
+        Triggers an on-demand synchronisation of this pipeline's metadata
+        from Airflow, updating op_kwargs, lineage edges, and Iceberg schema.
+      operationId: syncPipeline
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+      responses:
+        "200":
+          description: Sync result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SyncResponse"
+              example:
+                synced: true
+                pipeline_name: SwitchPortCollector
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /pipelines/{pipeline_id}/joins:
+    get:
+      tags: [pipelines]
+      summary: Get join suggestions (schema-based)
+      description: >
+        Returns schema-based join suggestions by finding other pipelines that
+        share field names with this pipeline.  Each result lists the shared
+        fields to help engineers identify natural join keys.
+      operationId: getJoinSuggestions
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+      responses:
+        "200":
+          description: Schema-based join suggestions
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JoinSuggestionsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /pipelines/{pipeline_id}/joins/ai:
+    get:
+      tags: [ai]
+      summary: AI join insight
+      description: >
+        Asks the configured LLM to provide a natural-language analysis of how
+        this pipeline's data could be joined with related pipelines, using full
+        catalog context.
+      operationId: getAiJoinInsight
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+      responses:
+        "200":
+          description: AI-generated join insight
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  insight:
+                    type: string
+                    description: Markdown-formatted AI insight
+                required: [insight]
+              example:
+                insight: "The `device_id` field in **SwitchPortCollector** maps cleanly to..."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Lineage --------------------------------------------------------------
+
+  /pipelines/{pipeline_id}/lineage:
+    get:
+      tags: [lineage]
+      summary: Get pipeline lineage graph
+      description: >
+        Returns a directed graph of data lineage for the given pipeline.
+        Nodes represent source tables, target tables, and pipeline entities.
+        Edges represent data flow direction.
+      operationId: getPipelineLineage
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+      responses:
+        "200":
+          description: Lineage graph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/LineageGraphSchema"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Topology -------------------------------------------------------------
+
+  /pipelines/{pipeline_id}/topology:
+    get:
+      tags: [topology]
+      summary: Get pipeline topology (flat)
+      description: >
+        Returns the direct upstream and downstream Airflow tasks for a
+        pipeline, along with upstream sensors.  Optionally filtered to a
+        specific DAG.
+      operationId: getPipelineTopology
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+        - name: dag_id
+          in: query
+          required: false
+          description: Filter topology to a specific DAG
+          schema:
+            type: string
+            example: backbone_core
+      responses:
+        "200":
+          description: Flat topology graph
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TopologyGraph"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /pipelines/{pipeline_id}/topology/upstream:
+    get:
+      tags: [topology]
+      summary: Get recursive upstream topology
+      description: >
+        Recursively walks all upstream task dependencies from this pipeline,
+        returning a flat node+edge list suitable for force-directed graph
+        rendering.  Each node carries its depth from the focal pipeline.
+      operationId: getUpstreamTopology
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+        - name: dag_id
+          in: query
+          required: false
+          description: Constrain the walk to a specific DAG
+          schema:
+            type: string
+            example: backbone_core
+      responses:
+        "200":
+          description: Recursive upstream topology
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/UpstreamTopologyGraph"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Airflow --------------------------------------------------------------
+
+  /airflow/status:
+    get:
+      tags: [airflow]
+      summary: Get all pipeline statuses
+      description: >
+        Returns the latest Airflow task run status for every tracked pipeline,
+        plus a flag indicating whether the Airflow API is reachable.
+      operationId: getAllAirflowStatuses
+      responses:
+        "200":
+          description: All pipeline statuses
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AirflowStatusesResponse"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /airflow/status/{pipeline_id}:
+    get:
+      tags: [airflow]
+      summary: Get single pipeline status
+      description: Returns the latest Airflow task run status for one pipeline.
+      operationId: getPipelineAirflowStatus
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+      responses:
+        "200":
+          description: Pipeline Airflow status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AirflowStatusSchema"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Resources ------------------------------------------------------------
+
+  /pipelines/{pipeline_id}/resources:
+    get:
+      tags: [resources]
+      summary: Get resource metrics
+      description: >
+        Returns Spark resource allocation configs, run duration statistics,
+        actual resource usage averaged across recent runs (from sparkMeasure
+        log markers), and cluster capacity utilisation bars.
+      operationId: getPipelineResources
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+      responses:
+        "200":
+          description: Resource metrics
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ResourceMetricsResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /pipelines/{pipeline_id}/execution-plan:
+    get:
+      tags: [execution-plan]
+      summary: Get Spark execution plan
+      description: >
+        Returns the Spark physical execution plan tree extracted from the most
+        recent successful run.  Each node is classified as `read`, `write`,
+        `shuffle`, or `transform` and carries node-level metrics emitted by
+        the Spark UI.
+
+
+        Returns 404 when no plan has been captured yet (first run may not have
+        completed, or the pipeline has never run on the current Spark version).
+      operationId: getExecutionPlan
+      parameters:
+        - $ref: "#/components/parameters/PipelineId"
+      responses:
+        "200":
+          description: Execution plan tree
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExecutionPlanResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Schema Matrix --------------------------------------------------------
+
+  /schema-matrix:
+    get:
+      tags: [schema-matrix]
+      summary: Get cross-pipeline field frequency
+      description: >
+        Returns every field name found in the Iceberg catalog, ordered by the
+        number of pipelines that produce or consume it.  Used to identify
+        common entity keys across the data platform.
+      operationId: getSchemaMatrix
+      responses:
+        "200":
+          description: Field frequency matrix
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SchemaMatrixResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Usage ----------------------------------------------------------------
+
+  /usage/{etl_name}:
+    get:
+      tags: [usage]
+      summary: Get pipeline usage
+      description: >
+        Returns usage records for the given ETL, including the pipeline itself
+        as the first entry (`is_current: true`) followed by downstream
+        consumers ordered by access count.
+
+
+        `etl_name` is the PascalCase Airflow task_id, e.g. `SwitchPortCollector`.
+      operationId: getPipelineUsage
+      parameters:
+        - name: etl_name
+          in: path
+          required: true
+          description: PascalCase Airflow task ID of the ETL
+          schema:
+            type: string
+            example: SwitchPortCollector
+      responses:
+        "200":
+          description: Usage records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineUsageResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Consumers ------------------------------------------------------------
+
+  /consumers/{etl_name}:
+    get:
+      tags: [consumers]
+      summary: Get downstream consumers
+      description: >
+        Returns the downstream Airflow tasks that depend on this ETL,
+        discovered via the Airflow API.
+
+
+        `etl_name` is the PascalCase Airflow task_id, e.g. `SwitchPortCollector`.
+      operationId: getPipelineConsumers
+      parameters:
+        - name: etl_name
+          in: path
+          required: true
+          description: PascalCase Airflow task ID of the ETL
+          schema:
+            type: string
+            example: SwitchPortCollector
+      responses:
+        "200":
+          description: Downstream consumers
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/PipelineConsumersResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- DAG Summary ----------------------------------------------------------
+
+  /dags/summary:
+    get:
+      tags: [dag-summary]
+      summary: Get all DAG summaries
+      description: >
+        Returns an aggregate across all DAGs plus per-DAG breakdowns including
+        task-level status counts, duration statistics, and 30-day run history.
+      operationId: getDagSummary
+      responses:
+        "200":
+          description: DAG summary with aggregate
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DagSummaryResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Sensors --------------------------------------------------------------
+
+  /sensors:
+    get:
+      tags: [sensors]
+      summary: List sensors
+      description: >
+        Returns all sensors registered in the platform, optionally filtered
+        by owning team.  Also returns the full list of team names for building
+        filter controls.
+      operationId: listSensors
+      parameters:
+        - name: team
+          in: query
+          required: false
+          description: Filter sensors to this team name
+          schema:
+            type: string
+            example: Dagger
+      responses:
+        "200":
+          description: Sensor list with available teams
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SensorListResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /sensors/topology:
+    get:
+      tags: [sensors]
+      summary: Get sensor topology
+      description: >
+        Returns the downstream ETLs that depend on one or more sensors.
+        `mode=union` (default) returns ETLs that depend on **any** of the
+        named sensors; `mode=intersection` returns only ETLs that depend on
+        **all** of them.
+      operationId: getSensorTopology
+      parameters:
+        - name: sensors
+          in: query
+          required: true
+          description: One or more sensor names to query (repeat the parameter for multiple)
+          schema:
+            type: array
+            items:
+              type: string
+            minItems: 1
+          style: form
+          explode: true
+          example:
+            - InterfaceStatusSensor
+            - BgpSessionSensor
+        - name: mode
+          in: query
+          required: false
+          description: >
+            `union` — ETLs depending on any of the sensors (default).
+            `intersection` — ETLs depending on all of the sensors.
+          schema:
+            type: string
+            enum: [union, intersection]
+            default: union
+      responses:
+        "200":
+          description: Sensor topology
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SensorTopologyResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- AI -------------------------------------------------------------------
+
+  /ai/chat:
+    post:
+      tags: [ai]
+      summary: Chat with AI Architect
+      description: >
+        Sends a message to the AI Architect terminal.  The full pipeline
+        catalog is injected into the system prompt so the model can answer
+        data-architecture questions.
+
+
+        Pass conversation history as an array of prior turns to maintain
+        multi-turn context.
+      operationId: aiChat
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AIChatRequest"
+            example:
+              message: Which pipelines would I join to calculate per-device bandwidth cost?
+              history: []
+      responses:
+        "200":
+          description: AI response
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AIChatResponse"
+              example:
+                role: assistant
+                content: "You would join **BandwidthUsageAggregator** with **CostAllocationMapper** on `device_id`..."
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Teams ----------------------------------------------------------------
+
+  /teams:
+    get:
+      tags: [teams]
+      summary: List teams
+      description: Returns all teams with member counts.
+      operationId: listTeams
+      responses:
+        "200":
+          description: Team list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/TeamResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /teams/{team_id}:
+    get:
+      tags: [teams]
+      summary: Get team detail
+      description: Returns team info including the full member list with per-team roles.
+      operationId: getTeam
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Team detail with members
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TeamDetailResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /teams/{team_id}/pipelines:
+    get:
+      tags: [teams]
+      summary: Get team pipelines
+      description: Returns all pipelines owned by the given team.
+      operationId: getTeamPipelines
+      parameters:
+        - $ref: "#/components/parameters/TeamId"
+      responses:
+        "200":
+          description: Pipelines owned by the team
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/PipelineListItem"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Users ----------------------------------------------------------------
+
+  /users:
+    get:
+      tags: [users]
+      summary: List users (admin only)
+      description: Returns all users with their team memberships. Requires the `admin` role.
+      operationId: listUsers
+      responses:
+        "200":
+          description: All users
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/UserResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /users/{user_id}/role:
+    patch:
+      tags: [users]
+      summary: Update user role (admin only)
+      description: >
+        Changes a user's global role.  Valid values are `admin`, `member`,
+        and `viewer`.  Requires the `admin` role.
+      operationId: updateUserRole
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          description: UUID of the user to update
+          schema:
+            type: string
+            format: uuid
+            example: b1c2d3e4-f5a6-7890-abcd-ef1234567890
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateUserRoleRequest"
+            example:
+              role: member
+      responses:
+        "200":
+          description: Role updated successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+              example:
+                ok: true
+        "400":
+          description: Invalid role value
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: "Invalid role 'superuser'. Must be one of: ['admin', 'member', 'viewer']"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  # ---- Visibility -----------------------------------------------------------
+
+  /visibility/grants:
+    get:
+      tags: [visibility]
+      summary: List visibility grants (admin only)
+      description: >
+        Returns all cross-team pipeline visibility grants.
+        Requires the `admin` role.
+      operationId: listVisibilityGrants
+      responses:
+        "200":
+          description: All visibility grants
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/VisibilityGrantResponse"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+    post:
+      tags: [visibility]
+      summary: Create visibility grant (admin only)
+      description: >
+        Creates a new cross-team visibility grant.  Requires the `admin` role.
+
+
+        **Target (exactly one required)**
+
+        - `pipeline_id` — grant access to a specific pipeline
+        - `source_team_id` — grant access to all pipelines owned by a team
+
+
+        **Recipient (exactly one required)**
+
+        - `grantee_team_id` — grant access to an entire team
+        - `grantee_user_id` — grant access to a specific user
+
+
+        `grant_level` controls whether the recipient can view (`viewer`) or
+        also edit (`editor`) the target pipeline(s).
+      operationId: createVisibilityGrant
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VisibilityGrantRequest"
+            examples:
+              team_to_pipeline:
+                summary: Grant a team viewer access to one pipeline
+                value:
+                  grantee_team_id: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"
+                  pipeline_id: "d4e5f6a7-b8c9-0123-abcd-ef4567890123"
+                  grant_level: viewer
+              user_to_team_pipelines:
+                summary: Grant a user editor access to all pipelines from a source team
+                value:
+                  grantee_user_id: "c3d4e5f6-a7b8-9012-abcd-ef3456789012"
+                  source_team_id: "b2c3d4e5-f6a7-8901-abcd-ef2345678901"
+                  grant_level: editor
+      responses:
+        "201":
+          description: Grant created
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VisibilityGrantResponse"
+        "400":
+          description: Invalid request — conflicting or missing target/recipient fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+              example:
+                detail: Must specify pipeline_id or source_team_id
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "422":
+          $ref: "#/components/responses/UnprocessableEntity"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+  /visibility/grants/{grant_id}:
+    delete:
+      tags: [visibility]
+      summary: Delete visibility grant (admin only)
+      description: Revokes a visibility grant by its UUID. Requires the `admin` role.
+      operationId: deleteVisibilityGrant
+      parameters:
+        - name: grant_id
+          in: path
+          required: true
+          description: UUID of the visibility grant to revoke
+          schema:
+            type: string
+            format: uuid
+            example: e5f6a7b8-c9d0-1234-abcd-ef5678901234
+      responses:
+        "200":
+          description: Grant deleted
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/OkResponse"
+              example:
+                ok: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+
+# ---------------------------------------------------------------------------
+# Components
+# ---------------------------------------------------------------------------
+components:
+
+  # ---- Security Schemes ----------------------------------------------------
+
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: >
+        Keycloak-issued JWT obtained after OIDC authentication.
+        Required when `sso_enabled` is `true`.
+
+  # ---- Reusable Parameters -------------------------------------------------
+
+  parameters:
+    PipelineId:
+      name: pipeline_id
+      in: path
+      required: true
+      description: UUID of the pipeline
+      schema:
+        type: string
+        format: uuid
+        example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+
+    TeamId:
+      name: team_id
+      in: path
+      required: true
+      description: UUID of the team
+      schema:
+        type: string
+        format: uuid
+        example: b2c3d4e5-f6a7-8901-abcd-ef2345678901
+
+  # ---- Reusable Responses --------------------------------------------------
+
+  responses:
+    Unauthorized:
+      description: Missing or invalid Bearer token
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: Not authenticated
+
+    Forbidden:
+      description: Authenticated user lacks the required role or team membership
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: Insufficient permissions
+
+    NotFound:
+      description: The requested resource does not exist
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: Pipeline not found
+
+    UnprocessableEntity:
+      description: Request validation failed
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ValidationErrorResponse"
+
+    InternalError:
+      description: Unexpected server error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorResponse"
+          example:
+            detail: Internal server error
+
+  # ---- Schemas -------------------------------------------------------------
+
+  schemas:
+
+    # -- Generic utility schemas -------------------------------------------
+
+    ErrorResponse:
+      type: object
+      description: Standard FastAPI error envelope
+      properties:
+        detail:
+          type: string
+          description: Human-readable error message
+      required: [detail]
+
+    ValidationErrorResponse:
+      type: object
+      description: FastAPI 422 validation error envelope
+      properties:
+        detail:
+          type: array
+          items:
+            type: object
+            properties:
+              loc:
+                type: array
+                items:
+                  type: string
+              msg:
+                type: string
+              type:
+                type: string
+      required: [detail]
+
+    OkResponse:
+      type: object
+      description: Simple success acknowledgement
+      properties:
+        ok:
+          type: boolean
+          example: true
+      required: [ok]
+
+    # -- Health ----------------------------------------------------------------
+
+    HealthResponse:
+      type: object
+      description: Service connectivity status
+      properties:
+        status:
+          type: string
+          description: Overall status — `healthy` if the database is reachable
+          enum: [healthy, unhealthy]
+          example: healthy
+        services:
+          type: object
+          description: Per-service connectivity states
+          properties:
+            database:
+              type: string
+              enum: [connected, disconnected]
+              example: connected
+            airflow:
+              type: string
+              enum: [connected, disconnected]
+              example: connected
+            iceberg:
+              type: string
+              enum: [connected, disconnected]
+              example: connected
+          required: [database, airflow, iceberg]
+      required: [status, services]
+
+    # -- Auth / Users ----------------------------------------------------------
+
+    AuthConfigResponse:
+      type: object
+      description: OIDC client configuration for the frontend
+      properties:
+        sso_enabled:
+          type: boolean
+          description: Whether Keycloak SSO is active. When false, a default admin identity is used.
+          example: true
+        issuer_url:
+          type: string
+          description: Keycloak realm issuer URL
+          example: "http://localhost:8090/realms/etlnexus"
+        client_id:
+          type: string
+          description: OIDC client identifier
+          example: etlnexus-frontend
+        audience:
+          type: string
+          description: Expected JWT audience claim
+          example: etlnexus-frontend
+      required: [sso_enabled, issuer_url, client_id, audience]
+
+    TeamMembershipResponse:
+      type: object
+      description: A single team membership entry as seen from the user profile
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Team UUID
+          example: b2c3d4e5-f6a7-8901-abcd-ef2345678901
+        name:
+          type: string
+          description: Team display name
+          example: Dagger
+        role_in_team:
+          type: string
+          description: The user's role within this team (e.g. `member`, `lead`)
+          example: member
+      required: [id, name, role_in_team]
+
+    UserResponse:
+      type: object
+      description: User profile including global role and team memberships
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: User UUID
+          example: c3d4e5f6-a7b8-9012-abcd-ef3456789012
+        email:
+          type: string
+          format: email
+          description: User email address (sourced from Keycloak token)
+          example: alice@example.com
+        display_name:
+          type: string
+          description: Human-readable name shown in the UI and audit trails
+          example: Alice Engineer
+        role:
+          type: string
+          description: Global platform role
+          enum: [admin, member, viewer]
+          example: member
+        teams:
+          type: array
+          description: Teams this user belongs to
+          items:
+            $ref: "#/components/schemas/TeamMembershipResponse"
+      required: [id, email, display_name, role, teams]
+
+    UpdateUserRoleRequest:
+      type: object
+      description: Request body for updating a user's global role
+      properties:
+        role:
+          type: string
+          enum: [admin, member, viewer]
+          description: New global role for the user
+          example: member
+      required: [role]
+
+    # -- Teams -----------------------------------------------------------------
+
+    TeamMemberInfo:
+      type: object
+      description: Team member as seen from within the team detail endpoint
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: User UUID
+          example: c3d4e5f6-a7b8-9012-abcd-ef3456789012
+        email:
+          type: string
+          format: email
+          example: alice@example.com
+        display_name:
+          type: string
+          example: Alice Engineer
+        role:
+          type: string
+          description: User's global platform role
+          enum: [admin, member, viewer]
+          example: member
+        role_in_team:
+          type: string
+          description: User's role within this specific team
+          example: lead
+      required: [id, email, display_name, role, role_in_team]
+
+    TeamResponse:
+      type: object
+      description: Team summary with member count
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Team UUID
+          example: b2c3d4e5-f6a7-8901-abcd-ef2345678901
+        name:
+          type: string
+          description: Team name — matches the Airflow task_group prefix
+          example: Dagger
+        description:
+          type: string
+          nullable: true
+          description: Optional team description
+          example: Core network infrastructure data pipelines
+        source:
+          type: string
+          description: >
+            How the team was discovered — `sso` for Keycloak-sourced groups,
+            `manual` for admin-created teams
+          example: sso
+        member_count:
+          type: integer
+          description: Number of users in the team
+          example: 4
+      required: [id, name, source, member_count]
+
+    TeamDetailResponse:
+      type: object
+      description: Team with full member list
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: b2c3d4e5-f6a7-8901-abcd-ef2345678901
+        name:
+          type: string
+          example: Dagger
+        description:
+          type: string
+          nullable: true
+          example: Core network infrastructure data pipelines
+        source:
+          type: string
+          example: sso
+        members:
+          type: array
+          items:
+            $ref: "#/components/schemas/TeamMemberInfo"
+      required: [id, name, source, members]
+
+    # -- Pipelines -------------------------------------------------------------
+
+    PipelineFieldSchema:
+      type: object
+      description: A single field in a pipeline's Iceberg schema
+      properties:
+        id:
+          type: string
+          description: Field UUID
+          example: f1a2b3c4-d5e6-7890-abcd-ef1234567890
+        name:
+          type: string
+          description: Field name as it appears in the Iceberg schema
+          example: device_id
+        data_type:
+          type: string
+          nullable: true
+          description: Iceberg/Spark data type (e.g. `string`, `long`, `timestamp`)
+          example: string
+        ordinal_position:
+          type: integer
+          description: Column position in the schema (0-indexed)
+          example: 0
+      required: [id, name, ordinal_position]
+
+    PipelineListItem:
+      type: object
+      description: Lightweight pipeline summary used in list and search results
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Pipeline UUID
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        name:
+          type: string
+          description: Human-readable pipeline name derived from the Airflow task ID
+          example: Switch Port Collector
+        description:
+          type: string
+          nullable: true
+          description: Short description parsed from task log markers or manually set
+          example: Collects SNMP switch-port utilisation counters every 15 minutes.
+        category:
+          type: string
+          nullable: true
+          description: Business category tag sourced from Airflow op_kwargs
+          example: Network Infrastructure
+        schedule:
+          type: string
+          nullable: true
+          description: Cron expression or human-readable schedule label
+          example: "*/15 * * * *"
+        rows_per_day:
+          type: string
+          nullable: true
+          description: Approximate daily row volume as a formatted string
+          example: "~48k"
+        airflow_status:
+          type: string
+          description: Latest Airflow task run status
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          example: success
+        success_rate:
+          type: number
+          format: float
+          nullable: true
+          description: Success rate across recent runs (0–1)
+          example: 0.94
+        team:
+          type: string
+          nullable: true
+          description: Owning team name
+          example: Dagger
+      required: [id, name, airflow_status]
+
+    PipelineDetail:
+      type: object
+      description: Full pipeline record including schema, lineage, docs, and permissions
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        name:
+          type: string
+          example: Switch Port Collector
+        task_id:
+          type: string
+          nullable: true
+          description: PascalCase Airflow task ID
+          example: SwitchPortCollector
+        description:
+          type: string
+          nullable: true
+          example: Collects SNMP switch-port utilisation counters every 15 minutes.
+        category:
+          type: string
+          nullable: true
+          example: Network Infrastructure
+        schedule:
+          type: string
+          nullable: true
+          example: "*/15 * * * *"
+        rows_per_day:
+          type: string
+          nullable: true
+          example: "~48k"
+        airflow_status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          example: success
+        fields:
+          type: array
+          description: Iceberg schema fields for this pipeline's output table
+          items:
+            $ref: "#/components/schemas/PipelineFieldSchema"
+        source_tables:
+          type: array
+          description: Upstream Iceberg table references (from `needs` op_kwargs)
+          items:
+            type: string
+          example: ["catalog.iceberg.dagger.interface_inventory"]
+        destination_tables:
+          type: array
+          description: Output Iceberg tables written by this pipeline (from ETL_WRITES_TO log markers)
+          items:
+            type: string
+          example: ["catalog.iceberg.dagger.switch_port_metrics"]
+        documentation:
+          type: string
+          nullable: true
+          description: Long-form Markdown documentation
+        last_updated_by:
+          type: string
+          nullable: true
+          description: Display name of the last user to update the documentation
+          example: Alice Engineer
+        last_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 timestamp of the last documentation update
+          example: "2026-03-11T14:30:00Z"
+        created_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 timestamp when the pipeline was first discovered
+          example: "2025-11-01T09:00:00Z"
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 timestamp of the last metadata sync from Airflow
+          example: "2026-03-11T14:00:00Z"
+        team:
+          type: string
+          nullable: true
+          description: Owning team name
+          example: Dagger
+        team_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Owning team UUID
+          example: b2c3d4e5-f6a7-8901-abcd-ef2345678901
+        can_edit:
+          type: boolean
+          description: >
+            True when the authenticated user may call PATCH on this pipeline.
+            Derived server-side from team membership and visibility grants.
+          example: true
+      required: [id, name, airflow_status, fields, source_tables, destination_tables, can_edit]
+
+    PipelineUpdateRequest:
+      type: object
+      description: Fields that may be updated on a pipeline record
+      properties:
+        description:
+          type: string
+          nullable: true
+          description: Short description shown in list and detail views
+          example: Updated description.
+        documentation:
+          type: string
+          nullable: true
+          description: Full Markdown documentation for the pipeline
+          example: "## Overview\n\nThis pipeline..."
+
+    PipelineUpdateResponse:
+      type: object
+      description: Pipeline fields returned after a successful PATCH
+      properties:
+        id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        description:
+          type: string
+          nullable: true
+          example: Updated description.
+        documentation:
+          type: string
+          nullable: true
+        last_updated_by:
+          type: string
+          nullable: true
+          description: Display name of the editor (set from JWT, not request body)
+          example: Alice Engineer
+        last_updated_at:
+          type: string
+          format: date-time
+          nullable: true
+          example: "2026-03-11T14:30:00Z"
+      required: [id]
+
+    SyncResponse:
+      type: object
+      description: Result of an on-demand pipeline sync from Airflow
+      properties:
+        synced:
+          type: boolean
+          description: True when the sync completed without error
+          example: true
+        pipeline_name:
+          type: string
+          description: Name of the synced pipeline
+          example: SwitchPortCollector
+      required: [synced, pipeline_name]
+
+    JoinSuggestion:
+      type: object
+      description: A pipeline that shares schema fields with the source pipeline
+      properties:
+        pipeline_id:
+          type: string
+          format: uuid
+          example: d4e5f6a7-b8c9-0123-abcd-ef4567890123
+        pipeline_name:
+          type: string
+          example: Interface Inventory Loader
+        shared_fields:
+          type: array
+          description: Field names present in both pipelines
+          items:
+            type: string
+          example: [device_id, interface_name]
+      required: [pipeline_id, pipeline_name, shared_fields]
+
+    JoinSuggestionsResponse:
+      type: object
+      description: Schema-based join suggestions for a pipeline
+      properties:
+        schema_matches:
+          type: array
+          items:
+            $ref: "#/components/schemas/JoinSuggestion"
+      required: [schema_matches]
+
+    # -- Lineage ---------------------------------------------------------------
+
+    LineageNode:
+      type: object
+      description: A node in the lineage graph — a table or pipeline entity
+      properties:
+        table_name:
+          type: string
+          description: Fully-qualified Iceberg table name or ETL identifier
+          example: "catalog.iceberg.dagger.switch_port_metrics"
+        pipeline_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the pipeline associated with this node (if applicable)
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        pipeline_name:
+          type: string
+          nullable: true
+          description: Display name of the associated pipeline
+          example: Switch Port Collector
+        node_type:
+          type: string
+          enum: [source, target, pipeline]
+          description: >
+            `source` — upstream data source table;
+            `target` — downstream output table;
+            `pipeline` — an ETL pipeline node
+          example: target
+      required: [table_name, node_type]
+
+    LineageEdgeSchema:
+      type: object
+      description: A directed edge in the lineage graph
+      properties:
+        source:
+          type: string
+          description: Source node identifier (table name or pipeline id)
+          example: "catalog.iceberg.dagger.interface_inventory"
+        target:
+          type: string
+          description: Target node identifier
+          example: "catalog.iceberg.dagger.switch_port_metrics"
+        edge_type:
+          type: string
+          description: Nature of the data flow relationship
+          example: reads_from
+      required: [source, target, edge_type]
+
+    LineageGraphSchema:
+      type: object
+      description: Full lineage graph for a pipeline
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineageNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/LineageEdgeSchema"
+        source_tables:
+          type: array
+          description: Flat list of upstream table names
+          items:
+            type: string
+          example: ["catalog.iceberg.dagger.interface_inventory"]
+        destination_tables:
+          type: array
+          description: Flat list of output table names
+          items:
+            type: string
+          example: ["catalog.iceberg.dagger.switch_port_metrics"]
+      required: [nodes, edges, source_tables, destination_tables]
+
+    # -- Topology --------------------------------------------------------------
+
+    TopologyTask:
+      type: object
+      description: An Airflow task node in the topology graph
+      properties:
+        task_id:
+          type: string
+          description: Airflow task ID (PascalCase)
+          example: InterfaceInventoryLoader
+        pipeline_name:
+          type: string
+          nullable: true
+          description: Human-readable pipeline name if this task is a tracked pipeline
+          example: Interface Inventory Loader
+        pipeline_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Pipeline UUID if this task is a tracked pipeline
+          example: d4e5f6a7-b8c9-0123-abcd-ef4567890123
+        status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          description: Latest task run status
+          example: success
+        dag_id:
+          type: string
+          description: DAG this task belongs to
+          example: backbone_core
+        task_group_id:
+          type: string
+          nullable: true
+          description: Airflow task group (maps to team name)
+          example: DaggerCollection
+      required: [task_id, status, dag_id]
+
+    TopologySensor:
+      type: object
+      description: A sensor that this pipeline depends on
+      properties:
+        sensor_name:
+          type: string
+          description: PascalCase sensor name (Airflow task ID)
+          example: InterfaceStatusSensor
+        display_name:
+          type: string
+          description: Human-readable sensor name
+          example: Interface Status Sensor
+        sensor_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Sensor UUID in the platform database
+          example: e5f6a7b8-c9d0-1234-abcd-ef5678901234
+        status:
+          type: string
+          nullable: true
+          description: Latest sensor run status
+          example: success
+        team:
+          type: string
+          nullable: true
+          description: Owning team name
+          example: Dagger
+        volume_per_day:
+          type: integer
+          nullable: true
+          description: Approximate number of events emitted per day
+          example: 2880
+        dag_ids:
+          type: array
+          description: DAGs this sensor appears in
+          items:
+            type: string
+          example: [backbone_core, heartbeat_probe]
+      required: [sensor_name, display_name]
+
+    TopologyGraph:
+      type: object
+      description: Flat one-hop topology graph centered on a single pipeline
+      properties:
+        pipeline_task_id:
+          type: string
+          description: Airflow task ID of the focal pipeline
+          example: SwitchPortCollector
+        pipeline_status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          description: Latest run status of the focal pipeline
+          example: success
+        dag_ids:
+          type: array
+          description: All DAGs in which the focal pipeline appears
+          items:
+            type: string
+          example: [backbone_core]
+        upstream_sensors:
+          type: array
+          description: Sensors that gate this pipeline's execution
+          items:
+            $ref: "#/components/schemas/TopologySensor"
+        upstream_needs:
+          type: array
+          description: Hard upstream dependencies (tasks in the `needs` op_kwarg)
+          items:
+            $ref: "#/components/schemas/TopologyTask"
+        upstream_prefers:
+          type: array
+          description: Soft upstream dependencies (tasks in the `prefers` op_kwarg)
+          items:
+            $ref: "#/components/schemas/TopologyTask"
+        downstream:
+          type: array
+          description: Tasks that declare this pipeline as a dependency
+          items:
+            $ref: "#/components/schemas/TopologyTask"
+      required: [pipeline_task_id, pipeline_status, dag_ids, upstream_sensors, upstream_needs, upstream_prefers, downstream]
+
+    UpstreamNode:
+      type: object
+      description: A node in the recursive upstream topology graph
+      properties:
+        task_id:
+          type: string
+          description: Airflow task ID
+          example: InterfaceInventoryLoader
+        pipeline_name:
+          type: string
+          nullable: true
+          example: Interface Inventory Loader
+        pipeline_id:
+          type: string
+          format: uuid
+          nullable: true
+          example: d4e5f6a7-b8c9-0123-abcd-ef4567890123
+        status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          example: success
+        dag_id:
+          type: string
+          example: backbone_core
+        task_group_id:
+          type: string
+          nullable: true
+          example: DaggerCollection
+        depth:
+          type: integer
+          description: Hops from the focal pipeline (0 = focal pipeline itself)
+          example: 1
+        is_current:
+          type: boolean
+          description: True for the focal pipeline node
+          example: false
+        is_sensor:
+          type: boolean
+          description: True when this node represents a sensor task
+          example: false
+        sensor_name:
+          type: string
+          nullable: true
+          description: Sensor name when `is_sensor` is true
+          example: null
+      required: [task_id, status, dag_id, depth, is_current, is_sensor]
+
+    UpstreamEdge:
+      type: object
+      description: A directed dependency edge in the upstream topology graph
+      properties:
+        source_task_id:
+          type: string
+          description: Upstream task ID
+          example: InterfaceInventoryLoader
+        target_task_id:
+          type: string
+          description: Downstream task ID that declares the dependency
+          example: SwitchPortCollector
+        edge_type:
+          type: string
+          enum: [needs, prefers]
+          description: >
+            `needs` — hard dependency declared in op_kwargs `needs`;
+            `prefers` — soft dependency declared in op_kwargs `prefers`
+          example: needs
+      required: [source_task_id, target_task_id, edge_type]
+
+    UpstreamTopologyGraph:
+      type: object
+      description: Recursive upstream dependency graph suitable for force-directed rendering
+      properties:
+        pipeline_task_id:
+          type: string
+          description: Airflow task ID of the focal pipeline
+          example: SwitchPortCollector
+        pipeline_status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          example: success
+        dag_id:
+          type: string
+          nullable: true
+          description: DAG context used for the traversal (null if multi-DAG)
+          example: backbone_core
+        dag_ids:
+          type: array
+          description: All DAGs the focal pipeline appears in
+          items:
+            type: string
+          example: [backbone_core]
+        nodes:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpstreamNode"
+        edges:
+          type: array
+          items:
+            $ref: "#/components/schemas/UpstreamEdge"
+        sensors:
+          type: array
+          description: Sensors encountered during the upstream walk
+          items:
+            $ref: "#/components/schemas/TopologySensor"
+        max_depth:
+          type: integer
+          description: Maximum depth reached during the upstream traversal
+          example: 3
+      required: [pipeline_task_id, pipeline_status, dag_ids, nodes, edges, sensors, max_depth]
+
+    # -- Airflow ---------------------------------------------------------------
+
+    AirflowStatusSchema:
+      type: object
+      description: Latest Airflow task run status for a single pipeline
+      properties:
+        pipeline_id:
+          type: string
+          format: uuid
+          description: Pipeline UUID
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        dag_id:
+          type: string
+          description: DAG the status was captured from
+          example: backbone_core
+        status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          example: success
+        execution_date:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 start time of the Airflow task instance
+          example: "2026-03-11T06:00:00Z"
+        last_checked_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 timestamp when the status was last polled
+          example: "2026-03-11T14:00:00Z"
+      required: [pipeline_id, dag_id, status]
+
+    AirflowStatusesResponse:
+      type: object
+      description: Bulk status response for all tracked pipelines
+      properties:
+        statuses:
+          type: array
+          items:
+            $ref: "#/components/schemas/AirflowStatusSchema"
+        airflow_connected:
+          type: boolean
+          description: Whether the Airflow API was reachable during the last poll
+          example: true
+      required: [statuses, airflow_connected]
+
+    # -- Resources -------------------------------------------------------------
+
+    ResourceConfigEntry:
+      type: object
+      description: Spark resource allocation config for a pipeline/DAG combination
+      properties:
+        dag_id:
+          type: string
+          description: DAG this config applies to
+          example: backbone_core
+        spark_driver_memory:
+          type: string
+          nullable: true
+          description: Driver memory allocation (e.g. `2g`)
+          example: "2g"
+        spark_executor_memory:
+          type: string
+          nullable: true
+          description: Per-executor memory allocation (e.g. `4g`)
+          example: "4g"
+        spark_executor_cores:
+          type: integer
+          nullable: true
+          description: CPU cores per executor
+          example: 2
+        spark_num_executors:
+          type: integer
+          nullable: true
+          description: Number of executors
+          example: 4
+        is_dag_override:
+          type: boolean
+          description: True when this entry overrides the default config for a specific DAG
+          example: false
+      required: [dag_id, is_dag_override]
+
+    DurationRun:
+      type: object
+      description: Duration and status record for a single pipeline run
+      properties:
+        duration_seconds:
+          type: number
+          format: float
+          description: Wall-clock run duration in seconds
+          example: 142.5
+        execution_date:
+          type: string
+          nullable: true
+          description: ISO 8601 Airflow execution date for this run
+          example: "2026-03-11T06:00:00Z"
+        status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          example: success
+        dag_id:
+          type: string
+          description: DAG this run belongs to
+          example: backbone_core
+        spark_application_id:
+          type: string
+          nullable: true
+          description: Spark application ID logged by the ETL runner
+          example: application_1234567890_0042
+        metrics_source:
+          type: string
+          nullable: true
+          description: >
+            Source of the metrics — `sparkmeasure` when sparkMeasure jars are
+            present, `log_parsing` otherwise
+          example: sparkmeasure
+      required: [duration_seconds, status, dag_id]
+
+    ActualUsage:
+      type: object
+      description: >
+        Average actual resource usage aggregated across recent runs.
+        Populated from `ETL_RESOURCE_ACTUAL` log markers and sparkMeasure
+        extended metrics.
+      properties:
+        avg_driver_memory_used_mb:
+          type: integer
+          nullable: true
+          description: Average JVM heap used by the driver (MB)
+          example: 1024
+        avg_executor_memory_peak_mb:
+          type: integer
+          nullable: true
+          description: Average peak executor memory across all executors (MB)
+          example: 3200
+        avg_cpu_utilization_pct:
+          type: number
+          format: float
+          nullable: true
+          description: Average CPU utilisation across all executors (0–100)
+          example: 72.5
+        avg_executors_active:
+          type: integer
+          nullable: true
+          description: Average number of active executors during peak
+          example: 3
+        avg_jvm_gc_time_ms:
+          type: integer
+          nullable: true
+          description: Average JVM GC time per run (ms) — sparkMeasure metric
+          example: 4200
+        avg_shuffle_read_bytes:
+          type: integer
+          nullable: true
+          description: Average shuffle read volume per run (bytes) — sparkMeasure metric
+          example: 52428800
+        avg_shuffle_write_bytes:
+          type: integer
+          nullable: true
+          description: Average shuffle write volume per run (bytes) — sparkMeasure metric
+          example: 52428800
+        avg_input_bytes:
+          type: integer
+          nullable: true
+          description: Average bytes read from storage per run — sparkMeasure metric
+          example: 104857600
+        avg_output_bytes:
+          type: integer
+          nullable: true
+          description: Average bytes written to storage per run — sparkMeasure metric
+          example: 10485760
+        avg_memory_bytes_spilled:
+          type: integer
+          nullable: true
+          description: Average memory spill to disk per run (bytes) — sparkMeasure metric
+          example: 0
+        avg_disk_bytes_spilled:
+          type: integer
+          nullable: true
+          description: Average disk spill per run (bytes) — sparkMeasure metric
+          example: 0
+        avg_peak_execution_memory:
+          type: integer
+          nullable: true
+          description: Average peak execution memory per run (bytes) — sparkMeasure metric
+          example: 209715200
+        metrics_source:
+          type: string
+          nullable: true
+          description: Source of these metrics (`sparkmeasure` or `log_parsing`)
+          example: sparkmeasure
+
+    CapacityBar:
+      type: object
+      description: Cluster capacity utilisation bar for a resource dimension
+      properties:
+        label:
+          type: string
+          description: Resource dimension label shown in the UI
+          example: Driver Memory
+        allocated:
+          type: string
+          description: Allocated value as a formatted string
+          example: "2g"
+        used:
+          type: string
+          description: Average used value as a formatted string
+          example: "1g"
+        max_capacity:
+          type: string
+          description: Cluster maximum for this dimension
+          example: "64g"
+        allocated_pct:
+          type: number
+          format: float
+          description: Allocation as a percentage of cluster maximum (0–100)
+          example: 3.1
+        used_pct:
+          type: number
+          format: float
+          description: Actual usage as a percentage of cluster maximum (0–100)
+          example: 1.6
+      required: [label, allocated, used, max_capacity, allocated_pct, used_pct]
+
+    ResourceMetricsResponse:
+      type: object
+      description: Full resource and performance metrics for a pipeline
+      properties:
+        avg_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Average run duration across tracked history (seconds)
+          example: 138.2
+        min_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Minimum run duration
+          example: 92.1
+        max_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Maximum run duration
+          example: 221.4
+        latest_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Duration of the most recent run
+          example: 142.5
+        recent_runs:
+          type: array
+          description: Most recent run records (up to 5 per DAG)
+          items:
+            $ref: "#/components/schemas/DurationRun"
+        run_count:
+          type: integer
+          description: Total number of tracked runs
+          example: 28
+        success_rate:
+          type: number
+          format: float
+          nullable: true
+          description: Fraction of successful runs (0–1)
+          example: 0.93
+        resource_configs:
+          type: array
+          description: Spark resource allocation configs per DAG
+          items:
+            $ref: "#/components/schemas/ResourceConfigEntry"
+        actual_usage:
+          $ref: "#/components/schemas/ActualUsage"
+        capacity:
+          type: array
+          description: Cluster capacity utilisation bars
+          items:
+            $ref: "#/components/schemas/CapacityBar"
+      required: [run_count, recent_runs, resource_configs, actual_usage, capacity]
+
+    # -- Execution Plan --------------------------------------------------------
+
+    ExecutionPlanNode:
+      type: object
+      description: >
+        A node in the Spark physical execution plan tree.  Children form a
+        recursive tree matching the Spark plan hierarchy.
+      properties:
+        id:
+          type: integer
+          description: Sequential node ID assigned during plan extraction
+          example: 0
+        name:
+          type: string
+          description: Spark plan node name (e.g. `FileScan`, `BroadcastHashJoin`)
+          example: FileScan parquet
+        type:
+          type: string
+          enum: [read, write, shuffle, transform]
+          description: >
+            Classified node type:
+            `read` — source scan nodes;
+            `write` — output write nodes;
+            `shuffle` — exchange/repartition nodes;
+            `transform` — all other processing nodes
+          example: read
+        detail:
+          type: string
+          description: Short human-readable detail extracted from the plan node
+          example: "catalog.iceberg.dagger.interface_inventory"
+        full_detail:
+          type: string
+          description: Full verbatim text from the Spark plan node
+          example: "FileScan parquet catalog.iceberg.dagger.interface_inventory[...]"
+        metrics:
+          type: object
+          description: >
+            Key/value pairs of node-level Spark metrics (e.g. `number of output rows`,
+            `peak memory usage`).  Values are pre-formatted strings.
+          additionalProperties:
+            type: string
+          example:
+            "number of output rows": "1,234,567"
+            "peak memory usage": "256.0 MiB"
+        children:
+          type: array
+          description: Child plan nodes (recursive)
+          items:
+            $ref: "#/components/schemas/ExecutionPlanNode"
+      required: [id, name, type, detail, full_detail, metrics, children]
+
+    ExecutionPlanResponse:
+      type: object
+      description: Spark execution plan from the latest run of a pipeline
+      properties:
+        dag_id:
+          type: string
+          description: DAG this plan was captured from
+          example: backbone_core
+        dag_run_id:
+          type: string
+          description: Airflow DAG run ID
+          example: "scheduled__2026-03-11T06:00:00+00:00"
+        task_id:
+          type: string
+          description: Airflow task ID (PascalCase)
+          example: SwitchPortCollector
+        status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          description: Status of the run from which the plan was captured
+          example: success
+        duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Run duration in seconds
+          example: 142.5
+        execution_date:
+          type: string
+          nullable: true
+          description: ISO 8601 execution date of the run
+          example: "2026-03-11T06:00:00Z"
+        execution_plan:
+          nullable: true
+          description: Root node of the plan tree; null when no plan was captured
+          allOf:
+            - $ref: "#/components/schemas/ExecutionPlanNode"
+      required: [dag_id, dag_run_id, task_id, status]
+
+    # -- Schema Matrix ---------------------------------------------------------
+
+    FieldPipelineInfo:
+      type: object
+      description: Pipeline entry within a schema matrix field row
+      properties:
+        pipeline_id:
+          type: string
+          format: uuid
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        pipeline_name:
+          type: string
+          example: Switch Port Collector
+      required: [pipeline_id, pipeline_name]
+
+    FieldFrequencyRow:
+      type: object
+      description: A field name with its cross-pipeline frequency count
+      properties:
+        field_name:
+          type: string
+          description: Iceberg schema field name
+          example: device_id
+        frequency:
+          type: integer
+          description: Number of pipelines that contain this field
+          example: 12
+        pipelines:
+          type: array
+          description: Pipelines that contain this field
+          items:
+            $ref: "#/components/schemas/FieldPipelineInfo"
+      required: [field_name, frequency, pipelines]
+
+    SchemaMatrixResponse:
+      type: object
+      description: Cross-pipeline field frequency matrix
+      properties:
+        fields:
+          type: array
+          description: Field rows ordered by frequency descending
+          items:
+            $ref: "#/components/schemas/FieldFrequencyRow"
+      required: [fields]
+
+    # -- Usage -----------------------------------------------------------------
+
+    PipelineUsageSchema:
+      type: object
+      description: A usage record linking a pipeline to a consumer
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Usage record UUID
+          example: f6a7b8c9-d0e1-2345-abcd-ef6789012345
+        consumer_name:
+          type: string
+          description: Consumer identifier — Airflow task_id for ETL consumers, service name for API consumers
+          example: BandwidthCostAllocator
+        usage_type:
+          type: string
+          enum: [etl, api]
+          description: Whether the consumer is an ETL pipeline or an external API service
+          example: etl
+        description:
+          type: string
+          nullable: true
+          description: Description of how this consumer uses the pipeline
+          example: Joins switch port metrics with billing data to allocate bandwidth costs.
+        last_accessed_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 timestamp of the last access event
+          example: "2026-03-11T06:15:00Z"
+        access_count:
+          type: integer
+          description: Total recorded access events
+          example: 84
+        airflow_status:
+          type: string
+          nullable: true
+          description: Latest Airflow status of the consumer task (for ETL consumers)
+          example: success
+        dag_id:
+          type: string
+          nullable: true
+          description: DAG containing the consumer task
+          example: backbone_core
+        is_current:
+          type: boolean
+          description: True when this entry represents the pipeline itself (not a consumer)
+          example: false
+      required: [id, consumer_name, usage_type, access_count, is_current]
+
+    PipelineUsageResponse:
+      type: object
+      description: Usage records for a pipeline, including the pipeline itself as the first entry
+      properties:
+        usages:
+          type: array
+          items:
+            $ref: "#/components/schemas/PipelineUsageSchema"
+      required: [usages]
+
+    # -- Consumers -------------------------------------------------------------
+
+    PipelineConsumerSchema:
+      type: object
+      description: A downstream pipeline that depends on the source pipeline
+      properties:
+        pipeline_id:
+          type: string
+          format: uuid
+          description: Consumer pipeline UUID
+          example: d4e5f6a7-b8c9-0123-abcd-ef4567890123
+        pipeline_name:
+          type: string
+          description: Consumer pipeline display name
+          example: Bandwidth Cost Allocator
+        dag_id:
+          type: string
+          description: DAG the consumer belongs to
+          example: backbone_core
+        airflow_status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          description: Latest run status of the consumer
+          example: success
+        last_run_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: ISO 8601 timestamp of the consumer's most recent run
+          example: "2026-03-11T06:20:00Z"
+      required: [pipeline_id, pipeline_name, dag_id, airflow_status]
+
+    PipelineConsumersResponse:
+      type: object
+      description: Downstream consumers of a pipeline
+      properties:
+        consumers:
+          type: array
+          items:
+            $ref: "#/components/schemas/PipelineConsumerSchema"
+      required: [consumers]
+
+    # -- DAG Summary -----------------------------------------------------------
+
+    DagTaskSummary:
+      type: object
+      description: Per-task statistics within a DAG summary
+      properties:
+        task_id:
+          type: string
+          description: Airflow task ID
+          example: SwitchPortCollector
+        pipeline_name:
+          type: string
+          nullable: true
+          description: Human-readable pipeline name if this task is a tracked pipeline
+          example: Switch Port Collector
+        pipeline_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Pipeline UUID
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          example: success
+        latest_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Duration of the most recent run (seconds)
+          example: 142.5
+        avg_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Average run duration across tracked history (seconds)
+          example: 138.2
+        task_group_id:
+          type: string
+          nullable: true
+          description: Airflow task group ID
+          example: DaggerCollection
+      required: [task_id, status]
+
+    DagSummary:
+      type: object
+      description: Aggregate statistics for a single Airflow DAG
+      properties:
+        dag_id:
+          type: string
+          example: backbone_core
+        description:
+          type: string
+          nullable: true
+          example: Core network infrastructure daily pipeline
+        schedule_interval:
+          type: string
+          nullable: true
+          description: Cron expression or Airflow timetable string
+          example: "0 6 * * *"
+        is_paused:
+          type: boolean
+          description: Whether the DAG is paused in Airflow
+          example: false
+        task_count:
+          type: integer
+          description: Total number of tasks in the DAG
+          example: 14
+        pipeline_count:
+          type: integer
+          description: Number of tracked ETL pipelines in the DAG
+          example: 10
+        total_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Wall-clock duration of the most recent complete DAG run (seconds)
+          example: 1842.0
+        avg_task_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Average per-task duration in the most recent run
+          example: 131.6
+        min_task_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Fastest task duration in the most recent run
+          example: 42.1
+        max_task_duration_seconds:
+          type: number
+          format: float
+          nullable: true
+          description: Slowest task duration in the most recent run
+          example: 221.4
+        success_count:
+          type: integer
+          description: Number of tasks with `success` status in the latest run
+          example: 12
+        failed_count:
+          type: integer
+          description: Number of tasks with `failed` status
+          example: 0
+        upstream_failed_count:
+          type: integer
+          description: Number of tasks with `upstream_failed` status
+          example: 0
+        running_count:
+          type: integer
+          description: Number of currently running tasks
+          example: 0
+        queued_count:
+          type: integer
+          description: Number of queued tasks
+          example: 0
+        unknown_count:
+          type: integer
+          description: Number of tasks with unknown status
+          example: 2
+        success_rate:
+          type: number
+          format: float
+          nullable: true
+          description: Task success rate for the latest run (0–1)
+          example: 0.857
+        latest_run_start:
+          type: string
+          nullable: true
+          description: ISO 8601 start time of the most recent DAG run
+          example: "2026-03-11T06:00:00Z"
+        latest_run_end:
+          type: string
+          nullable: true
+          description: ISO 8601 end time of the most recent DAG run
+          example: "2026-03-11T06:30:42Z"
+        typical_finish_hour:
+          type: string
+          nullable: true
+          description: Formatted string indicating the hour at which the DAG typically completes
+          example: "06:30"
+        total_runs_30d:
+          type: integer
+          description: Total DAG run attempts in the last 30 days
+          example: 29
+        dag_success_rate_30d:
+          type: number
+          format: float
+          nullable: true
+          description: DAG-level success rate over the last 30 days (0–1)
+          example: 0.966
+        tasks:
+          type: array
+          description: Per-task breakdowns for this DAG
+          items:
+            $ref: "#/components/schemas/DagTaskSummary"
+      required: [dag_id, is_paused, task_count, pipeline_count, success_count, failed_count, upstream_failed_count, running_count, queued_count, unknown_count, total_runs_30d, tasks]
+
+    DagSummaryAggregate:
+      type: object
+      description: Platform-wide aggregate statistics across all DAGs
+      properties:
+        total_dags:
+          type: integer
+          description: Total number of tracked DAGs
+          example: 6
+        total_pipelines:
+          type: integer
+          description: Total number of tracked ETL pipelines
+          example: 30
+        active_dags:
+          type: integer
+          description: Number of non-paused DAGs
+          example: 6
+        overall_success_rate:
+          type: number
+          format: float
+          nullable: true
+          description: Weighted success rate across all DAGs and recent runs (0–1)
+          example: 0.921
+        total_runs_30d:
+          type: integer
+          description: Total DAG run attempts across all DAGs in the last 30 days
+          example: 174
+      required: [total_dags, total_pipelines, active_dags, total_runs_30d]
+
+    DagSummaryResponse:
+      type: object
+      description: DAG summaries with platform-wide aggregate
+      properties:
+        aggregate:
+          $ref: "#/components/schemas/DagSummaryAggregate"
+        dags:
+          type: array
+          items:
+            $ref: "#/components/schemas/DagSummary"
+      required: [aggregate, dags]
+
+    # -- Sensors ---------------------------------------------------------------
+
+    SensorResponse:
+      type: object
+      description: A sensor registered in the platform
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Sensor UUID
+          example: e5f6a7b8-c9d0-1234-abcd-ef5678901234
+        sensor_name:
+          type: string
+          description: PascalCase sensor name (Airflow task ID)
+          example: InterfaceStatusSensor
+        display_name:
+          type: string
+          description: Human-readable sensor name
+          example: Interface Status Sensor
+        description:
+          type: string
+          nullable: true
+          description: What the sensor monitors
+          example: Polls SNMP for interface operational states.
+        team:
+          type: string
+          nullable: true
+          description: Owning team name
+          example: Dagger
+        volume_per_day:
+          type: integer
+          nullable: true
+          description: Approximate number of events emitted per day
+          example: 2880
+        status:
+          type: string
+          nullable: true
+          description: Latest sensor run status
+          example: success
+        dag_ids:
+          type: array
+          description: DAGs this sensor appears in
+          items:
+            type: string
+          example: [backbone_core, heartbeat_probe]
+      required: [id, sensor_name, display_name]
+
+    SensorListResponse:
+      type: object
+      description: Sensor list with available team filter values
+      properties:
+        sensors:
+          type: array
+          items:
+            $ref: "#/components/schemas/SensorResponse"
+        teams:
+          type: array
+          description: All distinct team names present in the sensor list (for filter UI)
+          items:
+            type: string
+          example: [Dagger, Vault, Prism, Relay, Oasis]
+      required: [sensors, teams]
+
+    SensorTopologyNode:
+      type: object
+      description: A downstream ETL task in the sensor topology
+      properties:
+        task_id:
+          type: string
+          description: Airflow task ID of the downstream ETL
+          example: SwitchPortCollector
+        pipeline_name:
+          type: string
+          nullable: true
+          description: Human-readable pipeline name
+          example: Switch Port Collector
+        pipeline_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Pipeline UUID
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        status:
+          type: string
+          enum: [success, failed, running, queued, upstream_failed, unknown]
+          example: success
+        dag_id:
+          type: string
+          description: DAG containing this ETL
+          example: backbone_core
+        depends_on_sensors:
+          type: array
+          description: Subset of the queried sensors that this ETL depends on
+          items:
+            type: string
+          example: [InterfaceStatusSensor]
+      required: [task_id, status, dag_id, depends_on_sensors]
+
+    SensorTopologyResponse:
+      type: object
+      description: Downstream ETL topology for a set of sensors
+      properties:
+        selected_sensors:
+          type: array
+          description: The sensor names that were queried
+          items:
+            type: string
+          example: [InterfaceStatusSensor, BgpSessionSensor]
+        downstream_etls:
+          type: array
+          description: ETLs that depend on the selected sensors (per the requested mode)
+          items:
+            $ref: "#/components/schemas/SensorTopologyNode"
+        total_etl_count:
+          type: integer
+          description: Total number of matching ETL tasks
+          example: 5
+      required: [selected_sensors, downstream_etls, total_etl_count]
+
+    # -- AI --------------------------------------------------------------------
+
+    AIChatMessage:
+      type: object
+      description: A single message in the AI chat history
+      properties:
+        role:
+          type: string
+          enum: [user, assistant]
+          description: Who sent this message
+          example: user
+        content:
+          type: string
+          description: Message text
+          example: Which pipelines write to the switch_port_metrics table?
+      required: [role, content]
+
+    AIChatRequest:
+      type: object
+      description: AI Architect chat request
+      properties:
+        message:
+          type: string
+          description: The user's question or instruction
+          example: Which pipelines would I join to calculate per-device bandwidth cost?
+        history:
+          type: array
+          description: Prior conversation turns for multi-turn context
+          items:
+            $ref: "#/components/schemas/AIChatMessage"
+      required: [message]
+
+    AIChatResponse:
+      type: object
+      description: AI Architect response
+      properties:
+        role:
+          type: string
+          enum: [assistant]
+          description: Always `assistant`
+          example: assistant
+        content:
+          type: string
+          description: Markdown-formatted AI response
+          example: "You would join **BandwidthUsageAggregator** with **CostAllocationMapper**..."
+      required: [role, content]
+
+    # -- Visibility ------------------------------------------------------------
+
+    VisibilityGrantRequest:
+      type: object
+      description: >
+        Request to create a visibility grant.
+
+
+        Exactly one of `pipeline_id` / `source_team_id` must be set (grant target).
+        Exactly one of `grantee_team_id` / `grantee_user_id` must be set (grant recipient).
+      properties:
+        grantee_team_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the team that receives the grant
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        grantee_user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the individual user that receives the grant
+          example: null
+        pipeline_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the specific pipeline to expose
+          example: d4e5f6a7-b8c9-0123-abcd-ef4567890123
+        source_team_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the source team — grants access to all pipelines owned by that team
+          example: null
+        grant_level:
+          type: string
+          enum: [viewer, editor]
+          description: >
+            `viewer` — grantee can see the pipeline(s) but cannot edit them;
+            `editor` — grantee can also edit description and documentation
+          example: viewer
+      required: [grant_level]
+
+    VisibilityGrantResponse:
+      type: object
+      description: A visibility grant record
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: Grant UUID
+          example: e5f6a7b8-c9d0-1234-abcd-ef5678901234
+        grantee_team_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Team that received the grant
+          example: a1b2c3d4-e5f6-7890-abcd-ef1234567890
+        grantee_team_name:
+          type: string
+          nullable: true
+          description: Display name of the grantee team
+          example: Relay
+        grantee_user_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Individual user that received the grant
+          example: null
+        grantee_user_name:
+          type: string
+          nullable: true
+          description: Display name of the grantee user
+          example: null
+        grantee_user_email:
+          type: string
+          nullable: true
+          description: Email of the grantee user
+          example: null
+        pipeline_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: UUID of the specific pipeline covered by this grant
+          example: d4e5f6a7-b8c9-0123-abcd-ef4567890123
+        source_team_id:
+          type: string
+          format: uuid
+          nullable: true
+          description: Source team UUID when the grant covers a whole team's pipelines
+          example: null
+        source_team_name:
+          type: string
+          nullable: true
+          description: Display name of the source team
+          example: null
+        grant_level:
+          type: string
+          enum: [viewer, editor]
+          description: Permission level of this grant
+          example: viewer
+        granted_by:
+          type: string
+          description: Display name of the admin who created this grant
+          example: Bob Admin
+        created_at:
+          type: string
+          description: ISO 8601 timestamp when the grant was created
+          example: "2026-03-10T09:00:00Z"
+      required: [id, grant_level, granted_by, created_at]
