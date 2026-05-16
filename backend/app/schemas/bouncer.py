@@ -9,11 +9,16 @@ class BouncerResponse(BaseModel):
     display_name: str
     description: str | None = None
     team: str | None = None
+    team_id: str | None = None
     volume_per_day: int | None = None
     status: str | None = None
     dag_ids: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class BouncerUpdateRequest(BaseModel):
+    team_id: str | None = None
 
 
 class BouncerListResponse(BaseModel):

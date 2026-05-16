@@ -20,9 +20,11 @@ from app.rate_limit import limiter
 from app.repositories.revision_repo import RevisionRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.schemas.date_range import DateRangeParams
+from app.schemas.common import SuccessResponse
 from app.schemas.pipeline import (
     JoinSuggestionsResponse,
     PipelineDetail,
+    PipelineFieldSchema,
     PipelineListResponse,
     PipelineRevisionResponse,
     PipelineUpdateRequest,
@@ -44,6 +46,8 @@ async def list_pipelines(
     team: list[str] | None = Query(None),
     dag_id: list[str] | None = Query(None),
     status: list[str] | None = Query(None),
+    tag: list[str] | None = Query(None),
+    is_data_product: bool | None = Query(None),
     dates: DateRangeParams = Depends(),
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
@@ -66,6 +70,8 @@ async def list_pipelines(
         team_names=team,
         dag_ids=dag_id,
         statuses=status,
+        tag_names=tag,
+        is_data_product=is_data_product,
     )
 
 
@@ -196,6 +202,82 @@ async def get_join_suggestions(
         is_admin=is_admin,
         grant_repo=grant_repo,
     )
+    if not result:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return result
+
+
+# ---------- Schema manual override ----------
+
+from pydantic import BaseModel as _BaseModel  # noqa: E402
+
+
+class ManualFieldsRequest(_BaseModel):
+    fields: list[PipelineFieldSchema]
+
+
+@router.put(
+    "/{pipeline_id}/fields",
+    response_model=SuccessResponse,
+    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+)
+async def set_pipeline_fields(
+    pipeline_id: uuid.UUID,
+    body: ManualFieldsRequest,
+    user: User = Depends(get_current_user),
+    service: PipelineService = Depends(get_pipeline_service),
+):
+    """Manually set pipeline fields, overriding dynamic Iceberg sync."""
+    result = await service.set_manual_fields(pipeline_id, body.fields, updated_by=user.display_name)
+    if not result:
+        raise HTTPException(status_code=404, detail="Pipeline not found")
+    return SuccessResponse()
+
+
+# ---------- Data product creation ----------
+
+
+class DataProductCreateRequest(_BaseModel):
+    name: str
+    description: str | None = None
+    team_id: uuid.UUID | None = None
+    schedule_type: str | None = None
+
+
+data_product_router = APIRouter(prefix="/api/data-products", tags=["data-products"])
+
+
+@data_product_router.post("", response_model=PipelineDetail, status_code=201)
+async def create_data_product(
+    body: DataProductCreateRequest,
+    user: User = Depends(get_current_user),
+    service: PipelineService = Depends(get_pipeline_service),
+):
+    """Create a new manual data product entry."""
+    team_id = body.team_id
+    if not team_id and user.team_memberships:
+        team_id = user.team_memberships[0].team_id
+    return await service.create_data_product(
+        name=body.name,
+        description=body.description,
+        team_id=team_id,
+        schedule_type=body.schedule_type,
+        created_by=user.display_name,
+    )
+
+
+@data_product_router.post(
+    "/from-pipeline/{pipeline_id}",
+    response_model=PipelineDetail,
+    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+)
+async def promote_to_data_product(
+    pipeline_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    service: PipelineService = Depends(get_pipeline_service),
+):
+    """Promote an existing pipeline to a data product."""
+    result = await service.promote_to_data_product(pipeline_id, promoted_by=user.display_name)
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     return result

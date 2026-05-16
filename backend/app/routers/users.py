@@ -11,6 +11,7 @@ from app.models.user import User
 from app.repositories.user_repo import UserRepository
 from app.schemas.auth import (
     ActiveUpdateRequest,
+    BetaUpdateRequest,
     RoleUpdateRequest,
     UserListResponse,
     user_to_response,
@@ -91,6 +92,23 @@ async def update_user_active(
         )
 
     updated = await repo.update_active(user_id, body.is_active)
+    if not updated:
+        raise HTTPException(status_code=404, detail="User not found")
+    await repo.session.commit()
+
+    await invalidate_user_cache()
+    return SuccessResponse()
+
+
+@router.patch("/{user_id}/beta", response_model=SuccessResponse)
+async def update_user_beta(
+    user_id: uuid.UUID,
+    body: BetaUpdateRequest,
+    user: User = Depends(require_role("admin")),
+    repo: UserRepository = Depends(get_user_repo),
+) -> SuccessResponse:
+    """Toggle beta feature access for a user (admin only)."""
+    updated = await repo.update_beta(user_id, body.is_beta)
     if not updated:
         raise HTTPException(status_code=404, detail="User not found")
     await repo.session.commit()

@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text, func, text
+from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, String, Text, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -30,6 +30,21 @@ class Pipeline(Base):
     description_edited_by_user: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
+    how_to_read: Mapped[str | None] = mapped_column(Text)
+    import_snippet: Mapped[str | None] = mapped_column(Text)
+    schedule_type: Mapped[str | None] = mapped_column(String(20))
+    schema_manually_edited: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    topology_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=True, server_default=text("true")
+    )
+    is_data_product: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
+    writes_to_manual: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    reads_from_manual: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    feeds_into_manual: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -58,6 +73,13 @@ class Pipeline(Base):
         back_populates="pipeline", cascade="all, delete-orphan",
         order_by="PipelineRevision.created_at.desc()"
     )
+    tags: Mapped[list["PipelineTag"]] = relationship(
+        back_populates="pipeline", cascade="all, delete-orphan"
+    )
+    logs: Mapped[list["PipelineLog"]] = relationship(
+        back_populates="pipeline", cascade="all, delete-orphan",
+        order_by="PipelineLog.ordinal_position"
+    )
 
 
 class PipelineField(Base):
@@ -77,6 +99,8 @@ class PipelineField(Base):
 # Avoid circular import issues — these are imported at module level by __init__.py
 from app.models.airflow_status import AirflowRunStatus  # noqa: E402
 from app.models.lineage import LineageEdge  # noqa: E402
+from app.models.pipeline_log import PipelineLog  # noqa: E402
 from app.models.pipeline_revision import PipelineRevision  # noqa: E402
 from app.models.resource_config import PipelineResourceConfig  # noqa: E402
 from app.models.run_history import PipelineRunHistory  # noqa: E402
+from app.models.tag import PipelineTag  # noqa: E402

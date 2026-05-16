@@ -24,6 +24,7 @@ from app.database import get_db_session
 from app.enums import UserRole
 from app.integrations.oidc_client import oidc_client
 from app.models.user import User
+from app.repositories.feature_flag_repo import FeatureFlagRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.user_auth_service import UserAuthService
@@ -351,6 +352,32 @@ def require_pipeline_visibility_by_name(param_name: str = "etl_name"):
         if not can_see:
             raise HTTPException(status_code=404, detail="Pipeline not found")
 
+        return user
+
+    return _check
+
+
+def require_feature_flag(flag_name: str):
+    """Return a dependency that checks the given feature flag is accessible to the user.
+
+    The feature must be enabled globally, and if it is beta-only, the user must
+    have ``is_beta=True``.  Admins bypass the check.
+    """
+
+    async def _check(
+        user: User = Depends(get_current_user),
+        session: AsyncSession = Depends(get_db_session),
+    ) -> User:
+        if user.role == UserRole.ADMIN:
+            return user
+
+        flag_repo = FeatureFlagRepository(session)
+        accessible = await flag_repo.is_enabled_for_user(flag_name, is_beta=user.is_beta)
+        if not accessible:
+            raise HTTPException(
+                status_code=403,
+                detail=f"Feature '{flag_name}' is not available",
+            )
         return user
 
     return _check

@@ -50,6 +50,13 @@ class CatalogSyncService:
                     task_id,
                 )
                 continue
+            # Skip pipelines with manually edited schemas
+            if pipeline.schema_manually_edited:
+                logger.debug(
+                    "Pipeline %s has manually edited schema — skipping Iceberg sync",
+                    pipeline.name,
+                )
+                continue
             if table_schema.fields:
                 pipelines_to_sync.append((pipeline, table_schema.fields))
 

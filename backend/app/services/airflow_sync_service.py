@@ -531,14 +531,18 @@ class AirflowSyncService:
                     "edge_type": "reads_from",
                 })
             if not is_api(task_id):
-                for dest in meta["destination_tables"]:
-                    all_edges.append({
-                        "source_pipeline_id": pipeline_id,
-                        "target_pipeline_id": None,
-                        "source_table": primary_table,
-                        "target_table": dest,
-                        "edge_type": "writes_to",
-                    })
+                # Skip writes_to edge generation if the pipeline has manual writes_to set
+                pipeline_obj = task_id_to_pipeline.get(task_id)
+                has_manual_writes = pipeline_obj and getattr(pipeline_obj, "writes_to_manual", None)
+                if not has_manual_writes:
+                    for dest in meta["destination_tables"]:
+                        all_edges.append({
+                            "source_pipeline_id": pipeline_id,
+                            "target_pipeline_id": None,
+                            "source_table": primary_table,
+                            "target_table": dest,
+                            "edge_type": "writes_to",
+                        })
 
         synced = 0
         all_pipeline_ids = list(task_id_to_pipeline_id.values())
@@ -885,14 +889,16 @@ class AirflowSyncService:
             })
 
         if not is_api(task_id):
-            for dest in meta["destination_tables"]:
-                edges_to_create.append({
-                    "source_pipeline_id": pipeline_id,
-                    "target_pipeline_id": None,
-                    "source_table": primary_table,
-                    "target_table": dest,
-                    "edge_type": "writes_to",
-                })
+            # Skip writes_to if pipeline has manual writes_to override
+            if not getattr(pipeline, "writes_to_manual", None):
+                for dest in meta["destination_tables"]:
+                    edges_to_create.append({
+                        "source_pipeline_id": pipeline_id,
+                        "target_pipeline_id": None,
+                        "source_table": primary_table,
+                        "target_table": dest,
+                        "edge_type": "writes_to",
+                    })
 
         try:
             async with self.session.begin_nested():

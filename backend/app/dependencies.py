@@ -9,11 +9,15 @@ from app.models.user import User
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.bouncer_repo import BouncerRepository
 from app.repositories.dag_task_repo import DagTaskRepository
+from app.repositories.feature_flag_repo import FeatureFlagRepository
+from app.repositories.pipeline_log_repo import PipelineLogRepository
 from app.repositories.field_frequency_repo import FieldFrequencyRepository
 from app.repositories.lineage_repo import LineageRepository
+from app.repositories.network_repo import NetworkRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.resource_repo import ResourceRepository
 from app.repositories.revision_repo import RevisionRepository
+from app.repositories.tag_repo import TagRepository
 from app.repositories.team_repo import TeamRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
@@ -22,10 +26,14 @@ from app.services.airflow_sync_service import AirflowSyncService
 from app.services.bouncer_service import BouncerService
 from app.services.consumer_service import ConsumerService
 from app.services.dag_summary_service import DagSummaryService
+from app.services.feature_flag_service import FeatureFlagService
 from app.services.lineage_service import LineageService
+from app.services.network_service import NetworkService
+from app.services.pipeline_log_service import PipelineLogService
 from app.services.pipeline_service import PipelineService
 from app.services.resource_service import ResourceService
 from app.services.schema_matrix_service import SchemaMatrixService
+from app.services.tag_service import TagService
 from app.services.team_service import TeamService
 from app.services.topology_service import TopologyService
 from app.services.usage_service import UsageService
@@ -187,6 +195,46 @@ def get_visibility_service(
     team_repo: TeamRepository = Depends(get_team_repo),
 ) -> VisibilityService:
     return VisibilityService(grant_repo, team_repo)
+
+
+def get_tag_repo(session: AsyncSession = Depends(get_db_session)) -> TagRepository:
+    return TagRepository(session)
+
+
+def get_network_repo(session: AsyncSession = Depends(get_db_session)) -> NetworkRepository:
+    return NetworkRepository(session)
+
+
+def get_pipeline_log_repo(session: AsyncSession = Depends(get_db_session)) -> PipelineLogRepository:
+    return PipelineLogRepository(session)
+
+
+def get_feature_flag_repo(session: AsyncSession = Depends(get_db_session)) -> FeatureFlagRepository:
+    return FeatureFlagRepository(session)
+
+
+def get_tag_service(
+    tag_repo: TagRepository = Depends(get_tag_repo),
+) -> TagService:
+    return TagService(tag_repo)
+
+
+def get_network_service(
+    network_repo: NetworkRepository = Depends(get_network_repo),
+) -> NetworkService:
+    return NetworkService(network_repo)
+
+
+def get_pipeline_log_service(
+    log_repo: PipelineLogRepository = Depends(get_pipeline_log_repo),
+) -> PipelineLogService:
+    return PipelineLogService(log_repo)
+
+
+def get_feature_flag_service(
+    flag_repo: FeatureFlagRepository = Depends(get_feature_flag_repo),
+) -> FeatureFlagService:
+    return FeatureFlagService(flag_repo)
 
 
 # ---------------------------------------------------------------------------

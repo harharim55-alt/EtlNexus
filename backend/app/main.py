@@ -21,12 +21,16 @@ from app.routers import (
     bouncers,
     consumers,
     dag_summary,
+    feature_flags,
     health,
     lineage,
     metrics,
+    networks,
+    pipeline_logs,
     pipelines,
     resources,
     schema_matrix,
+    tags,
     teams,
     topology,
     usage,
@@ -210,3 +214,9 @@ app.include_router(teams.router)
 app.include_router(visibility.router)
 app.include_router(users.router)
 app.include_router(metrics.router)
+app.include_router(tags.router)
+app.include_router(tags.pipeline_tag_router)
+app.include_router(networks.router)
+app.include_router(feature_flags.router)
+app.include_router(pipeline_logs.router)
+app.include_router(pipelines.data_product_router)

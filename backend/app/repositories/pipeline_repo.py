@@ -10,8 +10,11 @@ from sqlalchemy.orm import selectinload
 from app.cache import task_id_map_cache
 from app.models.pipeline import Pipeline, PipelineField
 from app.models.run_history import PipelineRunHistory
+from app.models.tag import PipelineTag, Tag
 from app.repositories.base import apply_updates
 from app.repositories.visibility_filter import VisibilityFilter
+
+_UNSET = object()
 
 
 def _escape_like(value: str) -> str:
@@ -87,6 +90,7 @@ class PipelineRepository:
             .options(
                 selectinload(Pipeline.fields),
                 selectinload(Pipeline.airflow_status),
+                selectinload(Pipeline.tags).selectinload(PipelineTag.tag),
             )
             .where(Pipeline.id == pipeline_id)
         )
@@ -324,8 +328,15 @@ class PipelineRepository:
         self,
         pipeline_id: uuid.UUID,
         *,
-        description: str | None = None,
-        documentation: str | None = None,
+        description=_UNSET,
+        documentation=_UNSET,
+        how_to_read=_UNSET,
+        import_snippet=_UNSET,
+        schedule_type=_UNSET,
+        topology_enabled=_UNSET,
+        writes_to_manual=_UNSET,
+        reads_from_manual=_UNSET,
+        feeds_into_manual=_UNSET,
         updated_by: str = "System",
         pipeline: "Pipeline | None" = None,
         set_description_edited: bool = False,
@@ -334,12 +345,26 @@ class PipelineRepository:
             pipeline = await self.get_by_id(pipeline_id)
         if not pipeline:
             return None
-        if description is not None:
+        if description is not _UNSET:
             pipeline.description = description
             if set_description_edited:
                 pipeline.description_edited_by_user = True
-        if documentation is not None:
+        if documentation is not _UNSET:
             pipeline.documentation = documentation
+        if how_to_read is not _UNSET:
+            pipeline.how_to_read = how_to_read
+        if import_snippet is not _UNSET:
+            pipeline.import_snippet = import_snippet
+        if schedule_type is not _UNSET:
+            pipeline.schedule_type = schedule_type
+        if topology_enabled is not _UNSET:
+            pipeline.topology_enabled = topology_enabled
+        if writes_to_manual is not _UNSET:
+            pipeline.writes_to_manual = writes_to_manual
+        if reads_from_manual is not _UNSET:
+            pipeline.reads_from_manual = reads_from_manual
+        if feeds_into_manual is not _UNSET:
+            pipeline.feeds_into_manual = feeds_into_manual
         pipeline.last_updated_by = updated_by
         pipeline.last_updated_at = datetime.now(UTC)
         await self.session.flush()
@@ -359,6 +384,8 @@ class PipelineRepository:
         team_names: list[str] | None = None,
         dag_ids: list[str] | None = None,
         statuses: list[str] | None = None,
+        tag_names: list[str] | None = None,
+        is_data_product: bool | None = None,
     ) -> tuple[list[Pipeline], int]:
         """Return pipelines filtered by team visibility + optional text search.
 
@@ -426,6 +453,19 @@ class PipelineRepository:
             )
             conditions.append(Pipeline.id.in_(dag_subq))
 
+        if tag_names:
+            tag_subq = (
+                select(PipelineTag.pipeline_id)
+                .join(Tag, PipelineTag.tag_id == Tag.id)
+                .where(Tag.name.in_(tag_names))
+                .distinct()
+                .scalar_subquery()
+            )
+            conditions.append(Pipeline.id.in_(tag_subq))
+
+        if is_data_product is not None:
+            conditions.append(Pipeline.is_data_product == is_data_product)
+
         if not is_admin:
             visibility_conditions = await VisibilityFilter.build_batch_visibility_conditions(
                 self.session, user_id, user_team_ids,
@@ -442,7 +482,10 @@ class PipelineRepository:
         # Fetch paginated data
         data_stmt = (
             select(Pipeline)
-            .options(selectinload(Pipeline.airflow_status))
+            .options(
+                selectinload(Pipeline.airflow_status),
+                selectinload(Pipeline.tags).selectinload(PipelineTag.tag),
+            )
             .order_by(Pipeline.name)
             .offset(skip)
             .limit(limit)

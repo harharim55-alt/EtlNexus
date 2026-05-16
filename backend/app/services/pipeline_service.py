@@ -1,6 +1,6 @@
 import re
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
 from app.cache import join_suggestions_cache, pipeline_list_cache
 from app.enums import GrantLevel, PipelineType
@@ -51,10 +51,13 @@ class PipelineService:
         team_names: list[str] | None = None,
         dag_ids: list[str] | None = None,
         statuses: list[str] | None = None,
+        tag_names: list[str] | None = None,
+        is_data_product: bool | None = None,
     ) -> PipelineListResponse:
         # Build cache key — only cache unfiltered (no search query, no date range, no filters) requests
         cache_key: str | None = None
-        if not query and not date_from and not date_to and not team_names and not dag_ids and not statuses:
+        has_filters = query or date_from or date_to or team_names or dag_ids or statuses or tag_names or is_data_product is not None
+        if not has_filters:
             if is_admin:
                 cache_key = f"all:{skip}:{limit}"
             elif user_team_ids:
@@ -80,6 +83,8 @@ class PipelineService:
             team_names=team_names,
             dag_ids=dag_ids,
             statuses=statuses,
+            tag_names=tag_names,
+            is_data_product=is_data_product,
         )
 
         items = [self._to_list_item(p) for p in pipelines]
@@ -89,9 +94,11 @@ class PipelineService:
                 ids, date_from=date_from, date_to=date_to,
             )
             run_dates = await self.pipeline_repo.get_last_run_dates(ids)
+            network_map = await self._batch_network_names(ids)
             for item in items:
                 item.success_rate = rates.get(item.id)
                 item.last_run_at = run_dates.get(item.id)
+                item.network_names = network_map.get(item.id, [])
 
         result = PipelineListResponse(items=items, total=total)
         if cache_key:
@@ -116,7 +123,7 @@ class PipelineService:
 
         # Snapshot previous values before applying changes
         if effective_revision_repo:
-            if update.description is not None and update.description != pipeline.description:
+            if "description" in update.model_fields_set and update.description != pipeline.description:
                 await effective_revision_repo.create(
                     pipeline_id=pipeline_id,
                     field_name="description",
@@ -124,7 +131,7 @@ class PipelineService:
                     changed_by=updated_by,
                     change_source="user",
                 )
-            if update.documentation is not None and update.documentation != pipeline.documentation:
+            if "documentation" in update.model_fields_set and update.documentation != pipeline.documentation:
                 await effective_revision_repo.create(
                     pipeline_id=pipeline_id,
                     field_name="documentation",
@@ -133,13 +140,22 @@ class PipelineService:
                     change_source="user",
                 )
 
+        # Only forward fields the client explicitly included in the request
+        repo_kwargs: dict = {}
+        for field_name in (
+            "description", "documentation", "import_snippet",
+            "schedule_type", "topology_enabled", "writes_to_manual",
+            "reads_from_manual", "feeds_into_manual",
+        ):
+            if field_name in update.model_fields_set:
+                repo_kwargs[field_name] = getattr(update, field_name)
+
         pipeline = await self.pipeline_repo.update_metadata(
             pipeline_id,
-            description=update.description,
-            documentation=update.documentation,
+            **repo_kwargs,
             updated_by=updated_by,
             pipeline=pipeline,
-            set_description_edited=(update.description is not None),
+            set_description_edited=("description" in update.model_fields_set),
         )
         if not pipeline:
             return None
@@ -208,6 +224,8 @@ class PipelineService:
         )
 
     async def get_pipeline_detail(self, pipeline_id: uuid.UUID) -> PipelineDetail | None:
+        from app.schemas.tag import TagResponse
+
         pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
         if not pipeline:
             return None
@@ -215,6 +233,17 @@ class PipelineService:
         lineage = await self.lineage_repo.get_by_pipeline_id(pipeline_id)
         source_tables = list({e.source_table for e in lineage["reads_from"]})
         destination_tables = list({e.target_table for e in lineage["writes_to"]})
+
+        # Use manual writes_to if set, otherwise use lineage-derived tables
+        effective_destinations = (
+            sorted(pipeline.writes_to_manual)
+            if pipeline.writes_to_manual
+            else sorted(destination_tables)
+        )
+
+        tags = []
+        if hasattr(pipeline, "tags") and pipeline.tags:
+            tags = [TagResponse.model_validate(pt.tag) for pt in pipeline.tags if pt.tag]
 
         return PipelineDetail(
             id=pipeline.id,
@@ -238,7 +267,7 @@ class PipelineService:
                 for f in pipeline.fields
             ],
             source_tables=sorted(source_tables),
-            destination_tables=sorted(destination_tables),
+            destination_tables=effective_destinations,
             documentation=pipeline.documentation,
             last_updated_by=pipeline.last_updated_by,
             last_updated_at=pipeline.last_updated_at,
@@ -256,6 +285,14 @@ class PipelineService:
                 if pipeline.airflow_status
                 else None
             ),
+            tags=tags,
+            how_to_read=pipeline.how_to_read,
+            import_snippet=pipeline.import_snippet,
+            schedule_type=pipeline.schedule_type,
+            schema_manually_edited=pipeline.schema_manually_edited,
+            topology_enabled=pipeline.topology_enabled,
+            is_data_product=pipeline.is_data_product,
+            writes_to_manual=pipeline.writes_to_manual,
         )
 
     async def get_pipeline_detail_for_user(
@@ -365,6 +402,113 @@ class PipelineService:
         join_suggestions_cache.set(cache_key, result)
         return result
 
+    async def set_manual_fields(
+        self,
+        pipeline_id: uuid.UUID,
+        fields: list,
+        updated_by: str = "System",
+    ) -> bool:
+        """Manually set pipeline fields, marking the schema as manually edited."""
+        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            return False
+
+        # Delete existing fields and insert new ones
+        from app.models.pipeline import PipelineField
+
+        for f in list(pipeline.fields):
+            await self.pipeline_repo.session.delete(f)
+
+        for i, field_data in enumerate(fields):
+            name = field_data.name if hasattr(field_data, "name") else field_data["name"]
+            data_type = field_data.data_type if hasattr(field_data, "data_type") else field_data.get("data_type")
+            new_field = PipelineField(
+                pipeline_id=pipeline_id,
+                name=name,
+                data_type=data_type,
+                ordinal_position=i,
+            )
+            self.pipeline_repo.session.add(new_field)
+
+        pipeline.schema_manually_edited = True
+        pipeline.last_updated_by = updated_by
+        pipeline.last_updated_at = datetime.now(UTC)
+        await self.pipeline_repo.session.flush()
+        await self.pipeline_repo.session.commit()
+        pipeline_list_cache.clear()
+        return True
+
+    async def create_data_product(
+        self,
+        name: str,
+        description: str | None = None,
+        team_id: uuid.UUID | None = None,
+        schedule_type: str | None = None,
+        created_by: str = "System",
+    ) -> PipelineDetail:
+        """Create a new manual data product entry (not synced from Airflow)."""
+        # Resolve team name from team_id
+        team_name = None
+        if team_id:
+            from app.models.team import Team
+            team = await self.pipeline_repo.session.get(Team, team_id)
+            if team:
+                team_name = team.name
+
+        pipeline = Pipeline(
+            name=name,
+            description=description,
+            team=team_name,
+            team_id=team_id,
+            schedule_type=schedule_type,
+            is_data_product=True,
+            last_updated_by=created_by,
+            last_updated_at=datetime.now(UTC),
+        )
+        self.pipeline_repo.session.add(pipeline)
+        await self.pipeline_repo.session.flush()
+        await self.pipeline_repo.session.commit()
+        pipeline_list_cache.clear()
+        return await self.get_pipeline_detail(pipeline.id)
+
+    async def promote_to_data_product(
+        self,
+        pipeline_id: uuid.UUID,
+        promoted_by: str = "System",
+    ) -> PipelineDetail | None:
+        """Promote an existing pipeline to a data product."""
+        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            return None
+        pipeline.is_data_product = True
+        pipeline.last_updated_by = promoted_by
+        pipeline.last_updated_at = datetime.now(UTC)
+        await self.pipeline_repo.session.flush()
+        await self.pipeline_repo.session.commit()
+        pipeline_list_cache.clear()
+        return await self.get_pipeline_detail(pipeline_id)
+
+    async def _batch_network_names(self, pipeline_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
+        """Batch-load network names for a list of pipeline IDs."""
+        if not pipeline_ids:
+            return {}
+        from sqlalchemy import select
+        from app.models.pipeline_log import PipelineLog, PipelineLogNetwork
+        from app.models.network import Network
+
+        stmt = (
+            select(PipelineLog.pipeline_id, Network.name)
+            .join(PipelineLogNetwork, PipelineLogNetwork.log_id == PipelineLog.id)
+            .join(Network, Network.id == PipelineLogNetwork.network_id)
+            .where(PipelineLog.pipeline_id.in_(pipeline_ids))
+            .distinct()
+        )
+        result = await self.pipeline_repo.session.execute(stmt)
+        mapping: dict[uuid.UUID, list[str]] = {}
+        for row in result.all():
+            mapping.setdefault(row[0], []).append(row[1])
+        return mapping
+
     @staticmethod
     def _detect_pipeline_type(task_id: str | None) -> str:
         """Derive pipeline type from task_id using word-boundary matching."""
@@ -374,6 +518,12 @@ class PipelineService:
 
     @staticmethod
     def _to_list_item(pipeline: Pipeline) -> PipelineListItem:
+        from app.schemas.tag import TagResponse
+
+        tags = []
+        if hasattr(pipeline, "tags") and pipeline.tags:
+            tags = [TagResponse.model_validate(pt.tag) for pt in pipeline.tags if pt.tag]
+
         return PipelineListItem(
             id=pipeline.id,
             name=pipeline.name,
@@ -381,6 +531,7 @@ class PipelineService:
             category=pipeline.category,
             pipeline_type=PipelineService._detect_pipeline_type(pipeline.task_id),
             schedule=pipeline.schedule,
+            schedule_type=pipeline.schedule_type,
             rows_per_day=pipeline.rows_per_day,
             airflow_status=(
                 pipeline.airflow_status.status if pipeline.airflow_status else "unknown"
@@ -391,4 +542,6 @@ class PipelineService:
                 if pipeline.airflow_status
                 else None
             ),
+            tags=tags,
+            is_data_product=pipeline.is_data_product,
         )

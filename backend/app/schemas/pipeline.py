@@ -3,6 +3,8 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.schemas.tag import TagResponse
+
 
 class PipelineFieldSchema(BaseModel):
     id: uuid.UUID
@@ -20,12 +22,16 @@ class PipelineListItem(BaseModel):
     category: str | None = None
     pipeline_type: str = "etl"
     schedule: str | None = None
+    schedule_type: str | None = None
     rows_per_day: str | None = None
     airflow_status: str = "unknown"
     success_rate: float | None = None
     team: str | None = None
     last_run_at: datetime | None = None
     execution_date: datetime | None = None
+    tags: list[TagResponse] = []
+    is_data_product: bool = False
+    network_names: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -58,13 +64,29 @@ class PipelineDetail(BaseModel):
     can_edit: bool = False
     execution_date: datetime | None = None
     last_checked_at: datetime | None = None
+    tags: list[TagResponse] = []
+    how_to_read: str | None = None
+    import_snippet: str | None = None
+    schedule_type: str | None = None
+    schema_manually_edited: bool = False
+    topology_enabled: bool = True
+    is_data_product: bool = False
+    writes_to_manual: list[str] | None = None
+    reads_from_manual: list[str] | None = None
+    feeds_into_manual: list[str] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
 
 class PipelineUpdateRequest(BaseModel):
-    description: str | None = Field(None, max_length=5_000)
+    description: str | None = Field(None, max_length=270)
     documentation: str | None = Field(None, max_length=100_000)
+    import_snippet: str | None = Field(None, max_length=10_000)
+    schedule_type: str | None = Field(None, pattern="^(daily|hourly|stream)$")
+    topology_enabled: bool | None = None
+    writes_to_manual: list[str] | None = None
+    reads_from_manual: list[str] | None = None
+    feeds_into_manual: list[str] | None = None
 
 
 class PipelineUpdateResponse(BaseModel):

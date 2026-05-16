@@ -143,6 +143,15 @@ class UserRepository:
         await self.session.flush()
         return user
 
+    async def update_beta(self, user_id: uuid.UUID, is_beta: bool) -> User | None:
+        """Toggle beta feature access for a user (admin only)."""
+        user = await self.get_by_id(user_id)
+        if not user:
+            return None
+        user.is_beta = is_beta
+        await self.session.flush()
+        return user
+
     async def count_by_role(self, role: str) -> int:
         """Count users with the given role."""
         stmt = select(func.count()).select_from(User).where(User.role == role)
