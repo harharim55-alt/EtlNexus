@@ -1,5 +1,5 @@
 import { lazy, Suspense, useState, useCallback } from "react";
-import { GitFork, Layers, Network } from "lucide-react";
+import { ArrowLeft, ArrowRight, GitFork, Layers, Network } from "lucide-react";
 
 const UpstreamTopologyModal = lazy(() =>
   import("./UpstreamTopologyModal").then((m) => ({ default: m.UpstreamTopologyModal }))
@@ -75,13 +75,18 @@ export function LineageTopology({ pipelineId, fullWidth }: LineageTopologyProps)
     );
   }
 
-  const destinationTables = lineage?.destination_tables ?? [];
+  const manualWrites = currentPipeline?.destination_tables ?? [];
+  const lineageWrites = lineage?.destination_tables ?? [];
+  const destinationTables = Array.from(new Set([...manualWrites, ...lineageWrites]));
+  const readsFromManual = currentPipeline?.reads_from_manual ?? [];
+  const feedsIntoManual = currentPipeline?.feeds_into_manual ?? [];
   const hasTopology =
     topology &&
     ((topology.upstream_bouncers?.length ?? 0) > 0 ||
       topology.upstream_needs.length > 0 ||
       topology.upstream_prefers.length > 0 ||
       topology.downstream.length > 0);
+  const hasManualConnections = readsFromManual.length > 0 || feedsIntoManual.length > 0;
 
   const currentTask: TopologyTask = {
     task_id: topology?.pipeline_task_id ?? "",
@@ -317,6 +322,58 @@ export function LineageTopology({ pipelineId, fullWidth }: LineageTopologyProps)
               </span>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Manual connections footer */}
+      {hasManualConnections && (
+        <div className={`mt-5 pt-4 border-t border-border flex flex-wrap gap-6`}>
+          {readsFromManual.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <ArrowLeft className="w-3 h-3 text-cyan-400/50" />
+                <span className="text-[9px] font-mono uppercase tracking-widest text-cyan-400/50">
+                  Reads From
+                </span>
+                <span className="text-[9px] font-mono text-text-faint">
+                  ({readsFromManual.length})
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {readsFromManual.map((name) => (
+                  <span
+                    key={name}
+                    className="text-[9px] bg-cyan-500/5 px-2 py-1 rounded text-cyan-400/50 font-mono border border-cyan-500/10"
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+          {feedsIntoManual.length > 0 && (
+            <div>
+              <div className="flex items-center gap-1.5 mb-2">
+                <ArrowRight className="w-3 h-3 text-violet-400/50" />
+                <span className="text-[9px] font-mono uppercase tracking-widest text-violet-400/50">
+                  Feeds Into
+                </span>
+                <span className="text-[9px] font-mono text-text-faint">
+                  ({feedsIntoManual.length})
+                </span>
+              </div>
+              <div className="flex flex-wrap gap-1">
+                {feedsIntoManual.map((name) => (
+                  <span
+                    key={name}
+                    className="text-[9px] bg-violet-500/5 px-2 py-1 rounded text-violet-400/50 font-mono border border-violet-500/10"
+                  >
+                    {name}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
 

@@ -1,15 +1,13 @@
 import { useState } from "react";
-import { Activity, BarChart3, Database, HelpCircle, LogOut, Moon, Network, Palette, Radio, RefreshCw, Shield, Sparkles, Sun } from "lucide-react";
+import { BarChart3, Database, HelpCircle, LogOut, Moon, Network, Package, Palette, Radio, RefreshCw, Shield, Sparkles, Sun } from "lucide-react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { useNavigationStore } from "@/stores/navigation-store";
-import { useAirflowStatuses } from "@/hooks/use-airflow-status";
 import { useAuthStore } from "@/stores/auth-store";
+import { useFeatureFlagCheck } from "@/hooks/use-feature-flags";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { isAdmin } from "@/lib/permissions";
-import { AIRFLOW_URL } from "@/lib/config";
 import { syncAllPipelines } from "@/api/airflow";
-import { formatRelativeTime } from "@/lib/format";
 import { useThemeStore } from "@/stores/theme-store";
 import { useAuth } from "react-oidc-context";
 import { NavIcon } from "./NavIcon";
@@ -51,9 +49,12 @@ function SsoLogoutButton() {
 
 export function Sidebar() {
   const { activeTab, setActiveTab } = useNavigationStore();
-  const { data: airflowData, dataUpdatedAt } = useAirflowStatuses();
   const user = useAuthStore((s) => s.user);
   const ssoEnabled = useAuthStore((s) => s.ssoEnabled);
+  const { data: dagFlag } = useFeatureFlagCheck("dag_dashboard");
+  const { data: bouncerFlag } = useFeatureFlagCheck("bouncer_dashboard");
+  const showDags = isAdmin(user) || dagFlag?.accessible;
+  const showBouncers = isAdmin(user) || bouncerFlag?.accessible;
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const queryClient = useQueryClient();
   const theme = useThemeStore((s) => s.theme);
@@ -79,6 +80,14 @@ export function Sidebar() {
             tooltip="ETL Catalog"
           />
         </div>
+        <div data-nav-id="data-products">
+          <NavIcon
+            active={activeTab === "data-products"}
+            onClick={() => setActiveTab("data-products")}
+            icon={<Package className="w-5 h-5" />}
+            tooltip="Data Products"
+          />
+        </div>
         <div data-nav-id="matrix">
           <NavIcon
             active={activeTab === "matrix"}
@@ -87,22 +96,26 @@ export function Sidebar() {
             tooltip="Field Matrix"
           />
         </div>
-        <div data-nav-id="dags">
-          <NavIcon
-            active={activeTab === "dags"}
-            onClick={() => setActiveTab("dags")}
-            icon={<BarChart3 className="w-5 h-5" />}
-            tooltip="DAG Summary"
-          />
-        </div>
-        <div data-nav-id="bouncers">
-          <NavIcon
-            active={activeTab === "bouncers"}
-            onClick={() => setActiveTab("bouncers")}
-            icon={<Radio className="w-5 h-5" />}
-            tooltip="Bouncers"
-          />
-        </div>
+        {showDags && (
+          <div data-nav-id="dags">
+            <NavIcon
+              active={activeTab === "dags"}
+              onClick={() => setActiveTab("dags")}
+              icon={<BarChart3 className="w-5 h-5" />}
+              tooltip="DAG Summary"
+            />
+          </div>
+        )}
+        {showBouncers && (
+          <div data-nav-id="bouncers">
+            <NavIcon
+              active={activeTab === "bouncers"}
+              onClick={() => setActiveTab("bouncers")}
+              icon={<Radio className="w-5 h-5" />}
+              tooltip="Bouncers"
+            />
+          </div>
+        )}
         <div data-nav-id="ai">
           <NavIcon
             active={activeTab === "ai"}
@@ -200,37 +213,7 @@ export function Sidebar() {
           </TooltipContent>
         </Tooltip>
 
-        <Tooltip>
-          <TooltipTrigger>
-            <a
-              href={AIRFLOW_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="cursor-pointer"
-            >
-              <Activity
-                className={`w-5 h-5 ${
-                  airflowData?.airflow_connected
-                    ? "text-emerald-400"
-                    : "text-text-faint"
-                }`}
-              />
-            </a>
-          </TooltipTrigger>
-          <TooltipContent
-            side="right"
-            className="bg-card border-border-prominent text-foreground text-xs font-medium"
-          >
-            <div className="flex flex-col gap-0.5">
-              <span>Airflow: {airflowData?.airflow_connected ? "Online" : "Offline"}</span>
-              {dataUpdatedAt > 0 && (
-                <span className="text-text-secondary">
-                  Checked {formatRelativeTime(new Date(dataUpdatedAt).toISOString())}
-                </span>
-              )}
-            </div>
-          </TooltipContent>
-        </Tooltip>
+        {/* Airflow status indicator removed — system works with manual data */}
 
         {/* User avatar + logout */}
         {user && (

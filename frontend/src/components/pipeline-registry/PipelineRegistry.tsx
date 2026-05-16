@@ -7,9 +7,7 @@ import { PipelineSearch } from "./PipelineSearch";
 import { PipelineFilters } from "./PipelineFilters";
 import { PipelineListContent } from "./PipelineListContent";
 
-import { Download, X } from "lucide-react";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { downloadAsCSV } from "@/lib/export";
+import { X } from "lucide-react";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
 import type { PipelineFilterParams } from "@/api/pipelines";
 
@@ -31,6 +29,7 @@ export function PipelineRegistry() {
     teamFilters,
     dagFilters,
     statusFilters,
+    tagFilters,
     clearAllFilters,
   } = usePipelineStore();
   // Build server-side filter params from store sets
@@ -58,7 +57,7 @@ export function PipelineRegistry() {
   const { data: dagSummary } = useDagSummary();
 
   const hasActiveFilters =
-    teamFilters.size > 0 || dagFilters.size > 0 || statusFilters.size > 0;
+    teamFilters.size > 0 || dagFilters.size > 0 || statusFilters.size > 0 || tagFilters.size > 0;
 
   // Build DAG -> pipeline ID mapping from DAG summary
   const dagToPipelineIds = useMemo(() => {
@@ -89,13 +88,15 @@ export function PipelineRegistry() {
     return dagSummary.dags.map((d) => d.dag_id).sort();
   }, [dagSummary]);
 
-  const availableStatuses = useMemo(() => {
+  const availableTags = useMemo(() => {
     if (!pipelines) return [];
-    const statuses = new Set<string>();
+    const tags = new Set<string>();
     for (const p of pipelines) {
-      if (p.airflow_status) statuses.add(p.airflow_status);
+      for (const t of (p.tags ?? [])) {
+        tags.add(t.name);
+      }
     }
-    return Array.from(statuses);
+    return Array.from(tags).sort();
   }, [pipelines]);
 
   // Apply client-side filters
@@ -116,9 +117,17 @@ export function PipelineRegistry() {
         }
         if (!inAnyDag) return false;
       }
+      if (tagFilters.size > 0) {
+        const pipelineTags = new Set((p.tags ?? []).map((t) => t.name));
+        let hasAnyTag = false;
+        for (const tag of tagFilters) {
+          if (pipelineTags.has(tag)) { hasAnyTag = true; break; }
+        }
+        if (!hasAnyTag) return false;
+      }
       return true;
     });
-  }, [pipelines, teamFilters, dagFilters, statusFilters, dagToPipelineIds, hasActiveFilters]);
+  }, [pipelines, teamFilters, dagFilters, statusFilters, tagFilters, dagToPipelineIds, hasActiveFilters]);
 
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
 
@@ -134,10 +143,10 @@ export function PipelineRegistry() {
       result.push({ category: "\u2605 Favorites", pipelines: favPipelines });
     }
 
-    // Regular groups
+    // Group by team
     const groups = new Map<string, PipelineListItemType[]>();
     for (const pipeline of filteredPipelines) {
-      const group = pipeline.pipeline_type === "api" ? "API" : "ETL";
+      const group = pipeline.team || "Unassigned";
       if (!groups.has(group)) {
         groups.set(group, []);
       }
@@ -188,9 +197,9 @@ export function PipelineRegistry() {
           )
           .join(", "),
       );
-    if (statusFilters.size > 0) parts.push(Array.from(statusFilters).join(", "));
+    if (tagFilters.size > 0) parts.push(Array.from(tagFilters).join(", "));
     return parts.join(" \u00b7 ");
-  }, [hasActiveFilters, teamFilters, dagFilters, statusFilters]);
+  }, [hasActiveFilters, teamFilters, dagFilters, tagFilters]);
 
   const isFiltered = hasActiveFilters && pipelines.length > 0 && filteredPipelines.length !== pipelines.length;
 
@@ -201,20 +210,6 @@ export function PipelineRegistry() {
 
   const handleRetry = useCallback(() => refetch(), [refetch]);
 
-  const handleExportCSV = useCallback(() => {
-    const rows = filteredPipelines.map((p) => ({
-      name: p.name,
-      type: p.pipeline_type,
-      team: p.team,
-      status: p.airflow_status,
-      schedule: p.schedule,
-      rows_per_day: p.rows_per_day,
-      success_rate: p.success_rate,
-      last_run_at: p.last_run_at,
-    }));
-    downloadAsCSV(rows, "pipelines");
-  }, [filteredPipelines]);
-
   return (
     <div data-section="pipeline-registry" className="w-[400px] border-r border-border flex flex-col bg-background shrink-0">
       <div className="p-6 border-b border-border">
@@ -222,15 +217,6 @@ export function PipelineRegistry() {
           <h2 className="text-xl font-medium text-foreground tracking-tight">
             Pipeline Registry
           </h2>
-          <Tooltip>
-            <TooltipTrigger
-              className="p-1.5 text-text-muted hover:text-foreground rounded-lg transition-colors cursor-pointer"
-              onClick={handleExportCSV}
-            >
-              <Download className="size-4" />
-            </TooltipTrigger>
-            <TooltipContent>Export CSV</TooltipContent>
-          </Tooltip>
         </div>
         <PipelineSearch />
       </div>
@@ -245,7 +231,7 @@ export function PipelineRegistry() {
         }}
       >
         <div className="overflow-hidden">
-          <PipelineFilters availableTeams={availableTeams} availableDags={availableDags} availableStatuses={availableStatuses} />
+          <PipelineFilters availableTeams={availableTeams} availableDags={availableDags} availableTags={availableTags} />
         </div>
       </div>
 

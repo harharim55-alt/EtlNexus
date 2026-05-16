@@ -1,31 +1,23 @@
-import { usePipelineStore } from "@/stores/pipeline-store";
+import { useDataProductStore } from "@/stores/data-product-store";
 import { X } from "lucide-react";
 
 const INACTIVE_PILL =
   "text-text-muted bg-hover-bg border-border hover:border-border-prominent hover:text-text-secondary";
 
-function formatDagLabel(dagId: string) {
-  return dagId
-    .split("_")
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
-    .join(" ");
-}
-
-interface PipelineFiltersProps {
+interface DataProductFiltersProps {
   availableTeams: string[];
-  availableDags: string[];
+  availableNetworks: string[];
   availableTags: string[];
 }
 
-export function PipelineFilters({ availableTeams, availableDags, availableTags }: PipelineFiltersProps) {
-  const { teamFilters, dagFilters, tagFilters, toggleFilter, clearAllFilters } =
-    usePipelineStore();
+export function DataProductFilters({ availableTeams, availableNetworks, availableTags }: DataProductFiltersProps) {
+  const { teamFilters, networkFilters, tagFilters, toggleFilter, clearAllFilters } =
+    useDataProductStore();
 
-  const hasActive = teamFilters.size > 0 || dagFilters.size > 0 || tagFilters.size > 0;
+  const hasActive = teamFilters.size > 0 || networkFilters.size > 0 || tagFilters.size > 0;
 
   return (
     <div className="px-5 pb-4 pt-1 space-y-3">
-      {/* Header row */}
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-mono uppercase tracking-widest text-text-faint">
           Filters
@@ -42,7 +34,6 @@ export function PipelineFilters({ availableTeams, availableDags, availableTags }
         )}
       </div>
 
-      {/* Team section */}
       {availableTeams.length > 0 && (
         <FilterSection label="Team">
           {availableTeams.map((team) => (
@@ -52,7 +43,7 @@ export function PipelineFilters({ availableTeams, availableDags, availableTags }
               onClick={() => toggleFilter("team", team)}
               className={`text-[10px] font-mono px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
                 teamFilters.has(team)
-                  ? "text-indigo-300 bg-indigo-500/15 border-indigo-500/30 shadow-[0_0_8px_rgba(99,102,241,0.12)]"
+                  ? "text-indigo-300 bg-indigo-500/15 border-indigo-500/30"
                   : INACTIVE_PILL
               }`}
             >
@@ -62,27 +53,25 @@ export function PipelineFilters({ availableTeams, availableDags, availableTags }
         </FilterSection>
       )}
 
-      {/* DAG / Network section */}
-      {availableDags.length > 0 && (
+      {availableNetworks.length > 0 && (
         <FilterSection label="Network">
-          {availableDags.map((dagId) => (
+          {availableNetworks.map((network) => (
             <button
-              key={dagId}
+              key={network}
               type="button"
-              onClick={() => toggleFilter("dag", dagId)}
+              onClick={() => toggleFilter("network", network)}
               className={`text-[10px] font-mono px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
-                dagFilters.has(dagId)
-                  ? "text-teal-300 bg-teal-500/15 border-teal-500/30 shadow-[0_0_8px_rgba(45,212,191,0.12)]"
+                networkFilters.has(network)
+                  ? "text-teal-300 bg-teal-500/15 border-teal-500/30"
                   : INACTIVE_PILL
               }`}
             >
-              {formatDagLabel(dagId)}
+              {network}
             </button>
           ))}
         </FilterSection>
       )}
 
-      {/* Tag section */}
       {availableTags.length > 0 && (
         <FilterSection label="Tag">
           {availableTags.map((tag) => (
@@ -92,7 +81,7 @@ export function PipelineFilters({ availableTeams, availableDags, availableTags }
               onClick={() => toggleFilter("tag", tag)}
               className={`text-[10px] font-mono px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
                 tagFilters.has(tag)
-                  ? "text-amber-300 bg-amber-500/15 border-amber-500/30 shadow-[0_0_8px_rgba(245,158,11,0.12)]"
+                  ? "text-amber-300 bg-amber-500/15 border-amber-500/30"
                   : INACTIVE_PILL
               }`}
             >

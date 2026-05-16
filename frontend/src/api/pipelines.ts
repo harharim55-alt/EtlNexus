@@ -12,6 +12,8 @@ export interface PipelineFilterParams {
   team?: string[];
   dag_id?: string[];
   status?: string[];
+  tag?: string[];
+  is_data_product?: boolean;
 }
 
 export async function fetchPipelines(
@@ -80,6 +82,13 @@ export async function restoreRevision(
 ): Promise<PipelineUpdateResponse> {
   const { data } = await apiClient.post<PipelineUpdateResponse>(
     `/pipelines/${pipelineId}/revisions/${revisionId}/restore`,
+  );
+  return data;
+}
+
+export async function promoteToDataProduct(pipelineId: string): Promise<PipelineDetail> {
+  const { data } = await apiClient.post<PipelineDetail>(
+    `/data-products/from-pipeline/${pipelineId}`,
   );
   return data;
 }

@@ -1,7 +1,7 @@
 import { create } from "zustand";
 import type { TabType } from "@/lib/constants";
 
-const VALID_TABS: TabType[] = ["catalog", "matrix", "dags", "bouncers", "ai", "admin"];
+const VALID_TABS: TabType[] = ["catalog", "data-products", "matrix", "dags", "bouncers", "ai", "admin"];
 
 export interface ParsedHash {
   tab: TabType;

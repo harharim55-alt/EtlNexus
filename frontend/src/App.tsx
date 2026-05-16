@@ -7,11 +7,11 @@ import { useAuthStore } from "@/stores/auth-store";
 import { useComparisonStore } from "@/stores/comparison-store";
 import { isAdmin } from "@/lib/permissions";
 import { PipelineRegistry } from "@/components/pipeline-registry/PipelineRegistry";
+import { DataProductRegistry } from "@/components/data-products/DataProductRegistry";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuthBootstrap } from "@/components/auth/AuthProvider";
 import { OnboardingOverlay } from "@/components/onboarding/OnboardingOverlay";
 import { CommandPalette } from "@/components/shared/CommandPalette";
-import { Breadcrumbs } from "@/components/layout/Breadcrumbs";
 
 const BentoWorkspace = lazy(() =>
   import("@/components/bento-workspace/BentoWorkspace").then((m) => ({
@@ -46,6 +46,12 @@ const AdminView = lazy(() =>
 const ComparisonView = lazy(() =>
   import("@/components/comparison/ComparisonView").then((m) => ({
     default: m.ComparisonView,
+  }))
+);
+
+const DataProductWorkspace = lazy(() =>
+  import("@/components/data-products/DataProductWorkspace").then((m) => ({
+    default: m.DataProductWorkspace,
   }))
 );
 
@@ -104,7 +110,6 @@ function AppContent() {
     <>
       <AppShell>
         <div className="flex flex-col h-full">
-          <Breadcrumbs />
           <div className="flex flex-1 min-h-0">
             {activeTab === "catalog" && !isComparing && (
               <>
@@ -119,6 +124,14 @@ function AppContent() {
                 <PipelineRegistry />
                 <Suspense fallback={<TabSkeleton />}>
                   <ComparisonView />
+                </Suspense>
+              </>
+            )}
+            {activeTab === "data-products" && (
+              <>
+                <DataProductRegistry />
+                <Suspense fallback={<TabSkeleton />}>
+                  <DataProductWorkspace />
                 </Suspense>
               </>
             )}

@@ -6,6 +6,7 @@ import type { TabType } from "@/lib/constants";
 
 const TAB_LABELS: Record<TabType, string> = {
   catalog: "Catalog",
+  "data-products": "Data Products",
   matrix: "Field Matrix",
   dags: "DAG Summary",
   bouncers: "Bouncers",

@@ -10,11 +10,12 @@ export interface PipelineState {
   teamFilters: Set<string>;
   dagFilters: Set<string>;
   statusFilters: Set<string>;
+  tagFilters: Set<string>;
   setSelectedPipelineId: (id: string | null) => void;
   setSelectedDagId: (dagId: string | null) => void;
   setSearchQuery: (query: string) => void;
   setFiltersOpen: (open: boolean) => void;
-  toggleFilter: (dimension: "team" | "dag" | "status", value: string) => void;
+  toggleFilter: (dimension: "team" | "dag" | "status" | "tag", value: string) => void;
   clearAllFilters: () => void;
 }
 
@@ -22,6 +23,7 @@ const FILTER_KEYS = {
   team: "teamFilters",
   dag: "dagFilters",
   status: "statusFilters",
+  tag: "tagFilters",
 } as const;
 
 // NOTE: This store writes to window.location.hash when the selected pipeline
@@ -36,6 +38,7 @@ export const usePipelineStore = create<PipelineState>((set) => ({
   teamFilters: new Set<string>(),
   dagFilters: new Set<string>(),
   statusFilters: new Set<string>(),
+  tagFilters: new Set<string>(),
   setSelectedPipelineId: (id) => {
     useRunSelectorStore.getState().clearRun();
     set({ selectedPipelineId: id, selectedDagId: null });
@@ -60,5 +63,6 @@ export const usePipelineStore = create<PipelineState>((set) => ({
       teamFilters: new Set<string>(),
       dagFilters: new Set<string>(),
       statusFilters: new Set<string>(),
+      tagFilters: new Set<string>(),
     }),
 }));

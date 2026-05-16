@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { ArrowRight, Ban, ChevronDown, Search } from "lucide-react";
+import { ArrowRight, Ban, ChevronDown, FlaskConical, Search } from "lucide-react";
 import { formatDateAdmin } from "@/lib/format";
-import { useAdminUsers, useAdminGrants, useAdminTeams, useUpdateUserRole, useUpdateUserActive } from "@/hooks/use-admin";
+import { useAdminUsers, useAdminGrants, useAdminTeams, useUpdateUserRole, useUpdateUserActive, useUpdateUserBeta } from "@/hooks/use-admin";
 import { useQuery } from "@tanstack/react-query";
 import { fetchPipelines } from "@/api/pipelines";
 import { LoadingState } from "@/components/shared/LoadingState";
@@ -39,6 +39,7 @@ export function UsersPanel() {
   });
   const updateRole = useUpdateUserRole();
   const updateActive = useUpdateUserActive();
+  const updateBeta = useUpdateUserBeta();
   const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
@@ -179,6 +180,31 @@ export function UsersPanel() {
                         {u.role}
                       </button>
                     )}
+                  </div>
+
+                  {/* Beta access toggle */}
+                  <div
+                    className="shrink-0"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() =>
+                        updateBeta.mutate({
+                          userId: u.id,
+                          isBeta: !u.is_beta,
+                        })
+                      }
+                      disabled={updateBeta.isPending}
+                      title={u.is_beta ? "Remove beta access" : "Grant beta access"}
+                      className={`p-1.5 rounded-md border transition-all cursor-pointer ${
+                        u.is_beta
+                          ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
+                          : "text-text-muted border-transparent hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20"
+                      }`}
+                    >
+                      <FlaskConical className="size-3.5" />
+                    </button>
                   </div>
 
                   {/* Activate / deactivate toggle */}

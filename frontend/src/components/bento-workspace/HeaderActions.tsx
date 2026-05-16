@@ -1,5 +1,5 @@
 import {
-  FileText,
+  Settings,
   User,
   Calendar,
   Clock,
@@ -25,7 +25,8 @@ interface HeaderActionsProps {
   airflowUrl: string;
   isSyncing: boolean;
   onSync: () => void;
-  onOpenDocs: () => void;
+  onOpenSettings?: () => void;
+  canEdit?: boolean;
 }
 
 /* ── Component ─────────────────────────────────────────────────────── */
@@ -39,7 +40,8 @@ export function HeaderActions({
   airflowUrl,
   isSyncing,
   onSync,
-  onOpenDocs,
+  onOpenSettings,
+  canEdit,
 }: HeaderActionsProps) {
   const fresh = executionDate ? formatFreshness(executionDate) : null;
 
@@ -73,24 +75,26 @@ export function HeaderActions({
         </span>
       )}
 
-      {/* Docs icon-button */}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="outline"
-              size="icon-sm"
-              onClick={onOpenDocs}
-              className="border-border-prominent bg-hover-bg text-text-secondary hover:text-indigo-400 hover:bg-indigo-500/10 hover:border-indigo-500/20 transition-all duration-200"
-            />
-          }
-        >
-          <FileText className="size-3.5" />
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          Open Documentation
-        </TooltipContent>
-      </Tooltip>
+      {/* Settings */}
+      {canEdit && onOpenSettings && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="icon-sm"
+                onClick={onOpenSettings}
+                className="border-border-prominent bg-hover-bg text-text-secondary hover:text-foreground hover:bg-hover-bg-strong transition-all duration-200"
+              />
+            }
+          >
+            <Settings className="size-3.5" />
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Settings
+          </TooltipContent>
+        </Tooltip>
+      )}
 
       {/* Open in Airflow */}
       {dagId && taskId && (
@@ -120,30 +124,32 @@ export function HeaderActions({
         </Tooltip>
       )}
 
-      {/* Sync button */}
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isSyncing}
-              onClick={onSync}
-              className="border-border-prominent bg-hover-bg text-text-secondary hover:text-foreground hover:bg-hover-bg-strong transition-all duration-200"
+      {/* Sync button — only for Airflow-linked pipelines */}
+      {dagId && taskId && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isSyncing}
+                onClick={onSync}
+                className="border-border-prominent bg-hover-bg text-text-secondary hover:text-foreground hover:bg-hover-bg-strong transition-all duration-200"
+              />
+            }
+          >
+            <RefreshCw
+              className={`size-3.5 ${isSyncing ? "animate-spin" : ""}`}
             />
-          }
-        >
-          <RefreshCw
-            className={`size-3.5 ${isSyncing ? "animate-spin" : ""}`}
-          />
-          <span className="text-xs">
-            {isSyncing ? "Syncing\u2026" : "Sync"}
-          </span>
-        </TooltipTrigger>
-        <TooltipContent side="bottom">
-          Refresh this pipeline from Airflow
-        </TooltipContent>
-      </Tooltip>
+            <span className="text-xs">
+              {isSyncing ? "Syncing\u2026" : "Sync"}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Refresh this pipeline from Airflow
+          </TooltipContent>
+        </Tooltip>
+      )}
     </div>
   );
 }

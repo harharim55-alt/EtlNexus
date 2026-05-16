@@ -4,11 +4,10 @@ import { usePipelineStore } from "@/stores/pipeline-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { BentoHeader } from "./BentoHeader";
+import { DocumentationPreview } from "./DocumentationPreview";
 import { LineageTopology } from "./LineageTopology";
-import { MetricsCards } from "./MetricsCards";
 import { SchemaViewer } from "./SchemaViewer";
 import { ConsumeSnippet } from "./ConsumeSnippet";
-import { JoinIntelligence } from "./JoinIntelligence";
 import { UsageCard } from "./UsageCard";
 import { ResourcePerformanceCard } from "./ResourcePerformanceCard";
 import { TransformInspectorCard } from "./TransformInspectorCard";
@@ -34,9 +33,9 @@ export function BentoWorkspace() {
         <Skeleton className="h-8 w-64 bg-hover-bg mb-2" />
         <Skeleton className="h-5 w-96 bg-hover-bg mb-8" />
         <div className="grid grid-cols-12 gap-6">
+          <Skeleton className="col-span-12 h-24 bg-hover-bg rounded-2xl" />
           <Skeleton className="col-span-12 lg:col-span-8 h-48 bg-hover-bg rounded-2xl" />
           <Skeleton className="col-span-12 lg:col-span-4 h-48 bg-hover-bg rounded-2xl" />
-          <Skeleton className="col-span-12 h-36 bg-hover-bg rounded-2xl" />
           <Skeleton className="col-span-12 lg:col-span-7 h-64 bg-hover-bg rounded-2xl" />
           <Skeleton className="col-span-12 lg:col-span-5 h-64 bg-hover-bg rounded-2xl" />
         </div>
@@ -59,45 +58,68 @@ export function BentoWorkspace() {
     <div data-section="bento-workspace" className="flex-1 overflow-y-auto p-8 custom-scrollbar">
       <BentoHeader
         pipeline={pipeline}
-        onSaveDescription={(description) =>
-          updatePipeline({ description })
-        }
-        onSaveDocumentation={(documentation) =>
-          updatePipeline({ documentation })
-        }
+        onSaveDescription={(description) => updatePipeline({ description })}
+        onSaveDocumentation={(documentation) => updatePipeline({ documentation })}
+        onUpdate={(updates) => updatePipeline(updates as Record<string, unknown>)}
         isSaving={isSaving}
         canEdit={pipeline.can_edit}
       />
 
       <div className="grid grid-cols-12 gap-6 mt-6">
+        {/* Documentation preview */}
+        <DocumentationPreview
+          pipelineId={pipeline.id}
+          pipelineName={stripDummy(pipeline.name)}
+          documentation={pipeline.documentation}
+          onSave={(doc) => updatePipeline({ documentation: doc })}
+          isSaving={isSaving}
+          canEdit={pipeline.can_edit}
+        />
+
+        {/* Import & Consume */}
+        <div className="col-span-12">
+          <ConsumeSnippet
+            pipelineName={stripDummy(pipeline.name)}
+            pipelineType={pipeline.pipeline_type}
+            team={pipeline.team}
+            importSnippet={pipeline.import_snippet}
+          />
+        </div>
+
         {isApiPipeline(pipeline.pipeline_type) ? (
           <>
-            {/* API layout: Topology full-width, then Usage + Consume side by side */}
-            <LineageTopology pipelineId={pipeline.id} fullWidth />
+            {pipeline.topology_enabled && (
+              <LineageTopology pipelineId={pipeline.id} fullWidth />
+            )}
             <div className="col-span-12 lg:col-span-7">
-              <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
+              <SchemaViewer
+                fields={pipeline.fields}
+                pipelineId={pipeline.id}
+                canEdit={pipeline.can_edit}
+                schemaManuallyEdited={pipeline.schema_manually_edited}
+              />
             </div>
             <div className="col-span-12 lg:col-span-5">
-              <ConsumeSnippet pipelineName={stripDummy(pipeline.name)} pipelineType={pipeline.pipeline_type} team={pipeline.team} />
+              <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
             </div>
           </>
         ) : (
           <>
-            {/* ETL layout: Topology + Metrics, Resources, Plan, Schema + Usage + Joins */}
-            <LineageTopology pipelineId={pipeline.id} />
-            <MetricsCards
-              rowsPerDay={pipeline.rows_per_day}
-              schedule={pipeline.schedule}
-            />
+            {pipeline.topology_enabled && (
+              <LineageTopology pipelineId={pipeline.id} fullWidth />
+            )}
             <ResourcePerformanceCard pipelineId={pipeline.id} />
             <TransformInspectorCard pipelineId={pipeline.id} />
-            <div className="col-span-12 lg:col-span-7 flex flex-col gap-6">
-              <SchemaViewer fields={pipeline.fields} />
-              <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
+            <div className="col-span-12 lg:col-span-7">
+              <SchemaViewer
+                fields={pipeline.fields}
+                pipelineId={pipeline.id}
+                canEdit={pipeline.can_edit}
+                schemaManuallyEdited={pipeline.schema_manually_edited}
+              />
             </div>
-            <div className="col-span-12 lg:col-span-5 flex flex-col gap-6">
-              <JoinIntelligence pipelineId={pipeline.id} />
-              <ConsumeSnippet pipelineName={stripDummy(pipeline.name)} pipelineType={pipeline.pipeline_type} team={pipeline.team} />
+            <div className="col-span-12 lg:col-span-5">
+              <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
             </div>
           </>
         )}

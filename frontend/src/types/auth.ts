@@ -17,5 +17,6 @@ export interface UserInfo {
   display_name: string;
   role: string;
   is_active: boolean;
+  is_beta: boolean;
   teams: TeamMembership[];
 }

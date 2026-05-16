@@ -40,6 +40,17 @@ export async function updateUserActive(
   return data;
 }
 
+export async function updateUserBeta(
+  userId: string,
+  isBeta: boolean,
+): Promise<{ ok: boolean }> {
+  const { data } = await apiClient.patch<{ ok: boolean }>(
+    `/users/${userId}/beta`,
+    { is_beta: isBeta },
+  );
+  return data;
+}
+
 export async function fetchTeams(): Promise<AdminTeam[]> {
   const { data } = await apiClient.get<AdminTeam[]>("/teams");
   return data;

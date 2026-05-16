@@ -79,15 +79,16 @@ export function EditableTitle({
         <textarea
           ref={textareaRef}
           value={editValue}
-          onChange={(e) => setEditValue(e.target.value)}
+          onChange={(e) => setEditValue(e.target.value.slice(0, 270))}
           onKeyDown={handleKeyDown}
+          maxLength={270}
           className="w-full bg-background border border-indigo-500/40 rounded-xl p-4 text-sm text-text-primary leading-relaxed focus:outline-none focus:ring-1 focus:ring-indigo-500/50 transition-all resize-none placeholder:text-text-faint"
           rows={3}
           placeholder="Enter a brief description of this pipeline..."
         />
         <div className="flex items-center justify-between mt-2">
           <span className="text-[10px] text-text-faint font-mono select-none">
-            Ctrl+Enter to save · Esc to cancel
+            {editValue.length}/270 · Ctrl+Enter to save · Esc to cancel
           </span>
           <div className="flex gap-2">
             <button

@@ -1,19 +1,14 @@
 import { lazy, Suspense, useState } from "react";
-import { Clock, Users } from "lucide-react";
-import { StatusBadge } from "@/components/shared/StatusBadge";
+import { Users, Clock } from "lucide-react";
 import { useSyncPipeline } from "@/hooks/use-sync-pipeline";
 import { useTopology } from "@/hooks/use-topology";
 import type { PipelineDetail } from "@/types/pipeline";
-import { stripDummy, formatRelativeTime } from "@/lib/format";
+import { stripDummy } from "@/lib/format";
 import { HeaderActions } from "./HeaderActions";
 import { EditableTitle } from "./EditableTitle";
 import { RunSelector } from "./RunSelector";
+import { PipelineSettingsModal } from "./PipelineSettingsModal";
 import { AIRFLOW_URL } from "@/lib/config";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 const DocumentationModal = lazy(() =>
   import("./DocumentationModal").then((m) => ({ default: m.DocumentationModal }))
@@ -23,6 +18,7 @@ interface BentoHeaderProps {
   pipeline: PipelineDetail;
   onSaveDescription: (description: string) => void;
   onSaveDocumentation: (documentation: string) => void;
+  onUpdate: (updates: Record<string, unknown>) => void;
   isSaving: boolean;
   canEdit: boolean;
 }
@@ -31,24 +27,26 @@ export function BentoHeader({
   pipeline,
   onSaveDescription,
   onSaveDocumentation,
+  onUpdate,
   isSaving,
   canEdit,
 }: BentoHeaderProps) {
   const { mutate: sync, isPending: isSyncing } = useSyncPipeline(pipeline.id);
   const { data: topology } = useTopology(pipeline.id);
-
   const [docOpen, setDocOpen] = useState(false);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+
+  const tags = pipeline.tags ?? [];
 
   return (
     <>
       <div className="bg-card border border-border rounded-2xl p-5">
-        {/* Identity row: Name + Status + Category | Metadata + Docs + Sync */}
+        {/* Identity row */}
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3 min-w-0">
             <h1 className="text-xl font-semibold text-foreground tracking-tight truncate">
               {stripDummy(pipeline.name)}
             </h1>
-            <StatusBadge status={pipeline.airflow_status} size="md" />
             {pipeline.category && (
               <span className="text-[10px] font-mono uppercase tracking-[0.15em] text-indigo-400 bg-indigo-500/[0.08] px-2.5 py-1 rounded-md border border-indigo-500/15 shrink-0">
                 {pipeline.category}
@@ -60,27 +58,17 @@ export function BentoHeader({
                 {pipeline.team}
               </span>
             )}
-            {pipeline.last_checked_at && (
-              <Tooltip>
-                <TooltipTrigger className="flex items-center gap-1 text-[10px] font-mono text-text-muted bg-hover-bg px-2 py-1 rounded-md border border-border shrink-0 cursor-default">
-                  <Clock className="size-3" />
-                  {formatRelativeTime(pipeline.last_checked_at)}
-                </TooltipTrigger>
-                <TooltipContent
-                  side="bottom"
-                  className="bg-card border-border-prominent text-foreground text-xs font-medium"
-                >
-                  Last synced from Airflow
-                </TooltipContent>
-              </Tooltip>
+            {(pipeline.schedule || pipeline.schedule_type) && (
+              <span className="flex items-center gap-1 text-[10px] font-mono text-text-muted bg-hover-bg px-2.5 py-1 rounded-md border border-border shrink-0">
+                <Clock className="size-3" />
+                {pipeline.schedule ?? pipeline.schedule_type}
+              </span>
             )}
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
             <RunSelector pipelineId={pipeline.id} />
-
             <div className="w-px h-5 bg-hover-bg-strong" />
-
             <HeaderActions
               lastUpdatedBy={pipeline.last_updated_by}
               lastUpdatedAt={pipeline.last_updated_at}
@@ -90,7 +78,8 @@ export function BentoHeader({
               airflowUrl={AIRFLOW_URL}
               isSyncing={isSyncing}
               onSync={() => sync()}
-              onOpenDocs={() => setDocOpen(true)}
+              onOpenSettings={() => setSettingsOpen(true)}
+              canEdit={canEdit}
             />
           </div>
         </div>
@@ -103,6 +92,21 @@ export function BentoHeader({
           isSaving={isSaving}
           onSaveDescription={onSaveDescription}
         />
+
+        {/* Tags (read-only display) */}
+        {tags.length > 0 && (
+          <div className="mt-3 flex items-center gap-2 flex-wrap">
+            {tags.map((tag) => (
+              <span
+                key={tag.id}
+                className="text-[10px] font-mono px-2.5 py-1 rounded-full bg-amber-500/10 text-amber-300 border border-amber-500/20"
+              >
+                {tag.name}
+              </span>
+            ))}
+          </div>
+        )}
+
       </div>
 
       <Suspense fallback={null}>
@@ -120,6 +124,14 @@ export function BentoHeader({
           canEdit={canEdit}
         />
       </Suspense>
+
+      <PipelineSettingsModal
+        open={settingsOpen}
+        onClose={() => setSettingsOpen(false)}
+        pipeline={pipeline}
+        onUpdate={onUpdate}
+        isSaving={isSaving}
+      />
     </>
   );
 }

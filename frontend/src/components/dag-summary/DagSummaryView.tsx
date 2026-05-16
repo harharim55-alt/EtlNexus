@@ -1,32 +1,15 @@
-import { useCallback } from "react";
-import { BarChart3, Download } from "lucide-react";
+import { BarChart3 } from "lucide-react";
 import { useDagSummary } from "@/hooks/use-dag-summary";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { DateRangePicker } from "@/components/shared/DateRangePicker";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { downloadAsCSV } from "@/lib/export";
-import { AggregateBar } from "./AggregateBar";
 import { ExecutiveSummary } from "./ExecutiveSummary";
 import { DagCard } from "./DagCard";
 import { formatRelativeTime } from "@/lib/format";
 
 export function DagSummaryView() {
   const { data, isLoading, error, refetch, dataUpdatedAt } = useDagSummary();
-
-  const handleExportCSV = useCallback(() => {
-    if (!data) return;
-    const rows = data.dags.map((dag) => ({
-      dag_id: dag.dag_id,
-      task_count: dag.task_count,
-      pipeline_count: dag.pipeline_count,
-      success_rate: dag.success_rate,
-      total_duration_seconds: dag.total_duration_seconds,
-      latest_run_start: dag.latest_run_start,
-    }));
-    downloadAsCSV(rows, "dag-summary");
-  }, [data]);
 
   if (isLoading) {
     return (
@@ -78,29 +61,13 @@ export function DagSummaryView() {
                 </p>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              <Tooltip>
-                <TooltipTrigger
-                  className="p-1.5 text-text-muted hover:text-foreground rounded-lg transition-colors cursor-pointer"
-                  onClick={handleExportCSV}
-                >
-                  <Download className="size-4" />
-                </TooltipTrigger>
-                <TooltipContent>Export CSV</TooltipContent>
-              </Tooltip>
-              <DateRangePicker />
-            </div>
+            <DateRangePicker />
           </div>
         </div>
 
         {/* Executive KPI Summary */}
         <div className="mb-6">
           <ExecutiveSummary aggregate={data.aggregate} dags={data.dags} />
-        </div>
-
-        {/* Aggregate Stats */}
-        <div className="mb-8">
-          <AggregateBar aggregate={data.aggregate} />
         </div>
 
         {/* DAG Cards Grid */}

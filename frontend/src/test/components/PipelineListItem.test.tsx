@@ -11,12 +11,16 @@ function makePipeline(overrides: Partial<PipelineListItemType> = {}): PipelineLi
     category: "Network Infrastructure",
     pipeline_type: "etl",
     schedule: "@daily",
+    schedule_type: null,
     rows_per_day: "50K",
     airflow_status: "success",
     success_rate: 95,
     team: "Dagger",
     last_run_at: null,
     execution_date: null,
+    tags: [],
+    is_data_product: false,
+    network_names: [],
     ...overrides,
   };
 }

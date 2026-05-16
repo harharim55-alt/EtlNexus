@@ -1,12 +1,10 @@
 import { useEffect, useMemo, useRef, useCallback, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Download, Network, Search } from "lucide-react";
+import { Network, Search } from "lucide-react";
 import { useSchemaMatrix } from "@/hooks/use-schema-matrix";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
-import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
-import { downloadAsCSV } from "@/lib/export";
 import { FieldFrequencyRow } from "./FieldFrequencyRow";
 
 /* ── Module-level constants ────────────────────────────────────────── */
@@ -58,15 +56,6 @@ export function SchemaMatrixView() {
     (el: Element) => el.getBoundingClientRect().height,
     [],
   );
-
-  const handleExportCSV = useCallback(() => {
-    const rows = fields.map((f) => ({
-      field_name: f.field_name,
-      frequency: f.frequency,
-      pipelines: f.pipelines.map((p) => p.pipeline_name).join(", "),
-    }));
-    downloadAsCSV(rows, "schema-matrix");
-  }, [fields]);
 
   const virtualizer = useVirtualizer({
     count: fields.length,
@@ -129,15 +118,6 @@ export function SchemaMatrixView() {
                 Fields shared across 2+ pipelines — {totalLabel} fields found
               </p>
             </div>
-            <Tooltip>
-              <TooltipTrigger
-                className="p-1.5 text-text-muted hover:text-foreground rounded-lg transition-colors cursor-pointer"
-                onClick={handleExportCSV}
-              >
-                <Download className="size-4" />
-              </TooltipTrigger>
-              <TooltipContent>Export CSV</TooltipContent>
-            </Tooltip>
           </div>
 
           {/* Search Input */}

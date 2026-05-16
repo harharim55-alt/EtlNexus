@@ -3,6 +3,7 @@ import {
   fetchUsers,
   updateUserRole,
   updateUserActive,
+  updateUserBeta,
   fetchTeams,
   fetchTeamDetail,
   fetchGrants,
@@ -87,6 +88,21 @@ export function useUpdateUserActive() {
     },
     onError: () => {
       toast.error("Failed to update user status");
+    },
+  });
+}
+
+export function useUpdateUserBeta() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ userId, isBeta }: { userId: string; isBeta: boolean }) =>
+      updateUserBeta(userId, isBeta),
+    onSuccess: () => {
+      toast.success("Beta access updated");
+      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
+    },
+    onError: () => {
+      toast.error("Failed to update beta access");
     },
   });
 }

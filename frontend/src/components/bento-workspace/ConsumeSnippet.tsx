@@ -7,11 +7,29 @@ interface ConsumeSnippetProps {
   pipelineName: string;
   pipelineType?: string;
   team?: string | null;
+  importSnippet?: string | null;
 }
 
-export function ConsumeSnippet({ pipelineName, pipelineType, team }: ConsumeSnippetProps) {
+export function ConsumeSnippet({ pipelineName, pipelineType, team, importSnippet }: ConsumeSnippetProps) {
   const importName = stripDummy(pipelineName).toLowerCase().replace(/ /g, "_");
   const isApi = isApiPipeline(pipelineType);
+
+  // Manual snippet override
+  if (importSnippet) {
+    return (
+      <div className="bg-card border border-border rounded-2xl p-5 shrink-0">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-[11px] font-mono uppercase tracking-widest text-text-muted flex items-center gap-2">
+            <Code className="w-3.5 h-3.5" /> Import & Consume
+          </h3>
+          <CopyButton text={importSnippet} />
+        </div>
+        <div className="bg-background rounded-xl p-4 border border-border overflow-x-auto">
+          <pre className="text-xs font-mono leading-relaxed text-text-primary whitespace-pre-wrap">{importSnippet}</pre>
+        </div>
+      </div>
+    );
+  }
 
   if (isApi) {
     const apiCode = `from path import api\n\n${importName} = ${importName}(start_date, end_date)`;
@@ -49,10 +67,9 @@ export function ConsumeSnippet({ pipelineName, pipelineType, team }: ConsumeSnip
         <h3 className="text-[11px] font-mono uppercase tracking-widest text-text-muted flex items-center gap-2">
           <Code className="w-3.5 h-3.5" /> Import & Consume
         </h3>
-        <CopyButton text={`${catalogCode}`} />
+        <CopyButton text={catalogCode} />
       </div>
 
-      {/* Catalog Import */}
       <div className="bg-background rounded-xl p-4 border border-border overflow-x-auto">
         <code className="text-xs font-mono leading-relaxed text-text-primary">
           <span className="text-pink-500">from</span> etls{" "}

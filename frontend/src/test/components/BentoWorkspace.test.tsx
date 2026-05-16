@@ -29,10 +29,6 @@ vi.mock("@/components/bento-workspace/LineageTopology", () => ({
   LineageTopology: () => <div data-testid="lineage-topology" />,
 }));
 
-vi.mock("@/components/bento-workspace/MetricsCards", () => ({
-  MetricsCards: () => <div data-testid="metrics-cards" />,
-}));
-
 vi.mock("@/components/bento-workspace/SchemaViewer", () => ({
   SchemaViewer: () => <div data-testid="schema-viewer" />,
 }));
@@ -78,6 +74,7 @@ function makeStoreSelector(selectedPipelineId: string | null) {
       teamFilters: new Set<string>(),
       dagFilters: new Set<string>(),
       statusFilters: new Set<string>(),
+      tagFilters: new Set<string>(),
       setSelectedPipelineId: vi.fn(),
       setSelectedDagId: vi.fn(),
       setSearchQuery: vi.fn(),
@@ -111,6 +108,16 @@ function makePipelineDetail(overrides: Partial<PipelineDetail> = {}): PipelineDe
     can_edit: true,
     execution_date: null,
     last_checked_at: null,
+    tags: [],
+    how_to_read: null,
+    import_snippet: null,
+    schedule_type: null,
+    schema_manually_edited: false,
+    topology_enabled: true,
+    is_data_product: false,
+    writes_to_manual: null,
+    reads_from_manual: null,
+    feeds_into_manual: null,
     ...overrides,
   };
 }

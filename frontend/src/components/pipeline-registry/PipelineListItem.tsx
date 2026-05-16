@@ -1,22 +1,16 @@
 import { memo } from "react";
-import { Star, GitCompareArrows } from "lucide-react";
+import { Star, GitCompareArrows, PackagePlus } from "lucide-react";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
-import { stripDummy, formatFreshness, formatCount, formatDateFull } from "@/lib/format";
+import { stripDummy } from "@/lib/format";
 import { useFavoritesStore } from "@/stores/favorites-store";
 import { useComparisonStore } from "@/stores/comparison-store";
 import { usePipelineStore } from "@/stores/pipeline-store";
+import { usePromoteToDataProduct } from "@/hooks/use-promote-to-data-product";
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-
-function getSuccessRateDot(rate: number | null) {
-  if (rate == null) return { color: "bg-slate-500", title: "No recent runs" };
-  if (rate >= 80) return { color: "bg-emerald-500", title: `${rate}% success (30d)` };
-  if (rate >= 50) return { color: "bg-amber-500", title: `${rate}% success (30d)` };
-  return { color: "bg-rose-500", title: `${rate}% success (30d)` };
-}
 
 interface PipelineListItemProps {
   pipeline: PipelineListItemType;
@@ -29,21 +23,16 @@ export const PipelineListItem = memo(function PipelineListItem({
   isActive,
   onClick,
 }: PipelineListItemProps) {
-  const dot = getSuccessRateDot(pipeline.success_rate);
   const isFavorite = useFavoritesStore((s) => s.favoriteIds.includes(pipeline.id));
   const toggleFavorite = useFavoritesStore((s) => s.toggleFavorite);
   const startComparison = useComparisonStore((s) => s.startComparison);
   const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
-
-  const fresh = formatFreshness(pipeline.last_run_at);
-  const staleBorder = fresh.stale && fresh.label !== "never"
-    ? "border-l-2 border-l-rose-500/30"
-    : "";
+  const promote = usePromoteToDataProduct();
 
   return (
     <div
       onClick={onClick}
-      className={`group/item p-4 rounded-xl cursor-pointer transition-all duration-200 border ${staleBorder} ${
+      className={`group/item p-4 rounded-xl cursor-pointer transition-all duration-200 border ${
         isActive
           ? "bg-card border-indigo-500/30 shadow-[0_4px_20px_rgba(0,0,0,0.2)]"
           : "bg-transparent border-transparent hover:bg-hover-bg"
@@ -74,6 +63,26 @@ export const PipelineListItem = memo(function PipelineListItem({
           </h3>
         </div>
         <div className="flex items-center gap-1.5 shrink-0">
+          {/* Promote to Data Product — ETL pipelines only */}
+          {!pipeline.is_data_product && (
+            <Tooltip>
+              <TooltipTrigger
+                className="opacity-0 group-hover/item:opacity-100 transition-opacity cursor-pointer text-text-muted hover:text-emerald-400 mt-1"
+                onClick={(e: React.MouseEvent) => {
+                  e.stopPropagation();
+                  promote.mutate(pipeline.id);
+                }}
+              >
+                <PackagePlus className="size-3.5" />
+              </TooltipTrigger>
+              <TooltipContent
+                side="right"
+                className="bg-card border-border-prominent text-foreground text-xs font-medium"
+              >
+                Import to Data Products
+              </TooltipContent>
+            </Tooltip>
+          )}
           {/* Compare button — visible on hover */}
           {selectedPipelineId && selectedPipelineId !== pipeline.id && (
             <Tooltip>
@@ -94,46 +103,28 @@ export const PipelineListItem = memo(function PipelineListItem({
               </TooltipContent>
             </Tooltip>
           )}
-
-          <Tooltip>
-            <TooltipTrigger className="shrink-0 mt-1.5 cursor-default">
-              <span className={`block h-2 w-2 rounded-full ${dot.color}`} />
-            </TooltipTrigger>
-            <TooltipContent
-              side="right"
-              className="bg-card border-border-prominent text-foreground text-xs font-medium"
-            >
-              <div className="flex flex-col gap-0.5">
-                <span>{dot.title}</span>
-                {pipeline.execution_date && (
-                  <span className="text-text-secondary">
-                    Last run: {formatDateFull(pipeline.execution_date)}
-                  </span>
-                )}
-              </div>
-            </TooltipContent>
-          </Tooltip>
         </div>
       </div>
+
       <div className="text-xs text-text-muted font-mono mb-3">
         {pipeline.pipeline_type === "api" ? "API" : "ETL"}
+        {pipeline.team && <span className="ml-2 text-emerald-400/70">{pipeline.team}</span>}
       </div>
-      <div className="flex gap-2 text-[10px] font-mono">
-        {pipeline.schedule && (
+
+      <div className="flex gap-2 text-[10px] font-mono flex-wrap">
+        {(pipeline.schedule || pipeline.schedule_type) && (
           <span className="px-2 py-0.5 rounded bg-hover-bg text-text-secondary border border-border">
-            {pipeline.schedule}
+            {pipeline.schedule ?? pipeline.schedule_type}
           </span>
         )}
-        {pipeline.rows_per_day && (
-          <span className="px-2 py-0.5 rounded bg-hover-bg text-text-secondary border border-border">
-            {isNaN(Number(pipeline.rows_per_day))
-              ? pipeline.rows_per_day
-              : `${formatCount(Number(pipeline.rows_per_day))} rows/day`}
+        {(pipeline.tags ?? []).slice(0, 3).map((tag) => (
+          <span
+            key={tag.id}
+            className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20"
+          >
+            {tag.name}
           </span>
-        )}
-        <span className={`px-2 py-0.5 rounded bg-hover-bg border border-border ${fresh.className}`}>
-          {fresh.label === "never" ? "no runs" : fresh.label}
-        </span>
+        ))}
       </div>
     </div>
   );
