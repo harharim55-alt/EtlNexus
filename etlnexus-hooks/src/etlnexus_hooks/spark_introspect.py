@@ -622,11 +622,11 @@ def _extract_full_detail(node_name: str, simple_str: str) -> str:
             return _parse_inmemory_scan_full(clean)
         # Phase 1C: infrastructure nodes
         if lower in ("subqueryexec", "subquerybroadcast"):
-            return _parse_subquery_detail(clean)
+            return _parse_subquery_full(clean)
         if lower == "collectmetrics":
-            return _parse_collect_metrics_detail(clean)
+            return _parse_collect_metrics_full(clean)
         if lower in ("mappartitions", "mapelements"):
-            return _parse_map_partitions_detail(clean)
+            return _parse_map_partitions_full(clean)
         if lower == "unpivot":
             return _parse_unpivot_full(clean)
         # Phase 1D: Python/Pandas UDF nodes
