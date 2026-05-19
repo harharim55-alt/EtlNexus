@@ -11,7 +11,7 @@ build/
 node_modules/
 
 # Environment
-.env
+# .env
 .env.prod
 .env.local
 .env.*.local
@@ -69,7 +69,6 @@ C4-Documentation/
 
 
 # Claude Code
-.claude/
 .ui-design/reviews/full_frontend_20260327.md
 .ui-design/reviews/review_state.json
 etlnexus-images/images.tar
