@@ -22,6 +22,7 @@ if [ "$MODE" = "prod" ]; then
   echo "=== Exporting PROD images ==="
   IMAGES=(
     "postgres:16-alpine"
+    "redis:7-alpine"
     "etlnexus-backend"
     "etlnexus-frontend"
   )
@@ -30,6 +31,7 @@ else
   echo "=== Exporting DEV images (full stack) ==="
   IMAGES=(
     "postgres:16-alpine"
+    "redis:7-alpine"
     "etlnexus-backend"
     "etlnexus-frontend"
     "etlnexus-airflow-webserver"
