@@ -21,9 +21,9 @@ Welcome to EtlNexus — a data architecture command center for discovering, unde
 │  Router (HTTP) ──► Service (business logic) ──► Repository (SQL)        │
 │                                                                         │
 │  ┌───────────┐  ┌──────────────┐  ┌──────────────┐  ┌───────────┐       │
-│  │ Auth/RBAC │  │ APScheduler  │  │ Integrations │  │ Redis     │       │
-│  │ (JWT+SSO) │  │ (bg tasks)   │  │ (Airflow,    │  │ (cache    │       │
-│  │           │  │              │  │  Iceberg,LLM)│  │  bus)     │       │
+│  │ Auth/RBAC │  │ APScheduler  │  │ Integrations │  │ In-memory │       │
+│  │ (JWT+SSO) │  │ (bg tasks)   │  │ (Airflow,    │  │ TTL cache │       │
+│  │           │  │              │  │  Spark,LLM)  │  │           │       │
 │  └───────────┘  └──────────────┘  └──────────────┘  └───────────┘       │
 └────────────────────────────┬────────────────────────────────────────────┘
                              │
@@ -67,7 +67,7 @@ docker compose up        # Start everything
 docker compose watch     # Start with hot-reload file watching
 ```
 
-Services: `db`, `redis`, `backend`, `frontend`, `airflow-*`, `keycloak`, `iceberg-*`
+Services: `db`, `backend`, `frontend`, `airflow-*`, `keycloak`, `spark-connect`
 
 ### Limited Mode (no Airflow, no Keycloak, no Iceberg)
 
@@ -79,7 +79,6 @@ DATABASE_URL=postgresql+asyncpg://etlnexus:etlnexus@db:5432/etlnexus
 SSO_ENABLED=false
 SCHEDULER_ENABLED=false
 SPARK_CONNECT_URL=
-REDIS_URL=
 OASIS_PROD_DATABASE_URL=
 LLM_API_BASE_URL=
 DEPLOYMENT_ENV=development
@@ -95,7 +94,7 @@ The app starts and is fully functional:
 - `SSO_ENABLED=false` → all requests get default admin user (no Keycloak needed)
 - `SCHEDULER_ENABLED=false` → no background sync jobs attempt to reach Airflow/Spark Connect
 - Empty `SPARK_CONNECT_URL` → catalog sync no-ops
-- Empty `REDIS_URL` → falls back to in-memory caching (fine for single instance)
+- Caching is always in-memory and process-local (no external cache service)
 
 ### Backend Only (local development)
 
@@ -493,7 +492,6 @@ services:
       SSO_ENABLED: "false"
       SCHEDULER_ENABLED: "false"
       SPARK_CONNECT_URL: ""
-      REDIS_URL: ""
     ports:
       - "8000:8000"
     depends_on:

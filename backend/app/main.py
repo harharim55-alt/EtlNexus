@@ -73,19 +73,6 @@ async def lifespan(app: FastAPI):
     from app.integrations.oasis_prod_client import oasis_prod_client
     await oasis_prod_client.initialize()
 
-    # Start Redis cache invalidation bus (no-op if REDIS_URL not set)
-    if settings.redis_url:
-        from app.cache import invalidation_bus
-        try:
-            await invalidation_bus.start(settings.redis_url)
-        except Exception:
-            logger.warning(
-                "Failed to connect to Redis at %s — running without "
-                "cross-instance cache invalidation",
-                settings.redis_url,
-                exc_info=True,
-            )
-
     startup_task = None
     sched = None
 
@@ -130,9 +117,6 @@ async def lifespan(app: FastAPI):
     await _oasis.close()
     from app.integrations.spark_connect_client import spark_connect_client
     spark_connect_client.stop()
-    if settings.redis_url:
-        from app.cache import invalidation_bus
-        await invalidation_bus.stop()
     logger.info("ETL Explorer Hub shutting down")
 
 

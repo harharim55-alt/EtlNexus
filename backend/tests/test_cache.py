@@ -1,7 +1,7 @@
-"""Tests for app.cache — TTLCache in-memory caching and invalidation bus."""
+"""Tests for app.cache — in-memory TTLCache and clear_all."""
 
 
-from app.cache import CacheInvalidationBus, TTLCache, _clear_local, clear_all
+from app.cache import TTLCache, clear_all
 
 
 class TestTTLCache:
@@ -69,8 +69,6 @@ class TestTTLCache:
         assert cache.get("y") == 20
 
 
-# ── Helpers shared between TestClearLocal and TestClearAll ────────────────────
-
 def _all_caches():
     from app.cache import (
         bouncer_cache,
@@ -96,102 +94,14 @@ def _all_caches():
     ]
 
 
-class TestClearLocal:
-    def test_clears_all_nine_caches(self):
-        """_clear_local() resets every module-level cache singleton."""
-        caches = _all_caches()
-        for c in caches:
-            c.set("test_key", "test_value")
-
-        _clear_local()
-
-        for c in caches:
-            assert c.get("test_key") is None
-
-
 class TestClearAll:
     def test_clear_all_resets_every_module_cache(self):
-        """clear_all() clears local caches (bus not started — no Redis publish)."""
+        """clear_all() resets every module-level cache singleton (in-process)."""
         caches = _all_caches()
         for c in caches:
             c.set("test_key", "test_value")
 
-        # Bus is not started in unit tests so publish() is a no-op.
         clear_all()
 
         for c in caches:
             assert c.get("test_key") is None
-
-    def test_clear_all_publishes_when_bus_started(self, monkeypatch):
-        """clear_all() schedules a Redis publish when the bus has a live connection."""
-        import asyncio
-
-        import unittest.mock as mock
-
-        published: list[str] = []
-
-        bus = CacheInvalidationBus()
-        # Use AsyncMock so self is not injected as a positional argument.
-        fake_redis = mock.AsyncMock()
-        fake_redis.publish.side_effect = lambda ch, _msg: published.append(ch)
-        bus._redis = fake_redis
-
-        # Run inside a real event loop so create_task works.
-        async def run():
-            monkeypatch.setattr("app.cache.invalidation_bus", bus)
-            clear_all()
-            # Allow the created task to execute.
-            await asyncio.sleep(0)
-
-        asyncio.run(run())
-
-        assert published == ["etlnexus:cache:invalidate"]
-
-
-class TestCacheInvalidationBus:
-    def test_publish_noop_when_not_started(self):
-        """publish() must not raise and must be a no-op before start() is called."""
-        bus = CacheInvalidationBus()
-        assert bus._redis is None
-        # Should return without error — no running loop, no Redis connection.
-        bus.publish()
-
-    def test_publish_noop_outside_event_loop(self):
-        """publish() is silently skipped when called outside an async context."""
-        import asyncio
-
-        bus = CacheInvalidationBus()
-        # Give it a fake redis so the _redis is None check is bypassed,
-        # but there is no running loop — RuntimeError must be swallowed.
-        fake_redis = object()
-        bus._redis = fake_redis
-
-        # This call must not raise even without a running loop.
-        bus.publish()
-
-    def test_start_and_stop(self):
-        """start() sets _running=True and stop() tears everything down cleanly."""
-        import asyncio
-
-        async def run():
-            import unittest.mock as mock
-
-            fake_redis = mock.AsyncMock()
-            fake_pubsub = mock.AsyncMock()
-            fake_pubsub.get_message = mock.AsyncMock(return_value=None)
-            fake_redis.pubsub.return_value = fake_pubsub
-
-            bus = CacheInvalidationBus()
-
-            with mock.patch("redis.asyncio.from_url", return_value=fake_redis):
-                await bus.start("redis://localhost:6379")
-
-            assert bus._running is True
-            assert bus._subscriber_task is not None
-
-            await bus.stop()
-
-            assert bus._running is False
-            assert bus._redis is None
-
-        asyncio.run(run())

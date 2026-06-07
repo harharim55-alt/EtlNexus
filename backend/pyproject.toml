@@ -12,7 +12,6 @@ dependencies = [
     "pydantic-settings>=2.6.0",
     "httpx>=0.28.0",
     "apscheduler>=4.0.0a1",
-    "redis>=5.0.0",
     "pyspark[connect]>=3.5.1",
     "PyJWT[crypto]>=2.8.0",
     "slowapi>=0.1.9",
