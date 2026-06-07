@@ -121,10 +121,11 @@ When enabled, if a task has no explicit `needs`, EtlNexus will create `reads_fro
 ┌──────────────┐     ┌──────────────┐     ┌──────────────────────┐
 │   Frontend   │────▶│   Backend    │────▶│  Your Airflow        │
 │  (nginx:80)  │     │ (FastAPI:8000│     │  (REST API v1)       │
-│              │     │  + PySpark)  │     └──────────────────────┘
-└──────────────┘     │              │     ┌──────────────────────┐
-                     │              │────▶│  Your Iceberg Catalog│
-                     │              │     │  (REST catalog)      │
+│              │     │  Spark       │     └──────────────────────┘
+│              │     │  Connect     │     ┌──────────────────────┐
+└──────────────┘     │  client)     │────▶│  Your Spark Connect  │
+                     │              │     │  (gRPC :15002,       │
+                     │              │     │   Iceberg catalog)   │
                      │              │     └──────────────────────┘
                      │              │     ┌──────────────────────┐
                      │              │────▶│  LLM Endpoint        │
@@ -143,7 +144,7 @@ When enabled, if a task has no explicit `needs`, EtlNexus will create `reads_fro
 **What EtlNexus does NOT do:**
 - Does not modify your Airflow DAGs or configuration
 - Does not write to your Iceberg catalog (read-only)
-- Does not submit Spark jobs to your cluster (runs a local micro-Spark only for schema reads)
+- Does not submit ETL jobs to your cluster (issues read-only Spark SQL to the Spark Connect server only for schema reads)
 
 ---
 
@@ -152,10 +153,10 @@ When enabled, if a task has no explicit `needs`, EtlNexus will create `reads_fro
 | Component | Requirement |
 |-----------|-------------|
 | **Airflow** | v2.x with REST API enabled and basic auth |
-| **Iceberg** | REST catalog endpoint (e.g., Tabular, AWS Glue REST, Nessie) |
+| **Spark Connect** | Spark Connect server (gRPC) exposing your Iceberg tables (e.g. via an Iceberg hadoop or any Spark-configured catalog) |
 | **PostgreSQL** | 16+ (included in docker-compose, or use external) |
 | **Docker** | Docker Engine 24+ with Compose v2 |
-| **Network** | Backend must reach Airflow API and Iceberg REST catalog |
+| **Network** | Backend must reach the Airflow API and the Spark Connect server |
 
 ---
 
@@ -495,44 +496,48 @@ If you want to onboard gradually:
 
 ---
 
-## 5. Iceberg Catalog Integration
+## 5. Iceberg Catalog Integration (via Spark Connect)
 
-EtlNexus reads table schemas from your Iceberg REST catalog to populate the Schema Viewer and Global Schema Matrix. **Read-only access.**
+EtlNexus reads Iceberg table schemas through a Spark Connect server to populate the Schema Viewer and Global Schema Matrix. **Read-only access.**
 
 ### 5.1 Requirements
 
 | Requirement | Details |
 |-------------|---------|
-| **Catalog type** | REST catalog (Iceberg REST spec) |
-| **Endpoint** | HTTP(S) endpoint serving `/v1/namespaces`, `/v1/namespaces/{ns}/tables` |
-| **Compatible** | Tabular, AWS Glue REST adapter, Nessie, Apache Polaris, Gravitino |
-| **Network** | Backend container must reach the catalog URL |
+| **Access path** | Spark Connect server (gRPC) — no Iceberg REST catalog required |
+| **Endpoint** | `sc://host:port` reachable over gRPC (default port `15002`) |
+| **Catalog** | The server exposes your Iceberg tables under a Spark catalog (e.g. an Iceberg **hadoop** catalog over a shared warehouse path) |
+| **Network** | Backend container must reach the Spark Connect server's gRPC port |
 
 ### 5.2 Environment variables
 
 ```bash
-ICEBERG_CATALOG_URI=https://iceberg-catalog.company.com
-ICEBERG_NAMESPACE_PREFIX=dagger
+SPARK_CONNECT_URL=sc://spark-connect.company.com:15002
+SPARK_CATALOG_NAME=iceberg
+SPARK_NAMESPACE_PREFIX=dagger,prism,vault,oasis
 ```
 
 ### 5.3 Namespace convention
 
-EtlNexus looks for tables under a single namespace defined by `ICEBERG_NAMESPACE_PREFIX` (default: `dagger`).
+EtlNexus looks for tables under the namespaces listed in `SPARK_NAMESPACE_PREFIX` (default: `dagger,prism,vault,oasis`) within the `SPARK_CATALOG_NAME` catalog.
 
 ```
-your_iceberg_catalog
-└── dagger                    ← ICEBERG_NAMESPACE_PREFIX
-    ├── your_etl_table_1      ← table name should match task_id / etl_name
-    ├── your_etl_table_2
-    └── ...
+SPARK_CATALOG_NAME (e.g. iceberg)
+├── dagger                    ← one of SPARK_NAMESPACE_PREFIX
+│   ├── your_etl_table_1      ← table name should match task_id / etl_name
+│   ├── your_etl_table_2
+│   └── ...
+├── prism
+├── vault
+└── oasis
 ```
 
 **Table name matching:** EtlNexus matches Iceberg table names to pipelines by comparing the table name against the pipeline's `task_id` (or name). The match is case-insensitive with underscores normalized.
 
 ### 5.4 What EtlNexus reads
 
-- **Namespaces** — lists namespaces to find `ICEBERG_NAMESPACE_PREFIX`
-- **Tables** — lists tables within the namespace
+- **Namespaces** — lists tables under each prefix in `SPARK_NAMESPACE_PREFIX`
+- **Tables** — lists tables within each namespace
 - **Schemas** — reads column names and types from each table's schema
 
 This data populates:
@@ -541,9 +546,9 @@ This data populates:
 
 ### 5.5 How it connects
 
-EtlNexus uses PySpark internally (local mode, 1 core, 512MB) to query the Iceberg REST catalog. The backend Docker image includes Java (OpenJDK 17) for this purpose.
+EtlNexus creates a **remote** `SparkSession` over Spark Connect (`SparkSession.builder.remote(SPARK_CONNECT_URL)`) and issues Spark SQL against it. No local JVM, no Iceberg REST catalog, and no Java in the backend image are required — the Spark Connect server owns all catalog configuration.
 
-> The PySpark session is **not** connected to your Spark cluster. It runs locally inside the backend container solely for catalog metadata reads.
+> The remote Spark session is used **solely** for read-only catalog metadata reads (listing tables, reading schemas). EtlNexus does not run ETL jobs on your cluster.
 
 ### 5.6 Sync schedule
 
@@ -554,7 +559,7 @@ EtlNexus uses PySpark internally (local mode, 1 core, 512MB) to query the Iceber
 
 ### 5.7 No Iceberg catalog?
 
-If you don't have an Iceberg catalog, set `ICEBERG_CATALOG_URI` to an empty string or an unreachable URL. EtlNexus will log a warning and continue without schema data. The Schema Viewer will show empty, but all other features (lineage, status, consumers, resources) work normally.
+If you don't have a Spark Connect server / Iceberg catalog, set `SPARK_CONNECT_URL` to an empty string (or an unreachable URL). EtlNexus will log a warning and continue without schema data. The Schema Viewer will show empty, but all other features (lineage, status, consumers, resources) work normally.
 
 ---
 
@@ -615,9 +620,10 @@ AIRFLOW_USERNAME=etlnexus-reader
 AIRFLOW_PASSWORD=<airflow-service-password>
 AIRFLOW_POLL_INTERVAL_MINUTES=20
 
-# ─── Iceberg Catalog ───────────────────────────────────
-ICEBERG_CATALOG_URI=https://iceberg-catalog.company.com
-ICEBERG_NAMESPACE_PREFIX=dagger
+# ─── Spark Connect / Iceberg Catalog ───────────────────
+SPARK_CONNECT_URL=sc://spark-connect.company.com:15002
+SPARK_CATALOG_NAME=iceberg
+SPARK_NAMESPACE_PREFIX=dagger,prism,vault,oasis
 
 # ─── LLM / AI Architect ────────────────────────────────
 LLM_API_BASE_URL=https://api.openai.com/v1
@@ -683,7 +689,7 @@ The **backend container** needs outbound access to:
 | Destination | Port | Purpose |
 |-------------|------|---------|
 | Airflow REST API | 443/8080 | Pipeline discovery + status polling |
-| Iceberg REST catalog | 443/8181 | Schema reads |
+| Spark Connect server | 15002 (gRPC) | Schema reads |
 | LLM API endpoint | 443 | AI Architect (optional) |
 
 No inbound access needed to the backend from outside — the frontend nginx handles all external traffic.
@@ -701,10 +707,10 @@ No inbound access needed to the backend from outside — the frontend nginx hand
 
 ### Schema viewer is empty
 
-1. Verify Iceberg catalog URI is reachable from the backend container
-2. Confirm your tables are under the `ICEBERG_NAMESPACE_PREFIX` namespace (default: `dagger`)
+1. Verify the Spark Connect server (`SPARK_CONNECT_URL`) is reachable from the backend container over gRPC
+2. Confirm your tables are under one of the `SPARK_NAMESPACE_PREFIX` namespaces (default: `dagger,prism,vault,oasis`)
 3. Table names must loosely match pipeline task_ids
-4. Check logs: `docker compose logs backend | grep -i "iceberg\|catalog\|spark"`
+4. Check logs: `docker compose logs backend | grep -i "spark connect\|catalog\|spark"`
 
 ### Status shows "unknown" for all pipelines
 
@@ -718,16 +724,16 @@ No inbound access needed to the backend from outside — the frontend nginx hand
 2. The task must have completed successfully (resource actuals are only parsed from successful runs)
 3. `resources` must be present in `op_kwargs` (for allocated values)
 
-### Backend won't start (Java/Spark errors)
+### Schema reads fail (Spark Connect errors)
 
-The backend requires Java 17 for PySpark (Iceberg schema reads). The Docker image includes it. If running locally without Docker, install JDK 17 and set `JAVA_HOME`.
+The backend talks to the Spark Connect server over gRPC using PySpark's Spark Connect client — **no local JVM or Java is required in the backend**. If schema reads fail, confirm `SPARK_CONNECT_URL` is set and the server is reachable, then check the backend logs for `Spark Connect` warnings. The server side owns the JVM, Spark, and Iceberg catalog configuration.
 
 ---
 
 ## Quick Start Checklist
 
 ### Infrastructure
-- [ ] Create `.env.prod` with your Airflow URL, credentials, Iceberg URI
+- [ ] Create `.env.prod` with your Airflow URL, credentials, and Spark Connect URL
 - [ ] Create a read-only Airflow user for EtlNexus (Viewer role)
 - [ ] Verify Airflow REST API is enabled with basic auth
 - [ ] Run `docker compose -f docker-compose.prod.yml --env-file .env.prod up -d`
@@ -758,6 +764,6 @@ The backend requires Java 17 for PySpark (Iceberg schema reads). The Docker imag
 - [ ] (Optional) Print `ETL_EXECUTION_PLAN: <json>` for execution plan visualization
 
 ### Optional
-- [ ] Ensure your Iceberg tables are under the `dagger` namespace (or change `ICEBERG_NAMESPACE_PREFIX`)
+- [ ] Ensure your Iceberg tables are under one of the `dagger,prism,vault,oasis` namespaces (or change `SPARK_NAMESPACE_PREFIX`)
 - [ ] Set `SPARK_MAX_*` vars to match your cluster capacity
 - [ ] Set `INFER_LINEAGE_FROM_DAG_GRAPH=true` if you can't add `params.needs`/`prefers` to tasks

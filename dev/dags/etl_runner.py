@@ -168,8 +168,8 @@ def _create_spark_session(etl_name: str, config: dict):
         "/opt/airflow/jars/spark-measure.jar",
     )
     builder = builder.config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog")
-    builder = builder.config("spark.sql.catalog.iceberg.type", "rest")
-    builder = builder.config("spark.sql.catalog.iceberg.uri", os.environ.get("ICEBERG_CATALOG_URI", "http://iceberg-rest:8181"))
+    builder = builder.config("spark.sql.catalog.iceberg.type", "hadoop")
+    builder = builder.config("spark.sql.catalog.iceberg.warehouse", os.environ.get("SPARK_WAREHOUSE", "/tmp/warehouse"))
     builder = builder.config(
         "spark.sql.extensions",
         "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions",

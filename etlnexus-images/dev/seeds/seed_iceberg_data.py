@@ -3,9 +3,6 @@
 import os
 import random
 import sys
-import time
-import urllib.request
-import urllib.error
 
 os.umask(0)
 from datetime import date, datetime, timedelta
@@ -23,7 +20,6 @@ from pyspark.sql.types import (
     TimestampType,
 )
 
-CATALOG_URL = os.environ.get("ICEBERG_CATALOG_URI", "http://iceberg-rest:8181")
 SEED = 42
 random.seed(SEED)
 
@@ -128,25 +124,6 @@ MODEL_TYPES = ["first-hop", "last-hop", "linear", "time-decay", "shapley"]
 
 
 # ---------------------------------------------------------------------------
-# Wait
-# ---------------------------------------------------------------------------
-
-def wait_for_catalog(max_retries=30, delay=2):
-    """Wait until the Iceberg REST catalog is ready."""
-    for i in range(max_retries):
-        try:
-            req = urllib.request.Request(f"{CATALOG_URL}/v1/config")
-            with urllib.request.urlopen(req, timeout=5):
-                print("Iceberg REST catalog is ready")
-                return True
-        except (urllib.error.URLError, OSError):
-            print(f"Waiting for catalog... ({i + 1}/{max_retries})")
-            time.sleep(delay)
-    print("ERROR: Iceberg catalog not available after retries")
-    return False
-
-
-# ---------------------------------------------------------------------------
 # Spark
 # ---------------------------------------------------------------------------
 
@@ -158,8 +135,9 @@ def create_spark_session():
         .config("spark.jars", "/opt/airflow/jars/iceberg-spark-runtime.jar")
         .config("spark.sql.catalog.iceberg",
                 "org.apache.iceberg.spark.SparkCatalog")
-        .config("spark.sql.catalog.iceberg.type", "rest")
-        .config("spark.sql.catalog.iceberg.uri", "http://iceberg-rest:8181")
+        .config("spark.sql.catalog.iceberg.type", "hadoop")
+        .config("spark.sql.catalog.iceberg.warehouse",
+                os.environ.get("SPARK_WAREHOUSE", "/tmp/warehouse"))
         .config("spark.sql.extensions",
                 "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
         .config("spark.driver.memory", "1g")
@@ -1333,9 +1311,6 @@ NAMESPACE_TABLES = {
 
 
 def main():
-    if not wait_for_catalog():
-        sys.exit(1)
-
     spark = create_spark_session()
 
     total_tables = sum(len(tables) for tables in NAMESPACE_TABLES.values())
@@ -1343,6 +1318,7 @@ def main():
     total_rows = 0
     for namespace, tables in NAMESPACE_TABLES.items():
         print(f"\nNamespace: {namespace} ({len(tables)} tables)")
+        spark.sql(f"CREATE NAMESPACE IF NOT EXISTS iceberg.{namespace}")
         for table_name, gen_fn in tables.items():
             try:
                 schema, rows = gen_fn()

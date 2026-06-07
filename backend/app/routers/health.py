@@ -63,14 +63,14 @@ async def health_detail(
     Checks:
     - Database connectivity (live SELECT 1)
     - Airflow client connection state
-    - Iceberg client connection state
+    - Spark Connect client connection state
     - DB connection pool statistics
     - Scheduler liveness (when ``settings.scheduler_enabled``)
 
     Returns HTTP 503 if the database is unreachable.
     """
     from app.integrations.airflow_client import airflow_client
-    from app.integrations.iceberg_client import iceberg_client
+    from app.integrations.spark_connect_client import spark_connect_client
 
     # Verify actual database connectivity
     db_ok = True
@@ -93,7 +93,7 @@ async def health_detail(
         "services": {
             "database": "connected" if db_ok else "disconnected",
             "airflow": "connected" if airflow_client.is_connected else "unknown",
-            "iceberg": "connected" if iceberg_client.is_connected else "unknown",
+            "spark_connect": "connected" if spark_connect_client.is_connected else "unknown",
         },
         "db_pool": pool_status,
     }

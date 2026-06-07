@@ -1,17 +1,28 @@
-"""Seed Iceberg REST catalog with table schemas for dev environment.
+"""Seed Iceberg tables (empty schemas) for the dev environment via local Spark.
 
-Creates per-team namespaces (dagger, prism, vault, oasis) with their
-respective table schemas.
+Creates per-team namespaces (dagger, prism, vault, oasis, relay) and their
+tables in an Iceberg hadoop catalog over the shared warehouse — no REST catalog.
 """
 
-import json
 import os
 import sys
-import time
-import urllib.request
-import urllib.error
 
-CATALOG_URL = os.environ.get("ICEBERG_CATALOG_URI", "http://iceberg-rest:8181")
+os.umask(0)
+
+from pyspark.sql import SparkSession
+
+# Iceberg primitive type -> Spark SQL type
+_TYPE_MAP = {
+    "long": "BIGINT",
+    "int": "INT",
+    "integer": "INT",
+    "string": "STRING",
+    "double": "DOUBLE",
+    "float": "FLOAT",
+    "boolean": "BOOLEAN",
+    "timestamp": "TIMESTAMP",
+    "date": "DATE",
+}
 
 # Tables organized by team namespace
 NAMESPACES = {
@@ -404,82 +415,58 @@ NAMESPACES = {
 }
 
 
-def wait_for_catalog(max_retries=30, delay=2):
-    """Wait until the Iceberg REST catalog is ready."""
-    for i in range(max_retries):
-        try:
-            req = urllib.request.Request(f"{CATALOG_URL}/v1/config")
-            with urllib.request.urlopen(req, timeout=5):
-                print("Iceberg REST catalog is ready")
-                return True
-        except (urllib.error.URLError, OSError):
-            print(f"Waiting for catalog... ({i + 1}/{max_retries})")
-            time.sleep(delay)
-    print("ERROR: Iceberg catalog not available after retries")
-    return False
-
-
-def api_request(method, path, body=None):
-    """Make a request to the Iceberg REST API."""
-    url = f"{CATALOG_URL}{path}"
-    data = json.dumps(body).encode() if body else None
-    req = urllib.request.Request(url, data=data, method=method)
-    req.add_header("Content-Type", "application/json")
-    try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return resp.status, json.loads(resp.read().decode())
-    except urllib.error.HTTPError as e:
-        body_text = e.read().decode() if e.fp else ""
-        return e.code, body_text
-
-
-def create_namespace(namespace):
-    """Create an Iceberg namespace."""
-    status, resp = api_request("POST", "/v1/namespaces", {
-        "namespace": [namespace],
-    })
-    if status == 200:
-        print(f"Created namespace: {namespace}")
-    elif status == 409:
-        print(f"Namespace already exists: {namespace}")
-    else:
-        print(f"Namespace creation returned {status}: {resp}")
-
-
-def create_table(namespace, table_name, fields):
-    """Create an Iceberg table with the given schema."""
-    body = {
-        "name": table_name,
-        "schema": {
-            "type": "struct",
-            "schema-id": 0,
-            "fields": fields,
-        },
-    }
-    status, resp = api_request(
-        "POST", f"/v1/namespaces/{namespace}/tables", body
+def create_spark_session():
+    return (
+        SparkSession.builder
+        .appName("EtlNexus-SchemaSeed")
+        .master("local[1]")
+        .config("spark.jars", "/opt/airflow/jars/iceberg-spark-runtime.jar")
+        .config("spark.sql.catalog.iceberg",
+                "org.apache.iceberg.spark.SparkCatalog")
+        .config("spark.sql.catalog.iceberg.type", "hadoop")
+        .config("spark.sql.catalog.iceberg.warehouse",
+                os.environ.get("SPARK_WAREHOUSE", "/tmp/warehouse"))
+        .config("spark.sql.extensions",
+                "org.apache.iceberg.spark.extensions.IcebergSparkSessionExtensions")
+        .config("spark.driver.memory", "1g")
+        .config("spark.ui.enabled", "false")
+        .config("spark.hadoop.fs.permissions.umask-mode", "000")
+        .getOrCreate()
     )
-    if status == 200:
-        print(f"  Created table: {namespace}.{table_name} ({len(fields)} fields)")
-    elif status == 409:
-        print(f"  Table already exists: {namespace}.{table_name}")
-    else:
-        print(f"  Table {table_name} creation returned {status}: {resp}")
+
+
+def spark_type(iceberg_type):
+    """Map an Iceberg primitive type name to a Spark SQL type."""
+    try:
+        return _TYPE_MAP[iceberg_type.lower()]
+    except KeyError as e:
+        raise ValueError(f"Unmapped Iceberg type: {iceberg_type!r}") from e
+
+
+def create_table(spark, namespace, table_name, fields):
+    """Create an empty Iceberg table with the given schema."""
+    cols = ", ".join(f"`{f['name']}` {spark_type(f['type'])}" for f in fields)
+    spark.sql(
+        f"CREATE TABLE IF NOT EXISTS iceberg.{namespace}.`{table_name}` ({cols}) USING iceberg"
+    )
+    print(f"  Created table: {namespace}.{table_name} ({len(fields)} fields)")
 
 
 def main():
-    if not wait_for_catalog():
-        sys.exit(1)
+    spark = create_spark_session()
 
     total_tables = sum(len(tables) for tables in NAMESPACES.values())
     print(f"Creating {len(NAMESPACES)} namespaces with {total_tables} tables...")
 
     for namespace, tables in NAMESPACES.items():
-        create_namespace(namespace)
+        spark.sql(f"CREATE NAMESPACE IF NOT EXISTS iceberg.{namespace}")
+        print(f"Created namespace: {namespace}")
         for table_name, fields in tables.items():
-            create_table(namespace, table_name, fields)
+            create_table(spark, namespace, table_name, fields)
 
-    print("Iceberg catalog seeding complete!")
+    print("Iceberg schema seeding complete!")
+    spark.stop()
+    sys.exit(0)
 
 
 if __name__ == "__main__":

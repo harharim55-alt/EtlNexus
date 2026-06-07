@@ -1,14 +1,19 @@
-"""Catalog sync service — discovers pipelines from Iceberg catalog via PyIceberg."""
+"""Catalog sync service — projects the Postgres catalog mirror onto pipeline fields.
 
-import asyncio
+Reads the mirrored Iceberg schemas from the ``catalog_columns`` table (populated
+by ``CatalogMirrorService`` from Spark Connect) and materializes them as
+``PipelineField`` rows, matching mirror ``table_name`` to ``Pipeline.task_id``.
+This step is pure in-DB — it never touches Spark Connect.
+"""
+
 import logging
+from collections import defaultdict
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.integrations.iceberg_client import iceberg_client
 from app.models.pipeline import Pipeline, PipelineField
+from app.repositories.catalog_mirror_repo import CatalogMirrorRepository
 
 logger = logging.getLogger(__name__)
 
@@ -18,47 +23,52 @@ class CatalogSyncService:
         self.session = session
 
     async def sync_from_catalog(self) -> int:
-        """Discover tables from Iceberg catalog via PyIceberg and upsert as pipelines.
+        """Project the catalog mirror onto pipeline fields.
 
-        Uses PyIceberg REST catalog to read table schemas.
-        Returns the number of pipelines synced.
+        Reads schemas from the Postgres mirror (not Spark) and upserts them onto
+        matching pipelines. Returns the number of pipelines synced.
         """
-        schemas = await asyncio.to_thread(iceberg_client.get_all_schemas)
-        if not schemas:
-            logger.info("No table schemas discovered from Iceberg catalog")
+        mirror_rows = await CatalogMirrorRepository(self.session).list_all()
+        if not mirror_rows:
+            logger.info("Catalog mirror empty — nothing to project to pipeline fields")
             return 0
 
-        # Bulk load all matching pipelines to avoid N+1 per-table SELECTs
-        task_ids = [ts.table_name for ts in schemas]
-        stmt = (
-            select(Pipeline)
-            .options(selectinload(Pipeline.fields))
-            .where(Pipeline.task_id.in_(task_ids))
-        )
+        # Group mirror columns by table (rows already ordered by table, ordinal)
+        fields_by_table: dict[str, list[dict]] = defaultdict(list)
+        for row in mirror_rows:
+            fields_by_table[row.table_name].append(
+                {"name": row.column_name, "type": row.data_type}
+            )
+
+        # Bulk load all matching pipelines to avoid N+1 per-table SELECTs.
+        # Only id/task_id/schema_manually_edited are used below, and existing
+        # fields are replaced via a bulk DELETE, so the fields relationship is
+        # intentionally NOT eager-loaded.
+        task_ids = list(fields_by_table.keys())
+        stmt = select(Pipeline).where(Pipeline.task_id.in_(task_ids))
         result = await self.session.execute(stmt)
         pipeline_by_task_id = {p.task_id: p for p in result.scalars().all()}
 
         synced = 0
-        # Collect all pipeline IDs that have fields to sync for batch DELETE
+        # Collect all pipelines that have fields to sync for batch DELETE
         pipelines_to_sync: list[tuple] = []  # (pipeline, fields)
-        for table_schema in schemas:
-            task_id = table_schema.table_name
+        for task_id, fields in fields_by_table.items():
             pipeline = pipeline_by_task_id.get(task_id)
             if not pipeline:
                 logger.debug(
-                    "No pipeline with task_id=%s — skipping Iceberg schema",
+                    "No pipeline with task_id=%s — skipping table schema",
                     task_id,
                 )
                 continue
             # Skip pipelines with manually edited schemas
             if pipeline.schema_manually_edited:
                 logger.debug(
-                    "Pipeline %s has manually edited schema — skipping Iceberg sync",
+                    "Pipeline %s has manually edited schema — skipping catalog sync",
                     pipeline.name,
                 )
                 continue
-            if table_schema.fields:
-                pipelines_to_sync.append((pipeline, table_schema.fields))
+            if fields:
+                pipelines_to_sync.append((pipeline, fields))
 
         if pipelines_to_sync:
             # Batch DELETE all existing fields for matched pipelines
@@ -82,7 +92,7 @@ class CatalogSyncService:
             synced = len(pipelines_to_sync)
 
         await self.session.commit()
-        logger.info("Synced %d pipelines from Iceberg catalog", synced)
+        logger.info("Projected catalog mirror onto %d pipelines", synced)
         return synced
 
     @staticmethod

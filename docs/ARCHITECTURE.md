@@ -62,7 +62,7 @@ graph TB
 
     subgraph External["External Services"]
         AF["Apache Airflow<br/>(Pipeline metadata,<br/>run statuses, task logs)"]
-        ICE["Iceberg REST Catalog<br/>(Table schemas)"]
+        ICE["Spark Connect<br/>(Iceberg table schemas)"]
         KC["Keycloak<br/>(OIDC / SSO)"]
         LLM["LLM Endpoint<br/>(OpenAPI-compatible)"]
     end
@@ -76,7 +76,7 @@ graph TB
     BE -->|asyncpg| DB
 
     BE -->|HTTP / Basic Auth<br/>REST API v1| AF
-    BE -->|PySpark local[1]<br/>Iceberg REST protocol| ICE
+    BE -->|Spark Connect<br/>gRPC :15002| ICE
     BE -->|HTTPS / Bearer<br/>JWKS + JWT validation| KC
     BE -->|HTTPS / Bearer<br/>chat/completions| LLM
 
@@ -92,7 +92,7 @@ graph TB
 | Service | Role | Protocol | Auth |
 |---|---|---|---|
 | **Apache Airflow** | Source of truth for all pipeline metadata, lineage, statuses, Spark metrics, and execution plans | HTTP REST API v1 | HTTP Basic Auth |
-| **Iceberg REST Catalog** | Source of pipeline field schemas via PySpark local session | Iceberg REST + Spark SQL | None (internal) |
+| **Spark Connect** | Source of pipeline field schemas via a remote Spark session over the Iceberg hadoop catalog | Spark Connect (gRPC) + Spark SQL | None (internal) |
 | **Keycloak** | OIDC authentication, JWT signing, group/team claims | OIDC / JWKS | OIDC Authorization Code (frontend), JWKS (backend) |
 | **LLM Endpoint** | AI Architect chat completions and join insights | OpenAPI-compatible `/chat/completions` | Bearer token (optional) |
 
@@ -120,10 +120,10 @@ Airflow is the only external system that drives persistent data changes in EtlNe
 The development environment uses Docker Compose with 12 services. The key design decisions are:
 
 - DAG files are **bind-mounted** into both `airflow-webserver` and `airflow-scheduler`, so DAG changes take effect without rebuilding containers.
-- The Iceberg warehouse is a **shared Docker volume** (`iceberg-warehouse`) accessed by the scheduler (for Spark ETL writes), iceberg-rest (catalog server), and the backend (for catalog sync via PySpark).
-- `iceberg-volume-init` is an Alpine init container that sets `chmod 1777` on the warehouse volume before any other Iceberg service starts, ensuring correct write permissions across containers running as different Unix users.
-- `iceberg-data-seed` runs as root (`user: "0"`) with `umask 000` to seed Iceberg tables with sample data, then sets `chmod -R 777` on the warehouse so `iceberg-rest` (uid 1000) can read the data.
-- The backend **waits for `iceberg-data-seed` to complete** before starting, ensuring schemas are available on first catalog sync.
+- The Iceberg warehouse is a **shared Docker volume** (`iceberg-warehouse`) accessed by the scheduler (for Spark ETL writes), `spark-connect` (the Spark Connect server backing the Iceberg hadoop catalog), and the seed jobs. There is no REST catalog — every component reads/writes the same warehouse path via an Iceberg hadoop catalog.
+- `spark-volume-init` is an Alpine init container that sets `chmod 1777` on the warehouse volume before `spark-connect` or the seed jobs start, ensuring correct write permissions across containers running as different Unix users.
+- `seed-schema` then `seed-data` run as root (`user: "0"`) with `umask 000` to create the Iceberg tables and seed sample data via a local Spark session, then set `chmod -R 777` on the warehouse so `spark-connect` (uid 1000) can read the data.
+- The backend **waits for `seed-data` to complete and `spark-connect` to become healthy** before starting, ensuring schemas are queryable on first catalog sync.
 
 ```mermaid
 graph TB
@@ -140,11 +140,11 @@ graph TB
         AS["airflow-scheduler<br/>(executes DAGs)"]
     end
 
-    subgraph Iceberg["Iceberg Catalog Services"]
-        IINIT["iceberg-volume-init<br/>chmod 1777<br/>one-shot"]
-        IRES["iceberg-rest<br/>Tabular REST Catalog<br/>:8181"]
-        ISEED["iceberg-seed<br/>(create namespaces/tables)<br/>one-shot"]
-        IDSEED["iceberg-data-seed<br/>(seed rows via PySpark)<br/>one-shot"]
+    subgraph Iceberg["Spark Connect / Iceberg Services"]
+        IINIT["spark-volume-init<br/>chmod 1777<br/>one-shot"]
+        IRES["spark-connect<br/>Spark Connect server<br/>(Iceberg hadoop catalog)<br/>:15002 gRPC"]
+        ISEED["seed-schema<br/>(create tables via local Spark)<br/>one-shot"]
+        IDSEED["seed-data<br/>(seed rows via local Spark)<br/>one-shot"]
     end
 
     subgraph SSO["SSO"]
@@ -163,6 +163,7 @@ graph TB
     ADB --- APG
     IRES --- ICE
     AS --- ICE
+    ISEED --- ICE
     IDSEED --- ICE
 
     AW --- DAG
@@ -173,7 +174,7 @@ graph TB
     BE -->|asyncpg :5432| DB
     FE -->|HTTP :8000| BE
     BE -->|REST :8080| AW
-    BE -->|PySpark REST :8181| IRES
+    BE -->|Spark Connect gRPC :15002| IRES
     BE -->|JWKS :8090| KC
     FE -->|OIDC :8090| KC
 
@@ -183,9 +184,10 @@ graph TB
     AS -->|depends| AINIT
 
     IINIT -->|"service_completed"| IRES
-    IRES -->|"service_healthy"| ISEED
+    IINIT -->|"service_completed"| ISEED
     ISEED -->|"service_completed"| IDSEED
     IDSEED -->|"service_completed"| BE
+    IRES -->|"service_healthy"| BE
 
     style Core fill:#18181b,stroke:#4f46e5,color:#e2e8f0
     style Airflow fill:#18181b,stroke:#b45309,color:#e2e8f0
@@ -203,7 +205,7 @@ graph TB
 | `db` | 5432 | PostgreSQL (EtlNexus application data) |
 | `airflow-webserver` | 8080 | Airflow UI and REST API |
 | `keycloak` | 8090 | Keycloak admin and OIDC endpoints |
-| `iceberg-rest` | 8181 | Iceberg REST Catalog API |
+| `spark-connect` | 15002 | Spark Connect server (gRPC) over the Iceberg hadoop catalog |
 
 ---
 
@@ -229,7 +231,7 @@ graph LR
 
     subgraph INT["Integration Clients"]
         AF["AirflowClient<br/>(httpx, TTL cache)"]
-        ICE["IcebergClient<br/>(PySpark local)"]
+        ICE["SparkConnectClient<br/>(Spark Connect gRPC)"]
         OIDC["OIDCClient<br/>(JWKS cache, httpx)"]
         LLM["LLMClient<br/>(httpx, 30s timeout)"]
     end
@@ -324,9 +326,9 @@ The `AirflowClient` (`backend/app/integrations/airflow_client.py`) maintains a p
 - A 5-minute TTL in-memory cache for `GET /dags`, `GET /dags/{id}/tasks`, `GET /dags/{id}/details` (DAG source), and the derived task-group map.
 - Graceful degradation: a failed request logs a warning and returns `None` / empty list rather than raising.
 
-### IcebergClient Design
+### SparkConnectClient Design
 
-The `IcebergClient` (`backend/app/integrations/iceberg_client.py`) uses a **lazily initialized PySpark local session** (`local[1]`, 512 MB driver) configured with the Iceberg Spark runtime extension and pointed at the REST catalog URI. Schema discovery is synchronous (PySpark is not async-native) and runs in the background task context. SQL identifiers are validated against a safe character regex before use in Spark SQL to prevent injection.
+The `SparkConnectClient` (`backend/app/integrations/spark_connect_client.py`) uses a **lazily initialized remote `SparkSession`** that connects to a Spark Connect server over gRPC (`SPARK_CONNECT_URL`, e.g. `sc://spark-connect:15002`) — no local JVM and no Iceberg REST catalog. The server exposes the Iceberg tables through an Iceberg **hadoop** catalog over the shared warehouse volume. Schema discovery is synchronous (PySpark/Spark Connect is not async-native) and runs in the background task context. SQL identifiers are validated against a safe character regex before use in Spark SQL to prevent injection. The client raises `SparkConnectError` on failure.
 
 ### OIDCClient Design
 
@@ -934,22 +936,22 @@ flowchart TD
     style Commit fill:#065f46,stroke:#4f46e5,color:#e2e8f0
 ```
 
-### 8.4 Iceberg Catalog Sync
+### 8.4 Iceberg Catalog Sync (via Spark Connect)
 
 ```mermaid
 flowchart TD
-    CatalogSync["sync_from_catalog()"] --> GetSchemas["iceberg_client.get_all_dagger_schemas()<br/>(synchronous, runs in background task thread)"]
+    CatalogSync["sync_from_catalog()"] --> GetSchemas["await asyncio.to_thread(<br/>spark_connect_client.get_all_schemas)<br/>(synchronous, offloaded to a thread)"]
 
-    subgraph Spark["PySpark local[1]"]
-        SS["SparkSession (lazy init)<br/>iceberg-spark-runtime-3.5_2.12"]
-        SQL1["SHOW TABLES IN iceberg.dagger"]
-        SQL2["spark.table('iceberg.dagger.{table_name}').schema"]
+    subgraph Spark["Spark Connect (gRPC :15002)"]
+        SS["Remote SparkSession (lazy init)<br/>Iceberg hadoop catalog"]
+        SQL1["for each prefix in SPARK_NAMESPACE_PREFIX:<br/>SHOW TABLES IN iceberg.{prefix}"]
+        SQL2["spark.table('iceberg.{prefix}.{table_name}').schema"]
     end
 
     GetSchemas --> SS
     SS --> SQL1
     SQL1 --> SQL2
-    SQL2 --> ForEachSchema["for each IcebergTableSchema<br/>(table_name, namespace, fields[])"]
+    SQL2 --> ForEachSchema["for each SparkTableSchema<br/>(table_name, namespace, fields[])"]
 
     ForEachSchema --> LookupPipeline["SELECT pipelines WHERE<br/>task_id = table_name"]
     LookupPipeline -->|not found| SkipSchema["skip (no pipeline for this table)"]
@@ -989,7 +991,7 @@ sequenceDiagram
 
 ### Scheduler Configuration
 
-APScheduler's `AsyncIOScheduler` runs on the same asyncio event loop as FastAPI. Two separate `asyncio.Lock` instances guard concurrent execution: `_sync_lock` prevents overlapping sync jobs, and `_poll_lock` prevents overlapping poll jobs. Sync and poll CAN run concurrently with each other — they just cannot overlap with themselves. If a job is already in progress when the interval fires, the new invocation is skipped and logs a warning. This prevents race conditions on shared tables (`pipelines`, `airflow_run_statuses`, `pipeline_run_history`).
+APScheduler's `AsyncIOScheduler` runs on the same asyncio event loop as FastAPI. Three separate `asyncio.Lock` instances guard concurrent execution: `_sync_lock` prevents overlapping sync jobs, `_poll_lock` prevents overlapping poll jobs, and `_mirror_lock` prevents overlapping catalog mirror refreshes. The three CAN run concurrently with each other — they just cannot overlap with themselves. If a job is already in progress when the interval fires, the new invocation is skipped and logs a warning. This prevents race conditions on shared tables (`pipelines`, `airflow_run_statuses`, `pipeline_run_history`) and matters especially for the 30-second mirror, whose Spark read can occasionally exceed its interval.
 
 ```mermaid
 timeline
@@ -998,15 +1000,14 @@ timeline
         T+0s : _startup_sync() (asyncio task)
                   sync_pipelines_from_airflow()
                   seed_usage_data()
-                  sync_from_catalog()
+                  refresh_catalog_mirror()
                   poll_airflow_statuses()
+    section 30 seconds
+        T+30s : spark_catalog_mirror (interval, CATALOG_MIRROR_INTERVAL_SECONDS)
+                    _guarded_mirror()  -> Spark Connect -> catalog_columns -> pipeline_fields
     section 20 min
         T+20min : airflow_pipeline_sync (interval, 20min)
                     _guarded_sync()
-    section 60 min
-        T+60min : catalog_sync first interval (starts at +1h)
-    section 2 hours
-        T+120min : catalog_sync (interval, 2h)
 ```
 
 ### Startup Sync Ordering
@@ -1038,7 +1039,7 @@ graph TB
         DEV_DB["db :5432<br/>(PostgreSQL 16)"]
         DEV_AF["airflow-webserver :8080<br/>airflow-scheduler<br/>airflow-db"]
         DEV_KC["keycloak :8090<br/>(start-dev mode,<br/>import realm)"]
-        DEV_ICE["iceberg-rest :8181<br/>iceberg-seed<br/>iceberg-data-seed"]
+        DEV_ICE["spark-connect :15002<br/>(Iceberg hadoop catalog)<br/>seed-schema<br/>seed-data"]
         DEV_WATCH["docker compose watch<br/>(auto-rebuild on<br/>src/ changes)"]
     end
 
@@ -1048,13 +1049,13 @@ graph TB
         PROD_SCHED["backend-scheduler<br/>(SCHEDULER_ENABLED=true,<br/>1 replica, 2 GB)"]
         PROD_DB["db<br/>(PostgreSQL 16, 2 GB limit,<br/>tuned shared_buffers)"]
         PROD_BACKUP["db-backup<br/>(pg_dump cron, 30d retention)"]
-        PROD_EXT["External Services<br/>(Airflow, Iceberg, Keycloak<br/>configured via .env.prod)"]
+        PROD_EXT["External Services<br/>(Airflow, Spark Connect, Keycloak<br/>configured via .env.prod)"]
     end
 
     DEV_FE -->|internal Docker network| DEV_BE
     DEV_BE -->|asyncpg| DEV_DB
     DEV_BE -->|REST| DEV_AF
-    DEV_BE -->|PySpark| DEV_ICE
+    DEV_BE -->|Spark Connect gRPC| DEV_ICE
     DEV_BE -->|JWKS| DEV_KC
 
     PROD_FE -->|internal Docker network| PROD_API
@@ -1073,7 +1074,7 @@ graph TB
 | Aspect | Development | Production |
 |---|---|---|
 | Airflow | Docker service (local, seeded DAGs) | External cluster (URL in `.env.prod`) |
-| Iceberg | Docker service (local warehouse volume) | External REST catalog |
+| Iceberg | Docker service: `spark-connect` over a local warehouse volume (hadoop catalog) | External Spark Connect server (URL in `.env.prod`) |
 | Keycloak | Docker service (dev mode, imported realm) | External Keycloak instance |
 | Backend | Single container (API + scheduler) | Separated: `backend-api` (2 replicas) + `backend-scheduler` (1 replica) |
 | uvicorn | `--reload` flag for code hot-reload | No reload, fixed workers |
@@ -1088,7 +1089,8 @@ graph TB
 
 ```mermaid
 flowchart TD
-    DBHealthy["db service_healthy<br/>(pg_isready -U etlnexus)"] --> IcebergSeed["iceberg-data-seed<br/>service_completed_successfully"]
+    DBHealthy["db service_healthy<br/>(pg_isready -U etlnexus)"] --> IcebergSeed["seed-data<br/>service_completed_successfully"]
+    SparkHealthy["spark-connect service_healthy<br/>(tcp :15002)"] --> Alembic
     IcebergSeed --> Alembic["uv run alembic upgrade head<br/>(runs migrations 001-032)"]
     Alembic --> Uvicorn["uv run uvicorn app.main:app<br/>--host 0.0.0.0 --port 8000"]
     Uvicorn --> OIDCInit["oidc_client.initialize()<br/>(fetch well-known + JWKS,<br/>no-op if SSO_ENABLED=false)"]
@@ -1122,8 +1124,8 @@ In both development and production, the frontend container serves the built Reac
 | JWT library | python-jose | latest | RS256 JWT validation |
 | Settings | pydantic-settings | latest | `.env` file loading, typed config |
 | Scheduler | APScheduler | 3.x | Background task scheduling (asyncio) |
-| Spark | PySpark | 3.5.1 | Iceberg catalog schema sync (local mode) |
-| Iceberg | iceberg-spark-runtime-3.5 | 1.7.1 | Iceberg REST catalog Spark extension |
+| Spark | Spark Connect / PySpark | 3.5.1 | Iceberg catalog schema sync (remote Spark Connect session over gRPC) |
+| Iceberg | iceberg-spark-runtime-3.5 | 1.7.1 | Iceberg hadoop catalog Spark extension |
 | sparkMeasure | sparkmeasure | 0.24.0 | Spark task metrics collection |
 
 ### Frontend
@@ -1151,7 +1153,7 @@ In both development and production, the frontend container serves the built Reac
 | Container runtime | Docker + Docker Compose | latest | Development environment orchestration |
 | Web server | Nginx | alpine | SPA serving + API reverse proxy |
 | Workflow orchestration | Apache Airflow | 2.9+ | Source of truth for pipeline metadata |
-| Table format | Apache Iceberg | 1.7.1 | Schema catalog (REST catalog) |
+| Table format | Apache Iceberg | 1.7.1 | Schema catalog (hadoop catalog via Spark Connect) |
 | Identity provider | Keycloak | 26.2 | OIDC SSO, groups, role claims |
 
 ### Design Conventions

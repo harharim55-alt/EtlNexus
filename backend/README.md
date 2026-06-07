@@ -63,12 +63,12 @@ HTTP Request
   PostgreSQL 16
 ```
 
-Dependency injection is handled by FastAPI `Depends`. Each request receives its own `AsyncSession` via `get_db_session`. Integration clients (`airflow_client`, `llm_client`, `iceberg_client`, `oidc_client`) are module-level singletons initialized once at application startup.
+Dependency injection is handled by FastAPI `Depends`. Each request receives its own `AsyncSession` via `get_db_session`. Integration clients (`airflow_client`, `llm_client`, `spark_connect_client`, `oidc_client`) are module-level singletons initialized once at application startup.
 
 ### Application Startup Sequence
 
 1. `oidc_client.initialize()` — fetch OIDC well-known config and initial JWKS (no-op when `SSO_ENABLED=false`)
-2. `run_startup_sync()` launched as a background asyncio task — waits up to 5 minutes for Airflow health, then runs the full sync sequence: pipeline discovery, bouncer volume seeding, usage seeding, catalog sync, and status poll
+2. `run_startup_sync()` launched as a background asyncio task — waits up to 5 minutes for Airflow health, then runs the full sync sequence: pipeline discovery, bouncer volume seeding, usage seeding, catalog mirror refresh, and status poll
 3. `setup_scheduler()` — starts APScheduler with three recurring jobs
 
 ### Directory Structure
@@ -298,7 +298,7 @@ The `OIDCClient` maintains an in-memory JWKS cache with a 6-hour TTL. Dual issue
 | `AirflowService` | Polls Airflow task run statuses, parses `ETL_RESOURCE_ACTUAL:` and `ETL_EXECUTION_PLAN:` markers from task logs, and writes to `airflow_run_statuses` and `pipeline_run_history` |
 | `AirflowSyncService` | Discovers pipelines and lineage from Airflow task metadata; auto-discovers all tasks by `task_id`; classifies bouncers (`"Bouncer" in task_id`); derives category from TaskGroup; parses `needs`/`prefers` from `params` for lineage; reads descriptions from `ETL_DESCRIPTION:` / `BOUNCER_DESCRIPTION:` log markers |
 | `BouncerService` | Lists bouncers from the `bouncers` table with optional team filtering; builds union/intersection topology of downstream pipelines for a given set of bouncers |
-| `CatalogSyncService` | Uses `IcebergClient` to enumerate tables under the configured namespace prefix; upserts each table as a pipeline and synchronizes its fields (name, type, ordinal position) from the Iceberg schema |
+| `CatalogSyncService` | Uses `SparkConnectClient` to enumerate tables under the configured namespace prefix; upserts each table as a pipeline and synchronizes its fields (name, type, ordinal position) from the Iceberg schema |
 | `ConsumerService` | Finds downstream pipelines that reference this ETL's task ID in their `needs`/`prefers` params, enriched with current Airflow status from the DB |
 | `DagSummaryService` | Aggregates per-DAG statistics from `dag_tasks`, `airflow_run_statuses`, and `pipeline_run_history`; queries Airflow directly for live DAG schedule information; cached 60 s |
 | `PipelineService` | Core pipeline listing (with visibility-scoped query and TTL caching), detail assembly, metadata update with revision recording, revision restore, and schema-based join suggestion generation |
@@ -321,7 +321,7 @@ All background tasks use APScheduler's `AsyncIOScheduler`. Separate asyncio lock
 |--------|------|----------|-------------|
 | `airflow_pipeline_sync` | Airflow Pipeline Discovery | Every 20 min (configurable via `AIRFLOW_POLL_INTERVAL_MINUTES`) | Discovers pipelines, lineage, team assignments, bouncer metadata, and resource configs from Airflow task definitions |
 | `airflow_status_poll` | Airflow Status Poll | Every 20 min (offset +2 min from sync) | Polls task run statuses, parses actual resource usage and execution plans from task logs |
-| `catalog_sync` | Iceberg Catalog Sync | Every 2 hours (first run at startup +1 hour) | Reads Iceberg table schemas via PySpark and upserts pipeline fields |
+| `spark_catalog_mirror` | Spark Connect Catalog Mirror | Every `CATALOG_MIRROR_INTERVAL_SECONDS` (default 30s) | Reads Iceberg schemas from Spark Connect into the `catalog_columns` mirror table (only live Spark caller), then projects them onto `pipeline_fields` in-DB. Guarded against overlapping runs |
 
 All caches are cleared via `cache.clear_all()` at the end of every sync and poll cycle.
 
@@ -415,9 +415,9 @@ uv run alembic downgrade -1          # roll back one migration
 
 Uses a persistent `httpx.AsyncClient` with a connection pool (`max_connections=10`, `max_keepalive_connections=5`, `keepalive_expiry=30 s`) to reuse TCP connections across requests. All requests use HTTP Basic authentication against the Airflow REST API v1. Requests retry once on failure. A `TTLCache` with a 300 s TTL (configurable via `CACHE_TTL_AIRFLOW`) caches responses to avoid repeated calls during sync. The client tracks `is_connected` state for the health endpoint. A semaphore (`AIRFLOW_SEMAPHORE_LIMIT`, default 6) limits concurrent Airflow calls during sync to stay within the connection pool. `strip_group_prefix()` normalizes task IDs by stripping the `{group_id}.` prefix that Airflow prepends when `prefix_group_id=True`.
 
-### Iceberg Client (`app/integrations/iceberg_client.py`)
+### Spark Connect Client (`app/integrations/spark_connect_client.py`)
 
-Uses PySpark with the `PyIcebergCatalog` REST catalog implementation to discover table schemas. The `SparkSession` is created lazily on first use and reused thereafter. It enumerates namespaces matching the configured `ICEBERG_NAMESPACE_PREFIX` (default: `dagger`) and reads each table's schema via `spark.table("catalog.db.table").schema`. Identifier validation prevents Spark SQL injection. The client's `stop()` method is called during application shutdown to release JVM resources.
+Connects to a remote **Spark Connect** server (`SPARK_CONNECT_URL`, e.g. `sc://spark-connect:15002`) to discover Iceberg table schemas — no Iceberg REST catalog and no local JVM required. The remote `SparkSession` is created lazily on first use and reused thereafter. It enumerates namespaces matching the configured `SPARK_NAMESPACE_PREFIX` (default: `dagger,prism,vault,oasis`) within the `SPARK_CATALOG_NAME` catalog (default: `iceberg`) and reads each table's schema via `spark.table("catalog.db.table").schema`. Identifier validation prevents Spark SQL injection. The client's `stop()` method is called during application shutdown to release the session.
 
 ### LLM Client (`app/integrations/llm_client.py`)
 
@@ -599,9 +599,10 @@ All settings are loaded by `pydantic-settings` from environment variables or a `
 | `AIRFLOW_STARTUP_MAX_ATTEMPTS` | `20` | Number of health-check retries before giving up on startup sync |
 | `AIRFLOW_STARTUP_RETRY_SECONDS` | `15` | Seconds between startup health-check retries |
 | `AIRFLOW_EXCLUDE_OPERATOR_TYPES` | `EmptyOperator,DummyOperator,BranchPythonOperator,TriggerDagRunOperator,ShortCircuitOperator` | Comma-separated operator types skipped during auto-discovery |
-| **Iceberg** | | |
-| `ICEBERG_CATALOG_URI` | `http://iceberg-rest:8181` | Iceberg REST catalog endpoint |
-| `ICEBERG_NAMESPACE_PREFIX` | `dagger` | Namespace prefix used to filter tables during catalog sync |
+| **Spark Connect / Iceberg** | | |
+| `SPARK_CONNECT_URL` | `sc://spark-connect:15002` | Spark Connect server endpoint (gRPC). Leave empty to disable schema browsing |
+| `SPARK_CATALOG_NAME` | `iceberg` | Spark catalog alias holding the Iceberg tables (hadoop catalog) |
+| `SPARK_NAMESPACE_PREFIX` | `dagger,prism,vault,oasis` | Comma-separated namespace prefixes used to filter tables during catalog sync |
 | **AI / LLM** | | |
 | `LLM_API_BASE_URL` | _(empty — disables AI)_ | OpenAPI-compatible chat completions base URL |
 | `LLM_API_KEY` | _(empty)_ | API key sent as `Authorization: Bearer` header |

@@ -10,7 +10,7 @@ How to deploy EtlNexus in a production environment with Keycloak SSO, external A
 - External PostgreSQL 16+ (or use the bundled container)
 - External Keycloak 24+ (or any OIDC provider)
 - External Apache Airflow 2.7+ with REST API enabled
-- External Iceberg REST catalog (optional — for schema browsing)
+- External Spark Connect server exposing the Iceberg catalog (optional — for schema browsing)
 - DNS entries for frontend and Keycloak
 
 ---
@@ -95,12 +95,13 @@ The dev realm config (`dev/keycloak/etlnexus-realm.json`) is **not suitable for 
 6. **Enable SSL** — set SSL required to `external requests` or `all requests`
 7. **Set strong admin credentials** and disable the default admin account
 
-### Iceberg Catalog
+### Spark Connect / Iceberg Catalog
 
 | Variable | Required | Example | Notes |
 |----------|----------|---------|-------|
-| `ICEBERG_CATALOG_URI` | No | `http://iceberg-rest.internal:8181` | Leave empty to disable schema browsing |
-| `ICEBERG_NAMESPACE_PREFIX` | No | `dagger` | Only tables under this namespace are synced |
+| `SPARK_CONNECT_URL` | No | `sc://spark-connect.internal:15002` | Spark Connect server (gRPC). Leave empty to disable schema browsing |
+| `SPARK_CATALOG_NAME` | No | `iceberg` | Spark catalog alias holding the Iceberg tables (hadoop catalog) |
+| `SPARK_NAMESPACE_PREFIX` | No | `dagger,prism,vault,oasis` | Only tables under these comma-separated namespaces are synced |
 
 ### AI / LLM
 
@@ -247,7 +248,7 @@ Three APScheduler tasks run inside the backend process:
 |------|----------|-------------|
 | Pipeline sync | 20 min | Discovers pipelines, lineage, resources, sensors from Airflow |
 | Status poll | 20 min | Updates run statuses, run history, execution plans |
-| Catalog sync | 2 hours | Syncs Iceberg table schemas to pipeline fields |
+| Catalog mirror | 30s (`CATALOG_MIRROR_INTERVAL_SECONDS`) | Mirrors Iceberg schemas from Spark Connect into Postgres (`catalog_columns`), then projects onto pipeline fields in-DB |
 
 Check backend logs for `[apscheduler]` entries to verify tasks are running.
 

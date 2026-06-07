@@ -123,7 +123,7 @@ Service endpoints after startup:
 | API Docs (Swagger) | http://localhost:8000/docs | — |
 | Airflow | http://localhost:8080 | admin / admin |
 | Keycloak | http://localhost:8090 | admin / admin |
-| Iceberg REST | http://localhost:8181 | — |
+| Spark Connect | sc://localhost:15002 (gRPC) | — |
 | PostgreSQL | localhost:5432 | etlnexus / etlnexus |
 
 ### Dev Test Users (Keycloak)
@@ -143,7 +143,7 @@ Run the backend locally against a Dockerized database and Airflow:
 
 ```bash
 # Start only the infrastructure services
-docker compose up db airflow-db airflow-init airflow-webserver airflow-scheduler keycloak iceberg-rest iceberg-seed iceberg-data-seed
+docker compose up db airflow-db airflow-init airflow-webserver airflow-scheduler keycloak spark-volume-init spark-connect seed-schema seed-data
 
 cd backend
 
@@ -217,6 +217,7 @@ EtlNexus/
 │   │   │   ├── pipeline_service.py
 │   │   │   ├── airflow_service.py
 │   │   │   ├── airflow_sync_service.py
+│   │   │   ├── catalog_mirror_service.py
 │   │   │   ├── catalog_sync_service.py
 │   │   │   ├── consumer_service.py
 │   │   │   ├── dag_summary_service.py
@@ -271,14 +272,14 @@ EtlNexus/
 │   │   │   └── common.py
 │   │   ├── integrations/           # External system clients
 │   │   │   ├── airflow_client.py   # httpx client for Airflow REST API
-│   │   │   ├── iceberg_client.py   # PySpark/Iceberg catalog client
+│   │   │   ├── spark_connect_client.py # Spark Connect (gRPC) Iceberg catalog client
 │   │   │   ├── llm_client.py       # OpenAPI-compatible LLM client
 │   │   │   └── oidc_client.py      # JWKS-caching OIDC JWT validator
 │   │   ├── tasks/                  # APScheduler background jobs
 │   │   │   ├── scheduler.py        # Job registration and lock guards
 │   │   │   ├── airflow_sync_task.py
 │   │   │   ├── airflow_poll_task.py
-│   │   │   ├── catalog_sync_task.py
+│   │   │   ├── catalog_mirror_task.py
 │   │   │   └── seed_usage_data.py
 │   │   └── parsers/
 │   │       └── dagger_catalog.py   # Iceberg namespace filter
@@ -625,7 +626,7 @@ Pipelines are not created manually. They are discovered automatically from Airfl
 4. `needs` keys in `op_kwargs` create `reads_from` lineage edges.
 5. `ETL_WRITES_TO:` log markers create `writes_to` lineage edges.
 6. Team assignment is derived by matching the task's `task_group` against known team names.
-7. Schema fields are synced separately by `CatalogSyncService` from the Iceberg REST catalog.
+7. Schema fields are synced separately by `CatalogSyncService` from the Iceberg hadoop catalog via Spark Connect.
 
 ### VisibilityGrant Constraints
 
@@ -723,17 +724,13 @@ Key methods:
 
 All requests retry once before marking `_connected = False` and returning `None`. Callers must handle `None` gracefully.
 
-### Iceberg Client (integrations/iceberg_client.py)
+### Spark Connect Client (integrations/spark_connect_client.py)
 
-The `iceberg_client` singleton uses a lazily-created PySpark session to read table schemas from the Iceberg REST catalog. PySpark is loaded only when the catalog sync task runs.
+The `spark_connect_client` singleton uses a lazily-created **remote** `SparkSession` to read Iceberg table schemas over a Spark Connect server (gRPC). Tables are still Iceberg format — only the access path changed: there is no Iceberg REST catalog and no local JVM. The server (`SPARK_CONNECT_URL`, e.g. `sc://spark-connect:15002`) owns the Iceberg **hadoop** catalog configuration over the shared warehouse volume; the backend simply issues Spark SQL against it.
 
-The session is configured with:
-- `iceberg-spark-runtime-3.5_2.12:1.7.1` JAR for Iceberg support.
-- `spark.sql.catalog.iceberg` pointing to the REST catalog URI.
-- `spark.driver.memory=512m` to minimize memory footprint.
-- Spark UI disabled.
+The session is created lazily on first use via `SparkSession.builder.remote(SPARK_CONNECT_URL).getOrCreate()` — PySpark's Spark Connect client is loaded only when the catalog sync task runs. Discovery enumerates namespaces matching `SPARK_NAMESPACE_PREFIX` within the `SPARK_CATALOG_NAME` catalog and reads each table's schema. Identifiers are validated against `[a-zA-Z0-9_.]` before use in Spark SQL to prevent injection.
 
-The `stop()` method is called during application shutdown to release JVM resources.
+The `stop()` method is called during application shutdown to release the remote session.
 
 ### OIDC Client (integrations/oidc_client.py)
 
@@ -760,7 +757,7 @@ The APScheduler `AsyncIOScheduler` is configured in `setup_scheduler()` and star
 |--------|----------|-------------|
 | `airflow_pipeline_sync` | Every 20 minutes | Discovers pipelines + lineage from Airflow, then polls statuses |
 | `airflow_catchup_sync` | Once, 5 minutes after startup | One-shot catch-up in case Airflow wasn't ready at boot |
-| `catalog_sync` | Every 2 hours (first run at +1 hour) | Reads Iceberg table schemas and upserts `pipeline_fields` |
+| `spark_catalog_mirror` | Every `CATALOG_MIRROR_INTERVAL_SECONDS` (default 30s) | Reads Iceberg schemas from Spark Connect into the `catalog_columns` mirror table, then projects onto `pipeline_fields` in-DB. The only live Spark caller; guarded against overlap |
 
 The initial sync at startup (in `main.py`) runs immediately as a background task and is not subject to the scheduler. Jobs added to the scheduler start after their first interval to avoid duplicate work.
 
@@ -1250,12 +1247,13 @@ All settings are loaded by `backend/app/config.py` via Pydantic Settings from en
 | `AIRFLOW_PASSWORD` | `admin` | Basic auth password |
 | `AIRFLOW_POLL_INTERVAL_MINUTES` | `20` | How often to sync pipelines and poll statuses |
 
-### Iceberg Catalog
+### Spark Connect / Iceberg Catalog
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `ICEBERG_CATALOG_URI` | `http://iceberg-rest:8181` | Iceberg REST catalog URL |
-| `ICEBERG_NAMESPACE_PREFIX` | `dagger` | Only tables under this namespace prefix are synced |
+| `SPARK_CONNECT_URL` | `sc://spark-connect:15002` | Spark Connect server endpoint (gRPC). Leave empty to disable schema browsing |
+| `SPARK_CATALOG_NAME` | `iceberg` | Spark catalog alias holding the Iceberg tables (hadoop catalog) |
+| `SPARK_NAMESPACE_PREFIX` | `dagger,prism,vault,oasis` | Only tables under these comma-separated namespace prefixes are synced |
 
 ### LLM / AI
 
@@ -1426,7 +1424,7 @@ POSTGRES_PASSWORD=<strong-random-password>
 AIRFLOW_BASE_URL=https://your-airflow-host/api/v1
 AIRFLOW_USERNAME=<airflow-user>
 AIRFLOW_PASSWORD=<airflow-password>
-ICEBERG_CATALOG_URI=https://your-iceberg-host
+SPARK_CONNECT_URL=sc://your-spark-connect-host:15002
 LLM_API_BASE_URL=https://your-llm-endpoint
 LLM_API_KEY=<your-key>
 LLM_MODEL=<model-name>
@@ -1506,7 +1504,7 @@ docker compose logs backend
 | `asyncpg.exceptions.ConnectionDoesNotExistError` | The `db` container is not healthy. Wait for `pg_isready` or run `docker compose up db --wait`. |
 | `alembic.util.exc.CommandError: Can't locate revision` | The migration chain is broken. Run `uv run alembic heads` to see all heads; there should be exactly one. |
 | `ImportError: No module named 'pyspark'` | Dependencies not installed. Run `uv sync` or rebuild the Docker image. |
-| `ValueError: Unsafe iceberg_namespace_prefix` | `ICEBERG_NAMESPACE_PREFIX` contains characters outside `[a-zA-Z0-9_.]`. |
+| `ValueError: Unsafe namespace_prefix` | A `SPARK_NAMESPACE_PREFIX` entry contains characters outside `[a-zA-Z0-9_.]`. |
 
 ### Airflow Sync Returns Zero Pipelines
 
@@ -1523,10 +1521,10 @@ docker compose logs backend
 **Symptom:** Pipeline fields are empty even though Iceberg tables exist.
 
 **Checklist:**
-1. Check if the Iceberg REST catalog is healthy: `curl http://localhost:8181/v1/config`.
-2. Verify the `ICEBERG_NAMESPACE_PREFIX` matches the actual namespace (default: `dagger`).
-3. PySpark initialization takes ~30–60 seconds on first run. Look for `SparkSession created for Iceberg catalog` in the backend logs.
-4. Iceberg tables must contain data for PySpark to read the schema. The `iceberg-data-seed` container populates seed data; ensure it completed successfully: `docker compose ps iceberg-data-seed`.
+1. Check that the Spark Connect server is healthy: `docker compose ps spark-connect` should report `(healthy)` (the healthcheck probes the gRPC port `15002`). If `SPARK_CONNECT_URL` is empty, schema browsing is intentionally disabled.
+2. Verify the `SPARK_NAMESPACE_PREFIX` entries match the actual namespaces (default: `dagger,prism,vault,oasis`).
+3. The remote Spark Connect session is created on first sync. Look for `Spark Connect session created at sc://...` in the backend logs.
+4. Iceberg tables must contain data for Spark to read the schema. The `seed-data` container populates seed data; ensure it completed successfully: `docker compose ps seed-data`.
 
 ### SSO Login Loop
 

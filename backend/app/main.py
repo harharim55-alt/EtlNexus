@@ -128,8 +128,8 @@ async def lifespan(app: FastAPI):
     await llm_client.close()
     from app.integrations.oasis_prod_client import oasis_prod_client as _oasis
     await _oasis.close()
-    from app.integrations.iceberg_client import iceberg_client
-    iceberg_client.stop()
+    from app.integrations.spark_connect_client import spark_connect_client
+    spark_connect_client.stop()
     if settings.redis_url:
         from app.cache import invalidation_bus
         await invalidation_bus.stop()

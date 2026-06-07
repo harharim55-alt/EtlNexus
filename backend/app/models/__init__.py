@@ -1,5 +1,6 @@
 from app.models.airflow_status import AirflowRunStatus  # noqa: F401
 from app.models.bouncer import Bouncer  # noqa: F401
+from app.models.catalog_mirror import CatalogColumn  # noqa: F401
 from app.models.dag_task import DagTask  # noqa: F401
 from app.models.feature_flag import FeatureFlag  # noqa: F401
 from app.models.lineage import LineageEdge  # noqa: F401

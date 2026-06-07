@@ -227,7 +227,7 @@ async def set_pipeline_fields(
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
-    """Manually set pipeline fields, overriding dynamic Iceberg sync."""
+    """Manually set pipeline fields, overriding dynamic Spark Connect catalog sync."""
     result = await service.set_manual_fields(pipeline_id, body.fields, updated_by=user.display_name)
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")

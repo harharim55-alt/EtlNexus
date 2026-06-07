@@ -28,7 +28,7 @@ ETL Explorer Hub — a data architecture command center for discovering, underst
 - **Frontend:** TypeScript, React 19, Vite, pnpm, shadcn/ui (base-ui), Zustand (state), TanStack Query (data fetching), Lucide icons, Tailwind CSS v4
 - **Auth:** Keycloak (OIDC/SSO), PyJWT, oidc-client-ts + react-oidc-context
 - **Containerization:** Docker, Docker Compose
-- **Integrations:** Airflow (pipeline discovery, health, topology), Iceberg REST catalog, PySpark, OpenAPI-compatible AI endpoint
+- **Integrations:** Airflow (pipeline discovery, health, topology), Spark Connect (reads Iceberg table schemas — replaced the Iceberg REST catalog), PySpark, OpenAPI-compatible AI endpoint
 - **Do NOT use:** Redux
 
 ## Architecture
@@ -36,7 +36,8 @@ ETL Explorer Hub — a data architecture command center for discovering, underst
 - Backend serves a REST API; frontend consumes it via TanStack Query
 - All pipeline metadata is sourced from Airflow — **no git cloning**. `AirflowSyncService` reads `rendered_fields.op_kwargs` from task instances for pipeline discovery, lineage, and metadata
 - Lineage `reads_from` edges derived from `needs` task_ids in `params`; `writes_to` edges parsed from task logs (`ETL_WRITES_TO:` markers)
-- ETL catalog is sourced from an Iceberg catalog — schemas synced every 2 hours
+- ETL catalog schemas are read from Iceberg tables via a **Spark Connect** server (`SparkConnectClient`, `sc://...`) — no Iceberg REST catalog. Tables are exposed through an Iceberg hadoop catalog over the shared warehouse volume
+- **Catalog mirror:** the backend polls Spark Connect every `CATALOG_MIRROR_INTERVAL_SECONDS` (default 30s) and replaces a Postgres mirror table (`catalog_columns`) via `CatalogMirrorService` — the **only** live Spark caller. `CatalogSyncService` then projects the mirror onto `PipelineField` purely in-DB. End-user requests read schema data from Postgres and never hit Spark Connect; the catalog is at most ~30s stale
 - AI Architect terminal uses an OpenAPI-compatible LLM endpoint with full catalog context
 - **Caching:** In-memory TTL caches (process-local). Cache invalidation via `clear_all()` only clears the local process. Horizontal scaling requires migrating to Redis or accepting eventual consistency via TTL expiration. The APScheduler also runs per-process — multiple backend instances will each run their own sync jobs.
 - **SSO/RBAC:** Keycloak OIDC with JIT user provisioning, team-based RBAC, visibility grants for cross-team access, admin panel for grant management
@@ -53,7 +54,7 @@ ETL Explorer Hub — a data architecture command center for discovering, underst
 
 ### Development (Docker Compose Watch - auto-updates on file changes)
 ```bash
-docker compose up              # Start all services (backend, frontend, db, airflow, keycloak, iceberg)
+docker compose up              # Start all services (backend, frontend, db, airflow, keycloak, spark-connect)
 docker compose watch           # Start with file-watching auto-sync
 docker compose down            # Stop all services
 docker compose down -v         # Stop and remove volumes (reset DB)
@@ -89,9 +90,9 @@ Three-layer pattern: **Router** (HTTP) -> **Service** (business logic) -> **Repo
 - `backend/app/routers/` — FastAPI route handlers, all under `/api/`. All endpoints require authentication via `get_current_user` (except health check and `/api/auth/config`)
 - `backend/app/services/` — orchestrates repos and integration clients
 - `backend/app/repositories/` — async SQLAlchemy queries
-- `backend/app/integrations/` — external system clients (Airflow, Iceberg, LLM, OIDC)
-- `backend/app/parsers/` — Iceberg catalog navigator
-- `backend/app/tasks/` — APScheduler background tasks (airflow sync, airflow poll, catalog sync)
+- `backend/app/integrations/` — external system clients (Airflow, Spark Connect, LLM, OIDC)
+- `backend/app/parsers/` — Spark catalog namespace filter + log parsing
+- `backend/app/tasks/` — APScheduler background tasks (airflow sync, airflow poll, catalog mirror)
 - `backend/app/models/` — SQLAlchemy ORM models (pipelines, users, teams, visibility_grants, etc.)
 - `backend/app/schemas/` — Pydantic request/response DTOs
 - `backend/app/auth.py` — JWT validation, JIT user provisioning, role/team authorization dependencies
@@ -123,11 +124,11 @@ Three-layer pattern: **Router** (HTTP) -> **Service** (business logic) -> **Repo
 
 - **Airflow pipeline sync:** every 20 min — discovers pipelines, lineage, team assignment from op_kwargs
 - **Airflow status poll:** every 20 min — task run statuses, resource usage from logs, execution plans
-- **Catalog sync:** every 2 hours — Iceberg schemas synced to pipeline fields
+- **Catalog mirror:** every `CATALOG_MIRROR_INTERVAL_SECONDS` (default 30s) — reads Iceberg schemas from Spark Connect into the `catalog_columns` mirror table, then projects onto pipeline fields in-DB (job id `spark_catalog_mirror`, guarded against overlap). Replaced the old 2-hour catalog sync
 
 ## Configuration
 
-All integrations configured via `.env` (dev defaults) or `.env.prod` (external APIs). See `.env.example` for all variables organized by section: Database, Airflow, Iceberg, LLM, SSO/Keycloak, App.
+All integrations configured via `.env` (dev defaults) or `.env.prod` (external APIs). See `.env.example` for all variables organized by section: Database, Airflow, Spark Connect, LLM, SSO/Keycloak, App.
 
 ## Design Reference
 

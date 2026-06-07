@@ -16,10 +16,16 @@ class Settings(BaseSettings):
     airflow_password: str = "admin"
     airflow_poll_interval_minutes: int = 20
 
-    # Iceberg Catalog
-    iceberg_catalog_uri: str = "http://iceberg-rest:8181"
-    iceberg_catalog_name: str = "iceberg"
-    iceberg_namespace_prefix: str = "dagger,prism,vault,oasis"
+    # Spark Connect (Iceberg catalog access — replaces the Iceberg REST catalog)
+    spark_connect_url: str = "sc://spark-connect:15002"
+    spark_catalog_name: str = "iceberg"  # Spark catalog alias holding the Iceberg tables
+    spark_namespace_prefix: str = "dagger,prism,vault,oasis"
+    # How often the backend polls Spark Connect and refreshes the Postgres catalog
+    # mirror (catalog_columns). End-user reads hit Postgres, never Spark live.
+    catalog_mirror_interval_seconds: int = 30
+    # Max time to wait for a Spark Connect catalog read before abandoning the
+    # refresh. Must be < interval so a hung Spark server can't stall all refreshes.
+    catalog_mirror_spark_timeout_seconds: int = 25
 
     # AI / LLM
     llm_api_base_url: str = ""

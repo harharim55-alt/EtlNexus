@@ -116,11 +116,12 @@ async def sync_all_pipelines(
             )
             await poll_service.poll_all_statuses()
 
-        # Sync Iceberg catalog schemas (now that pipelines exist)
+        # Refresh the catalog mirror from Spark Connect, then project pipeline fields
         async with async_session_factory() as session:
+            from app.services.catalog_mirror_service import CatalogMirrorService
             from app.services.catalog_sync_service import CatalogSyncService
-            catalog_svc = CatalogSyncService(session)
-            schema_count = await catalog_svc.sync_from_catalog()
+            await CatalogMirrorService(session).refresh_from_spark()
+            schema_count = await CatalogSyncService(session).sync_from_catalog()
             logger.info("Catalog sync after manual sync: %d pipelines with schemas", schema_count)
 
         from app.cache import clear_all
