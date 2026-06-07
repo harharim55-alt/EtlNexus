@@ -38,7 +38,7 @@ ETL Explorer Hub — a data architecture command center for discovering, underst
 - Lineage `reads_from` edges derived from `needs` task_ids in `params`; `writes_to` edges parsed from task logs (`ETL_WRITES_TO:` markers)
 - ETL catalog is sourced from an Iceberg catalog — schemas synced every 2 hours
 - AI Architect terminal uses an OpenAPI-compatible LLM endpoint with full catalog context
-- **Caching:** In-memory TTL caches (process-local). Cache invalidation via `clear_all()` only clears the local process. Horizontal scaling requires migrating to Redis or accepting eventual consistency via TTL expiration. The APScheduler also runs per-process — multiple backend instances will each run their own sync jobs.
+- **Caching:** In-memory TTL caches (process-local, `backend/app/cache.py`), cleared after each sync/poll cycle. `clear_all()` broadcasts a Redis pub/sub invalidation (`etlnexus:cache:invalidate`) so all instances clear their local caches; when Redis is unavailable it falls back to local-only. The APScheduler still runs per-process — multiple backend instances each run their own sync jobs. See `docs/adr/001-in-memory-cache-design.md`.
 - **SSO/RBAC:** Keycloak OIDC with JIT user provisioning, team-based RBAC, visibility grants for cross-team access, admin panel for grant management
 
 ## Key UI Sections
@@ -73,10 +73,31 @@ uv run alembic revision --autogenerate -m "description"  # Create migration
 cd frontend
 pnpm install                   # Install dependencies
 pnpm dev                       # Start dev server at :5173
-pnpm build                     # Production build
+pnpm build                     # Production build (tsc -b && vite build)
 pnpm tsc --noEmit              # TypeScript type check
 pnpm dlx shadcn@latest add <component>  # Add shadcn/ui component
 ```
+
+### Testing & Linting
+```bash
+# Backend — pytest (asyncio_mode=auto). Test deps: uv sync --extra test
+cd backend
+uv run pytest                               # Full suite (testpaths = tests/)
+uv run pytest tests/test_auth.py            # Single file
+uv run pytest tests/test_auth.py::test_name # Single test
+uv run pytest --cov=app                      # Coverage
+uv run ruff check .                          # Lint — tool is ruff, NOT black/flake8
+uv run ruff format .                         # Format. line-length=120, target py312
+
+# Frontend — vitest (unit) + playwright (e2e)
+cd frontend
+pnpm test                                    # Vitest watch
+pnpm test:run                                # Vitest once (CI)
+pnpm test:run src/path/foo.test.ts           # Single test file
+pnpm e2e                                     # Playwright e2e
+pnpm e2e:ui                                  # Playwright UI mode
+```
+> `agent_guidelines/CODING_STANDARDS.md` still says black/flake8 — repo standardized on **ruff** (`backend/pyproject.toml`). Keep Python files under ~900 lines (refactor past 1000).
 
 ### Production
 ```bash
@@ -92,10 +113,11 @@ Three-layer pattern: **Router** (HTTP) -> **Service** (business logic) -> **Repo
 - `backend/app/integrations/` — external system clients (Airflow, Iceberg, LLM, OIDC)
 - `backend/app/parsers/` — Iceberg catalog navigator
 - `backend/app/tasks/` — APScheduler background tasks (airflow sync, airflow poll, catalog sync)
-- `backend/app/models/` — SQLAlchemy ORM models (pipelines, users, teams, visibility_grants, etc.)
+- `backend/app/models/` — SQLAlchemy ORM models. Beyond pipelines/users/teams/visibility_grants: `bouncer` (Airflow sensors — **renamed from "sensors"**, migration 029), `network`, `tag`, `feature_flag`, `pipeline_revision`, `pipeline_log`, `run_history`, `dag_task`, `resource_config`, `lineage`
 - `backend/app/schemas/` — Pydantic request/response DTOs
 - `backend/app/auth.py` — JWT validation, JIT user provisioning, role/team authorization dependencies
 - Dependency injection via FastAPI `Depends`
+- 41 Alembic migrations under `backend/alembic/versions/` — autogenerate, then review before committing
 
 ## Authentication & Authorization
 
@@ -132,3 +154,9 @@ All integrations configured via `.env` (dev defaults) or `.env.prod` (external A
 ## Design Reference
 
 `design_idea.ts` contains a React component mockup showing the target UI design, layout structure, and component hierarchy. Use it as a visual reference, not as production code.
+
+## Conventions & Workflow
+
+- `agent_guidelines/CODING_STANDARDS.md` — Python style (NumPy docstrings, type hints, fail-fast error handling), naming, file-length limits
+- `agent_guidelines/BRANCHING_STRATEGY.md` — GitFlow: feature branches cut from `develop` (not `main`), `feature/<name>` → PR → `develop`; `release/*` and `hotfix/*` merge to `main` + tag. Direct commits to `main` prohibited
+- `.full-review-archive-*/` dirs hold past audit reports (security/perf/quality) — context, not active code
