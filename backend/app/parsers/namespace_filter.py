@@ -1,4 +1,4 @@
-"""Filter Iceberg namespaces to those matching configured team prefixes."""
+"""Filter Spark catalog namespaces to those matching configured team prefixes."""
 
 import logging
 
@@ -10,12 +10,12 @@ logger = logging.getLogger(__name__)
 def filter_namespaces(namespaces: list[list[str]]) -> list[str]:
     """Filter namespaces to only those matching the configured team prefixes.
 
-    The prefixes are configured via `iceberg_namespace_prefix` as a
+    The prefixes are configured via `spark_namespace_prefix` as a
     comma-separated list (e.g., "dagger,prism,vault,oasis").
     Namespaces can be represented as lists of parts (["dagger"]) or
     dot-separated strings.
     """
-    configured_prefixes = [p.strip() for p in settings.iceberg_namespace_prefix.split(",")]
+    configured_prefixes = [p.strip() for p in settings.spark_namespace_prefix.split(",")]
     matched = []
 
     for ns in namespaces:

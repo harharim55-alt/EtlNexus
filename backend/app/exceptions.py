@@ -21,8 +21,8 @@ class PipelineNotFoundError(EtlNexusError):
     """Requested pipeline does not exist."""
 
 
-class IcebergCatalogError(EtlNexusError):
-    """Error communicating with the Iceberg REST catalog."""
+class SparkConnectError(EtlNexusError):
+    """Error communicating with the Spark Connect server."""
 
 
 class AuthorizationError(EtlNexusError):

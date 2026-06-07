@@ -52,8 +52,10 @@ services:
         condition: service_healthy
       oasis-prod-db:
         condition: service_healthy
-      iceberg-data-seed:
+      seed-data:
         condition: service_completed_successfully
+      spark-connect:
+        condition: service_healthy
   frontend:
     container_name: frontend
     image: etlnexus-frontend
@@ -137,7 +139,7 @@ services:
       AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
       AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
       AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-      ICEBERG_CATALOG_URI: http://iceberg-rest:8181
+      SPARK_WAREHOUSE: /tmp/warehouse
     volumes:
       - ./dev/dags:/opt/airflow/dags
       - ./dev/seeds/etl_code:/data/etl-code
@@ -162,7 +164,7 @@ services:
       AIRFLOW__CORE__FERNET_KEY: ""
       AIRFLOW__CORE__LOAD_EXAMPLES: "false"
       AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
-      ICEBERG_CATALOG_URI: http://iceberg-rest:8181
+      SPARK_WAREHOUSE: /tmp/warehouse
     volumes:
       - ./dev/dags:/opt/airflow/dags
       - ./dev/seeds/etl_code:/data/etl-code
@@ -194,59 +196,62 @@ services:
       - "127.0.0.1:8090:8090"
 
   # ============================================
-  # Dev-only: Iceberg REST Catalog
+  # Dev-only: Spark Connect server (Iceberg hadoop catalog, no REST)
   # ============================================
-  iceberg-volume-init:
-    container_name: iceberg-volume-init
+  spark-volume-init:
+    container_name: spark-volume-init
     image: alpine:latest
     volumes:
       - iceberg-warehouse:/tmp/warehouse
     command: sh -c "chmod 1777 /tmp/warehouse"
 
-  iceberg-rest:
-    container_name: iceberg-rest
-    image: tabulario/iceberg-rest:latest
+  spark-connect:
+    container_name: spark-connect
+    image: etlnexus-spark-connect
     environment:
-      CATALOG_WAREHOUSE: /tmp/warehouse
-      CATALOG_IO__IMPL: org.apache.iceberg.io.ResolvingFileIO
+      SPARK_WAREHOUSE: /tmp/warehouse
     volumes:
       - iceberg-warehouse:/tmp/warehouse
     ports:
-      - "127.0.0.1:8181:8181"
+      - "127.0.0.1:15002:15002"
     depends_on:
-      iceberg-volume-init:
+      spark-volume-init:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/8181'"]
-      interval: 5s
+      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/15002'"]
+      interval: 10s
       timeout: 5s
-      retries: 10
-      start_period: 10s
+      retries: 12
+      start_period: 40s
 
-  iceberg-seed:
-    container_name: iceberg-seed
-    image: python:3.12-slim
-    environment:
-      ICEBERG_CATALOG_URI: http://iceberg-rest:8181
-    volumes:
-      - ./dev/seeds:/seeds
-    command: python /seeds/seed_iceberg.py
-    depends_on:
-      iceberg-rest:
-        condition: service_healthy
-
-  iceberg-data-seed:
-    container_name: iceberg-data-seed
+  # Schema seed: creates empty Iceberg tables via local Spark (hadoop catalog).
+  seed-schema:
+    container_name: seed-schema
     image: etlnexus-iceberg-data-seed
     user: "0"
     environment:
-      ICEBERG_CATALOG_URI: http://iceberg-rest:8181
+      SPARK_WAREHOUSE: /tmp/warehouse
+    volumes:
+      - ./dev/seeds:/seeds
+      - iceberg-warehouse:/tmp/warehouse
+    command: bash -c "umask 000 && python /seeds/seed_iceberg.py && chmod -R 777 /tmp/warehouse"
+    depends_on:
+      spark-volume-init:
+        condition: service_completed_successfully
+
+  # Data seed: populates a subset of tables with sample rows via local Spark.
+  seed-data:
+    container_name: seed-data
+    image: etlnexus-iceberg-data-seed
+    user: "0"
+    environment:
+      SPARK_WAREHOUSE: /tmp/warehouse
     volumes:
       - ./dev/seeds:/seeds
       - iceberg-warehouse:/tmp/warehouse
     command: bash -c "umask 000 && python /seeds/seed_iceberg_data.py && chmod -R 777 /tmp/warehouse"
     depends_on:
-      iceberg-seed:
+      seed-schema:
         condition: service_completed_successfully
 
 volumes:

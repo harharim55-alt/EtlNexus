@@ -15,9 +15,10 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Separate locks allow sync and poll to run independently
+# Separate locks allow sync, poll, and catalog mirror to run independently
 _sync_lock = asyncio.Lock()
 _poll_lock = asyncio.Lock()
+_mirror_lock = asyncio.Lock()
 
 
 async def _guarded_sync() -> None:
@@ -56,6 +57,26 @@ async def _guarded_poll() -> None:
             clear_all()
 
 
+async def _guarded_mirror() -> None:
+    """Refresh the Spark Connect catalog mirror under its own lock.
+
+    Skips this tick if the previous refresh is still running — important at the
+    30-second cadence, where a slow Spark read could otherwise overlap the next.
+    """
+    if _mirror_lock.locked():
+        logger.info("Skipping catalog mirror — previous refresh still running")
+        return
+    async with _mirror_lock:
+        from app.tasks.catalog_mirror_task import refresh_catalog_mirror
+        try:
+            await refresh_catalog_mirror()
+        except Exception:
+            logger.exception("Scheduled catalog mirror refresh failed")
+        finally:
+            from app.cache import clear_all
+            clear_all()
+
+
 async def run_startup_sync() -> None:
     """Run the initial sync at startup, waiting for Airflow to be ready.
 
@@ -88,7 +109,7 @@ async def run_startup_sync() -> None:
     async with _sync_lock:
         from app.tasks.airflow_poll_task import poll_airflow_statuses
         from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
-        from app.tasks.catalog_sync_task import sync_from_catalog
+        from app.tasks.catalog_mirror_task import refresh_catalog_mirror
         from app.tasks.seed_bouncer_volumes import seed_bouncer_volumes
         from app.tasks.seed_usage_data import seed_usage_data
 
@@ -110,9 +131,9 @@ async def run_startup_sync() -> None:
             logger.exception("Startup seed usage data failed")
 
         try:
-            await sync_from_catalog()
+            await refresh_catalog_mirror()
         except Exception:
-            logger.exception("Startup catalog sync failed")
+            logger.exception("Startup catalog mirror refresh failed")
 
         if pipeline_sync_ok:
             try:
@@ -133,8 +154,6 @@ async def setup_scheduler() -> AsyncScheduler:
     sync is handled by run_startup_sync() which waits for Airflow readiness
     and runs under _sync_lock to prevent concurrent DB mutations.
     """
-    from app.tasks.catalog_sync_task import sync_from_catalog
-
     scheduler = AsyncScheduler()
     # APScheduler 4.x requires entering the context manager before adding schedules
     await scheduler.__aenter__()
@@ -153,11 +172,19 @@ async def setup_scheduler() -> AsyncScheduler:
         id="airflow_status_poll",
     )
 
-    # Catalog sync (every 2 hours)
+    # Spark Connect catalog mirror — the only live Spark reader. Refreshes the
+    # Postgres mirror + projects pipeline fields every CATALOG_MIRROR_INTERVAL_SECONDS.
+    mirror_interval = settings.catalog_mirror_interval_seconds
+    if mirror_interval < 1:
+        logger.warning(
+            "catalog_mirror_interval_seconds=%s is invalid — defaulting to 30s",
+            mirror_interval,
+        )
+        mirror_interval = 30
     await scheduler.add_schedule(
-        sync_from_catalog,
-        IntervalTrigger(hours=2),
-        id="catalog_sync",
+        _guarded_mirror,
+        IntervalTrigger(seconds=mirror_interval),
+        id="spark_catalog_mirror",
     )
 
     # Run history retention (daily)
@@ -171,9 +198,10 @@ async def setup_scheduler() -> AsyncScheduler:
         )
 
     logger.info(
-        "Scheduler configured: airflow_sync=%dmin, airflow_poll=%dmin, catalog_sync=2h, retention=%dd",
+        "Scheduler configured: airflow_sync=%dmin, airflow_poll=%dmin, catalog_mirror=%ds, retention=%dd",
         settings.airflow_poll_interval_minutes,
         settings.airflow_poll_interval_minutes,
+        mirror_interval,
         settings.run_history_retention_days,
     )
     return scheduler

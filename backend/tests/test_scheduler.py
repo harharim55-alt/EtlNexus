@@ -173,6 +173,87 @@ class TestGuardedPoll:
 
 
 # ---------------------------------------------------------------------------
+# _guarded_mirror
+# ---------------------------------------------------------------------------
+
+
+class TestGuardedMirror:
+    async def test_skips_when_lock_held(self):
+        """When the mirror lock is already held, _guarded_mirror returns immediately."""
+        from app.tasks import scheduler
+
+        lock = asyncio.Lock()
+        mirror_fn = AsyncMock()
+
+        with patch.object(scheduler, "_mirror_lock", lock):
+            await lock.acquire()
+            try:
+                with patch(
+                    "app.tasks.catalog_mirror_task.refresh_catalog_mirror",
+                    mirror_fn,
+                ):
+                    await scheduler._guarded_mirror()
+                mirror_fn.assert_not_awaited()
+            finally:
+                lock.release()
+
+    async def test_runs_when_lock_free(self):
+        """When the mirror lock is free, the refresh function is called."""
+        from app.tasks import scheduler
+
+        mirror_fn = AsyncMock()
+        clear_fn = MagicMock()
+
+        with (
+            patch(
+                "app.tasks.catalog_mirror_task.refresh_catalog_mirror",
+                mirror_fn,
+            ),
+            patch("app.cache.clear_all", clear_fn),
+        ):
+            await scheduler._guarded_mirror()
+
+        mirror_fn.assert_awaited_once()
+
+    async def test_clears_cache_after_mirror(self):
+        """Cache is cleared in the finally block after a successful refresh."""
+        from app.tasks import scheduler
+
+        mirror_fn = AsyncMock()
+        clear_fn = MagicMock()
+
+        with (
+            patch(
+                "app.tasks.catalog_mirror_task.refresh_catalog_mirror",
+                mirror_fn,
+            ),
+            patch("app.cache.clear_all", clear_fn),
+        ):
+            await scheduler._guarded_mirror()
+
+        clear_fn.assert_called_once()
+
+    async def test_clears_cache_even_on_mirror_failure(self):
+        """Cache is cleared even when the refresh function raises."""
+        from app.tasks import scheduler
+
+        mirror_fn = AsyncMock(side_effect=RuntimeError("mirror exploded"))
+        clear_fn = MagicMock()
+
+        with (
+            patch(
+                "app.tasks.catalog_mirror_task.refresh_catalog_mirror",
+                mirror_fn,
+            ),
+            patch("app.cache.clear_all", clear_fn),
+        ):
+            # Should not propagate the exception (caught by except)
+            await scheduler._guarded_mirror()
+
+        clear_fn.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # run_startup_sync
 # ---------------------------------------------------------------------------
 
@@ -222,7 +303,7 @@ class TestRunStartupSync:
             patch("app.integrations.airflow_client.airflow_client") as mock_client,
             patch("app.tasks.airflow_sync_task.sync_pipelines_from_airflow", sync_fn),
             patch("app.tasks.airflow_poll_task.poll_airflow_statuses", poll_fn),
-            patch("app.tasks.catalog_sync_task.sync_from_catalog", catalog_fn),
+            patch("app.tasks.catalog_mirror_task.refresh_catalog_mirror", catalog_fn),
             patch("app.tasks.seed_bouncer_volumes.seed_bouncer_volumes", bouncer_fn),
             patch("app.tasks.seed_usage_data.seed_usage_data", usage_fn),
             patch("app.cache.clear_all", clear_fn),
@@ -257,7 +338,7 @@ class TestRunStartupSync:
             patch("app.integrations.airflow_client.airflow_client") as mock_client,
             patch("app.tasks.airflow_sync_task.sync_pipelines_from_airflow", sync_fn),
             patch("app.tasks.airflow_poll_task.poll_airflow_statuses", poll_fn),
-            patch("app.tasks.catalog_sync_task.sync_from_catalog", catalog_fn),
+            patch("app.tasks.catalog_mirror_task.refresh_catalog_mirror", catalog_fn),
             patch("app.tasks.seed_bouncer_volumes.seed_bouncer_volumes", bouncer_fn),
             patch("app.tasks.seed_usage_data.seed_usage_data", usage_fn),
             patch("app.cache.clear_all", clear_fn),
@@ -290,7 +371,7 @@ class TestRunStartupSync:
             patch("app.integrations.airflow_client.airflow_client") as mock_client,
             patch("app.tasks.airflow_sync_task.sync_pipelines_from_airflow", sync_fn),
             patch("app.tasks.airflow_poll_task.poll_airflow_statuses", poll_fn),
-            patch("app.tasks.catalog_sync_task.sync_from_catalog", catalog_fn),
+            patch("app.tasks.catalog_mirror_task.refresh_catalog_mirror", catalog_fn),
             patch("app.tasks.seed_bouncer_volumes.seed_bouncer_volumes", bouncer_fn),
             patch("app.tasks.seed_usage_data.seed_usage_data", usage_fn),
             patch("app.cache.clear_all", clear_fn),

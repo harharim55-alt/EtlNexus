@@ -1,4 +1,10 @@
-"""Iceberg catalog client using PyIceberg to read table schemas."""
+"""Spark Connect client — reads Iceberg table schemas via a remote Spark Connect server.
+
+Replaces the previous PyIceberg REST-catalog client. Tables are still Iceberg
+format; only the access path changed. The backend connects to a Spark Connect
+server (``sc://host:port``) and reads schemas with Spark SQL, so it needs no JVM
+or catalog credentials of its own — the server owns the Iceberg catalog config.
+"""
 
 import logging
 import re
@@ -12,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class IcebergTableSchema:
+class SparkTableSchema:
     table_name: str
     namespace: str
     fields: list[dict] = field(default_factory=list)  # [{"name": ..., "type": ...}]
@@ -25,96 +31,95 @@ def _validate_identifier(value: str, label: str) -> str:
     return value
 
 
-class IcebergClient:
+class SparkConnectClient:
     def __init__(self):
-        self.catalog_uri = settings.iceberg_catalog_uri
+        self.remote_url = settings.spark_connect_url
         self.catalog_name = _validate_identifier(
-            settings.iceberg_catalog_name, "iceberg_catalog_name"
+            settings.spark_catalog_name, "spark_catalog_name"
         )
-        self.namespace_prefix = settings.iceberg_namespace_prefix
-        self._catalog = None
+        self.namespace_prefix = settings.spark_namespace_prefix
+        self._spark = None
         self._connected = False
 
     @property
     def is_connected(self) -> bool:
         return self._connected
 
-    def _get_catalog(self):
-        """Lazily create a PyIceberg REST catalog connection."""
-        if self._catalog is not None:
-            return self._catalog
+    def _get_spark(self):
+        """Lazily create a Spark Connect session bound to the remote server."""
+        if self._spark is not None:
+            return self._spark
         try:
-            from pyiceberg.catalog import load_catalog
+            from pyspark.sql import SparkSession
 
-            self._catalog = load_catalog(
-                self.catalog_name,
-                type="rest",
-                uri=self.catalog_uri,
-            )
+            self._spark = SparkSession.builder.remote(self.remote_url).getOrCreate()
             self._connected = True
-            logger.info("PyIceberg catalog connected at %s", self.catalog_uri)
+            logger.info("Spark Connect session created at %s", self.remote_url)
         except Exception as e:
-            logger.warning("Failed to connect to Iceberg catalog: %s", e)
+            logger.warning("Failed to create Spark Connect session: %s", e)
             self._connected = False
-            self._catalog = None
-        return self._catalog
+            self._spark = None
+        return self._spark
 
     async def check_health(self) -> bool:
-        """Check if we can reach the Iceberg catalog."""
+        """Check if we can reach the Spark Connect server."""
         import asyncio
         return await asyncio.to_thread(self._check_health_sync)
 
     def _check_health_sync(self) -> bool:
         """Synchronous health check (runs in thread pool)."""
         try:
-            catalog = self._get_catalog()
-            if catalog is None:
+            spark = self._get_spark()
+            if spark is None:
                 return False
-            catalog.list_namespaces()
+            spark.sql("SELECT 1").collect()
             self._connected = True
             return True
         except Exception as e:
-            logger.warning("Iceberg health check failed: %s", e)
+            logger.warning("Spark Connect health check failed: %s", e)
             self._connected = False
             return False
 
     def list_tables_in_namespace(self, namespace: str) -> list[str]:
-        """List all tables in a given Iceberg namespace."""
+        """List all tables in a given namespace of the configured Spark catalog."""
         _validate_identifier(namespace, "namespace")
-        catalog = self._get_catalog()
-        if not catalog:
+        spark = self._get_spark()
+        if not spark:
             return []
         try:
-            tables = catalog.list_tables(namespace)
-            return [table_id[-1] for table_id in tables]
+            rows = spark.sql(f"SHOW TABLES IN {self.catalog_name}.{namespace}").collect()
+            return [row["tableName"] for row in rows]
         except Exception as e:
             logger.warning("Failed to list tables in %s: %s", namespace, e)
             return []
 
-    def get_table_schema(self, namespace: str, table_name: str) -> IcebergTableSchema | None:
-        """Read schema from an Iceberg table using PyIceberg.
+    def get_table_schema(self, namespace: str, table_name: str) -> SparkTableSchema | None:
+        """Read schema from an Iceberg table via Spark Connect.
 
         Args:
             namespace: Namespace e.g. "dagger"
             table_name: Table name e.g. "PortScanCollector"
         """
-        catalog = self._get_catalog()
-        if not catalog:
+        _validate_identifier(namespace, "namespace")
+        _validate_identifier(table_name, "table_name")
+        spark = self._get_spark()
+        if not spark:
             return None
         try:
-            table = catalog.load_table(f"{namespace}.{table_name}")
-            schema = table.schema()
+            fqn = f"{self.catalog_name}.{namespace}.{table_name}"
+            struct = spark.table(fqn).schema
 
-            fields = []
-            for iceberg_field in schema.fields:
-                fields.append({
-                    "name": iceberg_field.name,
-                    "type": str(iceberg_field.field_type).upper(),
-                })
+            fields = [
+                {
+                    "name": struct_field.name,
+                    "type": struct_field.dataType.simpleString().upper(),
+                }
+                for struct_field in struct.fields
+            ]
 
             logger.info("Read schema for %s.%s: %d fields", namespace, table_name, len(fields))
             self._connected = True
-            return IcebergTableSchema(
+            return SparkTableSchema(
                 table_name=table_name,
                 namespace=namespace,
                 fields=fields,
@@ -123,20 +128,19 @@ class IcebergClient:
             logger.warning("Failed to read schema for %s.%s: %s", namespace, table_name, e)
             return None
 
-    def get_all_schemas(self) -> list[IcebergTableSchema]:
+    def get_all_schemas(self) -> list[SparkTableSchema]:
         """Discover all tables under the configured team namespace prefixes and read their schemas."""
-        catalog = self._get_catalog()
-        if not catalog:
+        spark = self._get_spark()
+        if not spark:
             return []
 
-        schemas: list[IcebergTableSchema] = []
+        schemas: list[SparkTableSchema] = []
         prefixes = [p.strip() for p in self.namespace_prefix.split(",")]
         for prefix in prefixes:
             try:
                 _validate_identifier(prefix, "namespace_prefix")
                 tables = self.list_tables_in_namespace(prefix)
                 for table_name in tables:
-                    _validate_identifier(table_name, "table_name")
                     schema = self.get_table_schema(prefix, table_name)
                     if schema:
                         schemas.append(schema)
@@ -147,9 +151,14 @@ class IcebergClient:
         return schemas
 
     def stop(self):
-        """Clean up catalog connection."""
-        self._catalog = None
+        """Clean up the Spark Connect session."""
+        if self._spark is not None:
+            try:
+                self._spark.stop()
+            except Exception as e:
+                logger.warning("Error stopping Spark Connect session: %s", e)
+        self._spark = None
         self._connected = False
 
 
-iceberg_client = IcebergClient()
+spark_connect_client = SparkConnectClient()

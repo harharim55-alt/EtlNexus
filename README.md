@@ -209,7 +209,7 @@ Teams (Dagger, Vault, Prism, Relay, Oasis) own pipelines and control visibility.
 |-------|-----------|
 | **Backend** | Python 3.12, FastAPI, async SQLAlchemy, asyncpg, Alembic, APScheduler |
 | **Frontend** | React 19, TypeScript, Vite, TanStack Query, Zustand, shadcn/ui (base-ui), Tailwind CSS v4 |
-| **Catalog** | PySpark 3.5.1, Apache Iceberg (REST catalog), sparkmeasure 0.24 |
+| **Catalog** | Spark Connect (gRPC), Apache Iceberg (hadoop catalog), PySpark 3.5.1, sparkmeasure 0.24 |
 | **Auth** | Keycloak OIDC, PyJWT, oidc-client-ts + react-oidc-context |
 | **Integrations** | Airflow REST API (pipeline discovery + status), OpenAPI-compatible LLM |
 | **Database** | PostgreSQL 16 (31 Alembic migrations) |
@@ -245,7 +245,7 @@ That's it. The dev environment includes all 12 services and starts with:
 | **Backend API** | http://localhost:8000/api/health | — |
 | **Airflow UI** | http://localhost:8080 | admin / admin |
 | **Keycloak Admin** | http://localhost:8090 | admin / admin |
-| **Iceberg REST catalog** | http://localhost:8181 | — |
+| **Spark Connect** | sc://localhost:15002 (gRPC) | — |
 | **PostgreSQL** | localhost:5432 | etlnexus / etlnexus |
 
 #### Dev SSO Users (Keycloak realm: `etlnexus`)
@@ -294,8 +294,9 @@ All settings via environment variables (see `.env.example` for the complete refe
 | `AIRFLOW_PASSWORD` | Airflow basic auth password | `admin` |
 | `AIRFLOW_POLL_INTERVAL_MINUTES` | Sync and poll interval | `20` |
 | `AIRFLOW_EXCLUDE_OPERATOR_TYPES` | Operator types skipped during discovery | `EmptyOperator,BranchPythonOperator,...` |
-| `ICEBERG_CATALOG_URI` | Iceberg REST catalog endpoint | `http://iceberg-rest:8181` |
-| `ICEBERG_NAMESPACE_PREFIX` | Namespace to scan for tables | `dagger` |
+| `SPARK_CONNECT_URL` | Spark Connect server endpoint (gRPC) — leave empty to disable schema browsing | `sc://spark-connect:15002` |
+| `SPARK_CATALOG_NAME` | Spark catalog alias holding the Iceberg tables | `iceberg` |
+| `SPARK_NAMESPACE_PREFIX` | Namespace(s) to scan for tables | `dagger,prism,vault,oasis` |
 | `LLM_API_BASE_URL` | OpenAPI-compatible LLM endpoint | _(empty, optional)_ |
 | `LLM_API_KEY` | LLM API key | _(empty)_ |
 | `LLM_MODEL` | Model name for the LLM request | `default` |
@@ -356,11 +357,11 @@ All settings via environment variables (see `.env.example` for the complete refe
                                   │      │  │  port 8090│
                      Airflow API  │      │  └───────────┘
                      ┌────────────▼──┐   │
-                     │  Airflow      │   │  Iceberg REST
-                     │  port 8080    │   ▼
+                     │  Airflow      │   │  Spark Connect
+                     │  port 8080    │   ▼  (gRPC)
                      └───────────────┘  ┌──────────────┐
-                                        │ Iceberg REST │
-                                        │  port 8181   │
+                                        │ Spark Connect│
+                                        │  port 15002  │
                                         └──────────────┘
                                               │  (optional)
                                         ┌─────▼────────┐
@@ -415,8 +416,8 @@ Same 20-minute cycle, `AirflowService.poll_all_statuses()`:
 
 Every 2 hours, `CatalogSyncService`:
 
-1. Connects via PySpark to the Iceberg REST catalog
-2. Lists all tables under the configured namespace
+1. Connects via the Spark Connect server (gRPC) to the Iceberg hadoop catalog
+2. Lists all tables under the configured namespace(s)
 3. Reads each table's schema (field names, data types)
 4. Matches tables to pipelines by name, updates `pipeline_fields`
 
@@ -511,7 +512,7 @@ Key migration milestones: `007` (resources + run history), `009` (dag_tasks), `0
 ### Integration Clients
 
 - **AirflowClient** — persistent `httpx.AsyncClient`, basic auth, 10s timeout, 2 retries, 5-min TTL cache for DAG/task definitions, configurable semaphore for concurrent calls
-- **IcebergClient** — PySpark `SparkSession` connecting to REST catalog, lazy initialization
+- **SparkConnectClient** — remote `SparkSession` over Spark Connect (gRPC) reading the Iceberg hadoop catalog, lazy initialization
 - **LLMClient** — OpenAPI-compatible `POST /chat/completions`, 30s timeout, optional (degrades gracefully when unconfigured)
 - **OidcClient** — JWKS caching, dual-issuer validation, PyJWT decode with audience check
 
@@ -662,8 +663,9 @@ EtlNexus is a **command center for ETL pipelines**. It answers: "What pipelines 
 └──────────┬──────────────┬─────────────────────────┬─────────┘
            │              │                          │
       ┌────▼─────┐  ┌─────▼──────┐           ┌─────▼──────┐
-      │ Airflow  │  │  Iceberg   │           │  Keycloak  │
-      │ :8080    │  │ REST :8181 │           │  :8090     │
+      │ Airflow  │  │   Spark    │           │  Keycloak  │
+      │ :8080    │  │ Connect    │           │  :8090     │
+      │          │  │ :15002 gRPC│           │            │
       └──────────┘  └────────────┘           └────────────┘
                                                     │ JWKS
            PostgreSQL :5432 ◄──────────────────────┘
@@ -734,8 +736,8 @@ APScheduler (20 min) → AirflowService.poll_all_statuses()
 ```
 APScheduler (2 hours) → CatalogSyncService.sync_catalog()
     |
-    └── PySpark SparkSession → IcebergClient
-          ├── List namespaces → filter by ICEBERG_NAMESPACE_PREFIX
+    └── Spark Connect SparkSession → SparkConnectClient
+          ├── List namespaces → filter by SPARK_NAMESPACE_PREFIX
           ├── List tables per namespace
           └── For each table:
                 spark.table(f"{namespace}.{table}").schema
@@ -801,8 +803,8 @@ Dev mode (docker compose up):
 
 db (PostgreSQL) ─── healthy ──► backend
                                     |
-iceberg-volume-init ──► iceberg-rest ──► iceberg-seed
-iceberg-data-seed ──── completed ──► backend
+spark-volume-init ──► spark-connect ─── healthy ──► backend
+spark-volume-init ──► seed-schema ──► seed-data ── completed ──► backend
 
 airflow-db ── healthy ──► airflow-init ──► airflow-webserver
                                        └── airflow-scheduler
@@ -813,7 +815,7 @@ frontend ─── (depends on backend healthy for proxy)
 
 - Backend auto-runs `alembic upgrade head` (31 migrations) then starts uvicorn
 - DAGs bind-mounted from `./dev/dags` — changes take effect without container rebuild
-- `iceberg-data-seed` runs as root with `umask 000` so Spark-written warehouse files are world-writable for the `iceberg-rest` service (uid 1000)
+- `seed-schema` / `seed-data` run as root with `umask 000` so Spark-written warehouse files are world-writable for the `spark-connect` service (uid 1000)
 - Airflow scheduler uses `umask 000` so PySpark JVM-created warehouse dirs are writable
 
 ---
@@ -859,7 +861,7 @@ EtlNexus/
       |   team_service.py user_auth_service.py visibility_service.py
       |   sync/                     # Sync helper modules
       repositories/             # 12 async SQLAlchemy repositories
-      integrations/             # airflow_client.py, iceberg_client.py,
+      integrations/             # airflow_client.py, spark_connect_client.py,
       |                         #   llm_client.py, oidc_client.py
       tasks/                    # APScheduler: airflow_sync_task.py,
                                 #   airflow_poll_task.py, catalog_sync_task.py,
@@ -953,10 +955,10 @@ EtlNexus/
 | `airflow-webserver` | custom (./dev/airflow) | Airflow UI and REST API at :8080 |
 | `airflow-scheduler` | custom (./dev/airflow) | Runs DAG schedules; PySpark + sparkmeasure included |
 | `keycloak` | quay.io/keycloak/keycloak | OIDC/SSO provider with pre-loaded realm at :8090 |
-| `iceberg-volume-init` | alpine | One-shot: `chmod 1777` on warehouse volume before iceberg-rest starts |
-| `iceberg-rest` | tabulario/iceberg-rest | Iceberg REST catalog at :8181 |
-| `iceberg-seed` | custom | Creates Iceberg table schemas via REST API |
-| `iceberg-data-seed` | custom | Seeds ~18,804 rows across 27 Iceberg tables; runs as root with `umask 000` |
+| `spark-volume-init` | alpine | One-shot: `chmod 1777` on warehouse volume before spark-connect/seeds start |
+| `spark-connect` | etlnexus-spark-connect (./dev/spark) | Spark Connect server (gRPC) over the Iceberg hadoop catalog at :15002 |
+| `seed-schema` | custom | One-shot: creates empty Iceberg tables via local Spark (hadoop catalog) |
+| `seed-data` | custom | Seeds ~18,804 rows across 27 Iceberg tables; runs as root with `umask 000` |
 
 Named volumes: `pgdata`, `airflow-pgdata`, `iceberg-warehouse`
 

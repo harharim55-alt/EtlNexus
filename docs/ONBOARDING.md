@@ -78,7 +78,7 @@ You only need three containers. Create a `.env` file:
 DATABASE_URL=postgresql+asyncpg://etlnexus:etlnexus@db:5432/etlnexus
 SSO_ENABLED=false
 SCHEDULER_ENABLED=false
-ICEBERG_CATALOG_URI=
+SPARK_CONNECT_URL=
 REDIS_URL=
 OASIS_PROD_DATABASE_URL=
 LLM_API_BASE_URL=
@@ -93,8 +93,8 @@ docker compose up db backend frontend
 
 The app starts and is fully functional:
 - `SSO_ENABLED=false` → all requests get default admin user (no Keycloak needed)
-- `SCHEDULER_ENABLED=false` → no background sync jobs attempt to reach Airflow/Iceberg
-- Empty `ICEBERG_CATALOG_URI` → catalog sync no-ops
+- `SCHEDULER_ENABLED=false` → no background sync jobs attempt to reach Airflow/Spark Connect
+- Empty `SPARK_CONNECT_URL` → catalog sync no-ops
 - Empty `REDIS_URL` → falls back to in-memory caching (fine for single instance)
 
 ### Backend Only (local development)
@@ -426,7 +426,7 @@ When you don't have Airflow, Iceberg, or other external integrations, the system
 ```env
 SCHEDULER_ENABLED=false      # No background sync jobs
 SSO_ENABLED=false            # Or true with real Keycloak
-ICEBERG_CATALOG_URI=         # Empty = no catalog sync
+SPARK_CONNECT_URL=           # Empty = no catalog sync
 AIRFLOW_BASE_URL=http://localhost:8080/api/v1  # Can point anywhere, won't be called
 ```
 
@@ -492,7 +492,7 @@ services:
       DATABASE_URL: postgresql+asyncpg://etlnexus:etlnexus@db:5432/etlnexus
       SSO_ENABLED: "false"
       SCHEDULER_ENABLED: "false"
-      ICEBERG_CATALOG_URI: ""
+      SPARK_CONNECT_URL: ""
       REDIS_URL: ""
     ports:
       - "8000:8000"
