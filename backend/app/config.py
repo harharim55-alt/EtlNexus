@@ -62,8 +62,6 @@ class Settings(BaseSettings):
     # Run history retention
     run_history_retention_days: int = 90  # Delete run history older than this; 0 = keep forever
 
-    # Redis (optional — cross-instance cache invalidation)
-    redis_url: str = ""  # Empty = disabled, pure in-memory fallback
 
     # Cache TTLs (seconds) and page limits
     cache_ttl_short: int = 30

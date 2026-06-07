@@ -19,17 +19,6 @@ services:
       timeout: 5s
       retries: 5
 
-  redis:
-    container_name: redis
-    image: redis:7-alpine
-    ports:
-      - "127.0.0.1:6379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
   backend:
     container_name: backend
     image: etlnexus-backend
@@ -40,15 +29,12 @@ services:
       OASIS_PROD_DATABASE_URL: postgresql+asyncpg://oasis-prod-db:5432/oasis_prod
       OASIS_PROD_USERNAME: oasis
       OASIS_PROD_PASSWORD: oasis
-      REDIS_URL: redis://redis:6379/0
       SSO_PUBLIC_ISSUER_URL: http://${HOSTNAME:-localhost}:8090/realms/etlnexus
       CORS_ORIGINS: '["http://localhost:5173","http://${HOSTNAME:-localhost}:5173"]'
     ports:
       - "8000:8000"
     depends_on:
       db:
-        condition: service_healthy
-      redis:
         condition: service_healthy
       oasis-prod-db:
         condition: service_healthy
