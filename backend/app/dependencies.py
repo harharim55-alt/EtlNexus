@@ -22,7 +22,6 @@ from app.repositories.team_repo import TeamRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.ai_service import AIService
-from app.services.airflow_sync_service import AirflowSyncService
 from app.services.bouncer_service import BouncerService
 from app.services.consumer_service import ConsumerService
 from app.services.dag_summary_service import DagSummaryService
@@ -122,28 +121,6 @@ def get_resource_service(
     pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
 ) -> ResourceService:
     return ResourceService(resource_repo, pipeline_repo)
-
-
-def get_airflow_sync_service(
-    session: AsyncSession = Depends(get_db_session),
-    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
-    lineage_repo: LineageRepository = Depends(get_lineage_repo),
-    resource_repo: ResourceRepository = Depends(get_resource_repo),
-    airflow_repo: AirflowRepository = Depends(get_airflow_repo),
-    dag_task_repo: DagTaskRepository = Depends(get_dag_task_repo),
-    bouncer_repo: BouncerRepository = Depends(get_bouncer_repo),
-    team_repo: TeamRepository = Depends(get_team_repo),
-) -> AirflowSyncService:
-    return AirflowSyncService(
-        session,
-        pipeline_repo=pipeline_repo,
-        lineage_repo=lineage_repo,
-        resource_repo=resource_repo,
-        airflow_repo=airflow_repo,
-        dag_task_repo=dag_task_repo,
-        bouncer_repo=bouncer_repo,
-        team_repo=team_repo,
-    )
 
 
 def get_dag_summary_service(

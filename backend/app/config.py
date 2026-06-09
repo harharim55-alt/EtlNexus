@@ -10,12 +10,6 @@ class Settings(BaseSettings):
     db_echo: bool = False
     db_command_timeout: int = 30  # asyncpg query timeout in seconds
 
-    # Airflow Integration
-    airflow_base_url: str = "http://airflow-webserver:8080/api/v1"
-    airflow_username: str = "admin"
-    airflow_password: str = "admin"
-    airflow_poll_interval_minutes: int = 20
-
     # Spark Connect (Iceberg catalog access — replaces the Iceberg REST catalog)
     spark_connect_url: str = "sc://spark-connect:15002"
     spark_catalog_name: str = "iceberg"  # Spark catalog alias holding the Iceberg tables
@@ -41,23 +35,11 @@ class Settings(BaseSettings):
     deployment_env: str = "development"  # "development", "staging", "production"
     trusted_proxy_depth: int = 1  # Trusted reverse proxy hops; 0 = ignore X-Forwarded-For
 
-    # Tuning
-    airflow_semaphore_limit: int = 6
-    airflow_startup_max_attempts: int = 20
-    airflow_startup_retry_seconds: int = 15
-    airflow_cb_threshold: int = 5           # consecutive failures before opening circuit
-    airflow_cb_cooldown_seconds: int = 30   # seconds before retrying after circuit opens
-    airflow_sync_chunk_size: int = 50       # DAGs per chunk during full sync
-
     # Spark Cluster Capacity (for resource utilization display)
     spark_max_driver_memory_gb: int = 16
     spark_max_executor_memory_gb: int = 64
     spark_max_executor_cores: int = 32
     spark_max_total_executors: int = 20
-
-    # Airflow Auto-Discovery
-    airflow_exclude_operator_types: str = "EmptyOperator,DummyOperator,BranchPythonOperator,TriggerDagRunOperator,ShortCircuitOperator"
-    infer_lineage_from_dag_graph: bool = False  # Infer reads_from edges from DAG task dependencies
 
     # Run history retention
     run_history_retention_days: int = 90  # Delete run history older than this; 0 = keep forever
@@ -66,7 +48,6 @@ class Settings(BaseSettings):
     # Cache TTLs (seconds) and page limits
     cache_ttl_short: int = 30
     cache_ttl_medium: int = 60
-    cache_ttl_airflow: int = 300
     default_page_limit: int = 200
     default_page_limit_small: int = 20
 

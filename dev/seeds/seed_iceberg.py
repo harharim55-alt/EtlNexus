@@ -420,7 +420,6 @@ def create_spark_session():
         SparkSession.builder
         .appName("EtlNexus-SchemaSeed")
         .master("local[1]")
-        .config("spark.jars", "/opt/airflow/jars/iceberg-spark-runtime.jar")
         .config("spark.sql.catalog.iceberg",
                 "org.apache.iceberg.spark.SparkCatalog")
         .config("spark.sql.catalog.iceberg.type", "hadoop")

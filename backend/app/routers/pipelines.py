@@ -5,18 +5,15 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from app.auth import (
     get_current_user,
     require_pipeline_visibility,
-    require_team_membership,
     require_team_membership_or_editor_grant,
 )
 from app.config import settings
 from app.dependencies import (
-    get_airflow_sync_service,
     get_pipeline_service,
     get_revision_repo,
     get_visibility_grant_repo,
 )
 from app.models.user import User
-from app.rate_limit import limiter
 from app.repositories.revision_repo import RevisionRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.schemas.date_range import DateRangeParams
@@ -30,9 +27,7 @@ from app.schemas.pipeline import (
     PipelineUpdateRequest,
     PipelineUpdateResponse,
     RevisionListResponse,
-    SyncResponse,
 )
-from app.services.airflow_sync_service import AirflowSyncService
 from app.services.pipeline_service import PipelineService
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
@@ -122,27 +117,6 @@ async def update_pipeline(
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     return result
-
-
-@router.post(
-    "/{pipeline_id}/sync",
-    response_model=SyncResponse,
-    dependencies=[Depends(require_team_membership("pipeline_id"))],
-)
-@limiter.limit("30/minute")
-async def sync_pipeline(
-    request: Request,
-    pipeline_id: uuid.UUID,
-    user: User = Depends(get_current_user),
-    service: AirflowSyncService = Depends(get_airflow_sync_service),
-):
-    try:
-        result = await service.sync_single_pipeline(pipeline_id)
-        from app.cache import clear_all
-        clear_all()
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from None
 
 
 @router.get("/{pipeline_id}/revisions", response_model=RevisionListResponse, dependencies=[Depends(require_pipeline_visibility())])

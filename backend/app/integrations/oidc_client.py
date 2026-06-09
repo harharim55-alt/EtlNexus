@@ -5,8 +5,8 @@ the JWKS endpoint, then caches the signing keys with a 6-hour TTL.  When a
 JWT presents an unknown ``kid``, the cache is refreshed once before failing
 so that key rotation is handled transparently.
 
-Uses a persistent ``httpx.AsyncClient`` matching the pattern established by
-``airflow_client.py``.
+Uses a persistent ``httpx.AsyncClient`` matching the pattern used by the other
+integration clients.
 """
 
 import logging

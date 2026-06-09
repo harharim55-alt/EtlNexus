@@ -60,10 +60,6 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: production
-      args:
-        VITE_AIRFLOW_URL: http://${HOSTNAME:-localhost}:8080
-    environment:
-      VITE_AIRFLOW_URL: http://${HOSTNAME:-localhost}:8080
     ports:
       - "5173:80"
     healthcheck:
@@ -102,103 +98,6 @@ services:
       interval: 5s
       timeout: 5s
       retries: 5
-
-  # ============================================
-  # Dev-only: Airflow (for testing)
-  # ============================================
-  airflow-db:
-    container_name: airflow-db
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: airflow
-      POSTGRES_USER: airflow
-      POSTGRES_PASSWORD: airflow
-    volumes:
-      - airflow-pgdata:/var/lib/postgresql/data
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U airflow"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
-  airflow-init:
-    container_name: airflow-init
-    image: etlnexus-airflow-init
-    build:
-      context: .
-      dockerfile: dev/airflow/Dockerfile
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: ""
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
-      _AIRFLOW_DB_MIGRATE: "true"
-      _AIRFLOW_WWW_USER_CREATE: "true"
-      _AIRFLOW_WWW_USER_USERNAME: admin
-      _AIRFLOW_WWW_USER_PASSWORD: admin
-    volumes:
-      - ./dev/dags:/opt/airflow/dags
-      - ./dev/seeds/etl_code:/data/etl-code
-    entrypoint: /bin/bash
-    command: -c "airflow db migrate && airflow users create --username admin --password admin --firstname Admin --lastname Admin --role Admin --email admin@example.com || true"
-    depends_on:
-      airflow-db:
-        condition: service_healthy
-
-  airflow-webserver:
-    container_name: airflow-webserver
-    image: etlnexus-airflow-webserver
-    build:
-      context: .
-      dockerfile: dev/airflow/Dockerfile
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: ""
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__WEBSERVER__EXPOSE_CONFIG: "true"
-      AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
-      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
-      SPARK_WAREHOUSE: /tmp/warehouse
-    volumes:
-      - ./dev/dags:/opt/airflow/dags
-      - ./dev/seeds/etl_code:/data/etl-code
-    command: webserver
-    ports:
-      - "127.0.0.1:8080:8080"
-    depends_on:
-      airflow-init:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  airflow-scheduler:
-    container_name: airflow-scheduler
-    image: etlnexus-airflow-scheduler
-    build:
-      context: .
-      dockerfile: dev/airflow/Dockerfile
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: postgresql+psycopg2://airflow:airflow@airflow-db:5432/airflow
-      AIRFLOW__CORE__FERNET_KEY: ""
-      AIRFLOW__CORE__LOAD_EXAMPLES: "false"
-      AIRFLOW__WEBSERVER__SECRET_KEY: etlnexus-dev-key
-      SPARK_WAREHOUSE: /tmp/warehouse
-    volumes:
-      - ./dev/dags:/opt/airflow/dags
-      - ./dev/seeds/etl_code:/data/etl-code
-      - iceberg-warehouse:/tmp/warehouse
-    tmpfs:
-      - /tmp/spark-events:mode=1777
-    command: bash -c "umask 000 && airflow tasks serve-logs & exec airflow scheduler"
-    depends_on:
-      airflow-init:
-        condition: service_completed_successfully
 
   # ============================================
   # Dev-only: Keycloak (SSO)
@@ -254,17 +153,14 @@ services:
   # Schema seed: creates empty Iceberg tables via local Spark (hadoop catalog).
   seed-schema:
     container_name: seed-schema
-    image: etlnexus-iceberg-data-seed
-    build:
-      context: .
-      dockerfile: dev/airflow/Dockerfile
+    image: etlnexus-spark-connect
     user: "0"
     environment:
       SPARK_WAREHOUSE: /tmp/warehouse
     volumes:
       - ./dev/seeds:/seeds
       - iceberg-warehouse:/tmp/warehouse
-    command: bash -c "umask 000 && python /seeds/seed_iceberg.py && chmod -R 777 /tmp/warehouse"
+    command: bash -c "umask 000 && /opt/spark/bin/spark-submit --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.7.1 --conf spark.jars.ivy=/opt/spark/.ivy2 /seeds/seed_iceberg.py && chmod -R 777 /tmp/warehouse"
     depends_on:
       spark-volume-init:
         condition: service_completed_successfully
@@ -272,23 +168,19 @@ services:
   # Data seed: populates a subset of tables with sample rows via local Spark.
   seed-data:
     container_name: seed-data
-    image: etlnexus-iceberg-data-seed
-    build:
-      context: .
-      dockerfile: dev/airflow/Dockerfile
+    image: etlnexus-spark-connect
     user: "0"
     environment:
       SPARK_WAREHOUSE: /tmp/warehouse
     volumes:
       - ./dev/seeds:/seeds
       - iceberg-warehouse:/tmp/warehouse
-    command: bash -c "umask 000 && python /seeds/seed_iceberg_data.py && chmod -R 777 /tmp/warehouse"
+    command: bash -c "umask 000 && /opt/spark/bin/spark-submit --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.7.1 --conf spark.jars.ivy=/opt/spark/.ivy2 /seeds/seed_iceberg_data.py && chmod -R 777 /tmp/warehouse"
     depends_on:
       seed-schema:
         condition: service_completed_successfully
 
 volumes:
   pgdata:
-  airflow-pgdata:
   oasis-pgdata:
   iceberg-warehouse:

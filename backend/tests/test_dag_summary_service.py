@@ -1,4 +1,9 @@
-"""Tests for DagSummaryService — per-DAG statistics and aggregate metrics."""
+"""Tests for DagSummaryService — per-DAG statistics and aggregate metrics.
+
+Airflow has been removed, so there is no live DAG metadata source: DAG
+descriptions / schedule intervals / paused state are unavailable and default to
+empty. Per-task statuses still come from the (now unpopulated) run-status table.
+"""
 
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,21 +19,6 @@ _STATS_PATCH = "app.services.dag_summary_service.ResourceStatsBuilder"
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-
-def make_airflow_dag_info(
-    *,
-    dag_id: str = "network_recon",
-    is_paused: bool = False,
-    description: str | None = None,
-    schedule_interval: str | None = "0 6 * * *",
-):
-    return {
-        "dag_id": dag_id,
-        "is_paused": is_paused,
-        "description": description,
-        "schedule_interval": schedule_interval,
-    }
 
 
 def make_run_history(
@@ -69,7 +59,7 @@ def make_dag_task_with_pipeline(
     return dt
 
 
-def make_airflow_status(*, pipeline_id: str, status: str = "success"):
+def make_run_status(*, pipeline_id: str, status: str = "success"):
     s = MagicMock()
     s.pipeline_id = pipeline_id
     s.status = status
@@ -167,12 +157,7 @@ class TestGetDagSummaries:
         dag_task_repo.count_pipelines_per_dag.return_value = {}
         airflow_repo.get_all.return_value = []
 
-        with patch(
-            "app.services.dag_summary_service.airflow_client.get_all_dags",
-            new_callable=AsyncMock,
-            return_value=[],
-        ):
-            result = await service.get_dag_summaries()
+        result = await service.get_dag_summaries()
 
         assert result.aggregate.total_dags == 0
         assert result.dags == []
@@ -200,12 +185,7 @@ class TestGetDagSummaries:
 
         airflow_repo.get_all.return_value = []
 
-        with patch(
-            "app.services.dag_summary_service.airflow_client.get_all_dags",
-            new_callable=AsyncMock,
-            return_value=[make_airflow_dag_info(dag_id="network_recon")],
-        ):
-            result = await service.get_dag_summaries()
+        result = await service.get_dag_summaries()
 
         assert result.aggregate.total_dags == 1
         assert result.aggregate.total_pipelines == 4
@@ -237,10 +217,10 @@ class TestGetDagSummaries:
         dag_task_repo.get_tasks_for_dags_with_pipeline.return_value = {"test_dag": tasks}
 
         statuses = [
-            make_airflow_status(pipeline_id=pid1, status="success"),
-            make_airflow_status(pipeline_id=pid2, status="success"),
-            make_airflow_status(pipeline_id=pid3, status="success"),
-            make_airflow_status(pipeline_id=pid4, status="failed"),
+            make_run_status(pipeline_id=pid1, status="success"),
+            make_run_status(pipeline_id=pid2, status="success"),
+            make_run_status(pipeline_id=pid3, status="success"),
+            make_run_status(pipeline_id=pid4, status="failed"),
         ]
         airflow_repo.get_all.return_value = statuses
 
@@ -250,44 +230,28 @@ class TestGetDagSummaries:
         resource_repo.get_latest_runs_by_dags.return_value = {"test_dag": []}
         stats_builder.get_typical_finish_hours_batch.return_value = {"test_dag": None}
 
-        with patch(
-            "app.services.dag_summary_service.airflow_client.get_all_dags",
-            new_callable=AsyncMock,
-            return_value=[make_airflow_dag_info(dag_id="test_dag")],
-        ):
-            result = await service.get_dag_summaries()
+        result = await service.get_dag_summaries()
 
         dag = result.dags[0]
         assert dag.success_rate == 75.0
 
-    async def test_paused_dags_excluded_from_active_count(
+    async def test_all_dags_active_without_metadata(
         self, service, dag_task_repo, resource_repo, airflow_repo, stats_builder
     ):
-        dag_task_repo.get_all_dag_ids.return_value = ["active_dag", "paused_dag"]
-        dag_task_repo.count_tasks_per_dag.return_value = {
-            "active_dag": 3, "paused_dag": 2,
-        }
-        dag_task_repo.count_pipelines_per_dag.return_value = {
-            "active_dag": 3, "paused_dag": 2,
-        }
+        """Without a DAG-metadata source, paused state is unknown — all DAGs count as active."""
+        dag_task_repo.get_all_dag_ids.return_value = ["dag_a", "dag_b"]
+        dag_task_repo.count_tasks_per_dag.return_value = {"dag_a": 3, "dag_b": 2}
+        dag_task_repo.count_pipelines_per_dag.return_value = {"dag_a": 3, "dag_b": 2}
         dag_task_repo.get_tasks_for_dags_with_pipeline.return_value = {}
         airflow_repo.get_all.return_value = []
         stats_builder.get_dag_run_stats_batch.return_value = {}
         resource_repo.get_latest_runs_by_dags.return_value = {}
         stats_builder.get_typical_finish_hours_batch.return_value = {}
 
-        with patch(
-            "app.services.dag_summary_service.airflow_client.get_all_dags",
-            new_callable=AsyncMock,
-            return_value=[
-                make_airflow_dag_info(dag_id="active_dag", is_paused=False),
-                make_airflow_dag_info(dag_id="paused_dag", is_paused=True),
-            ],
-        ):
-            result = await service.get_dag_summaries()
+        result = await service.get_dag_summaries()
 
         assert result.aggregate.total_dags == 2
-        assert result.aggregate.active_dags == 1
+        assert result.aggregate.active_dags == 2
 
     async def test_result_is_cached(
         self, service, dag_task_repo, resource_repo, airflow_repo, stats_builder
@@ -301,41 +265,10 @@ class TestGetDagSummaries:
         stats_builder.get_typical_finish_hours_batch.return_value = {}
         dag_task_repo.get_tasks_for_dags_with_pipeline.return_value = {}
 
-        with patch(
-            "app.services.dag_summary_service.airflow_client.get_all_dags",
-            new_callable=AsyncMock,
-            return_value=[],
-        ):
-            await service.get_dag_summaries()
-            await service.get_dag_summaries()
+        await service.get_dag_summaries()
+        await service.get_dag_summaries()
 
         assert dag_task_repo.get_all_dag_ids.await_count == 1
-
-    async def test_schedule_interval_dict_format(
-        self, service, dag_task_repo, resource_repo, airflow_repo, stats_builder
-    ):
-        dag_task_repo.get_all_dag_ids.return_value = ["test_dag"]
-        dag_task_repo.count_tasks_per_dag.return_value = {"test_dag": 0}
-        dag_task_repo.count_pipelines_per_dag.return_value = {"test_dag": 0}
-        dag_task_repo.get_tasks_for_dags_with_pipeline.return_value = {}
-        airflow_repo.get_all.return_value = []
-        stats_builder.get_dag_run_stats_batch.return_value = {}
-        resource_repo.get_latest_runs_by_dags.return_value = {}
-        stats_builder.get_typical_finish_hours_batch.return_value = {}
-
-        with patch(
-            "app.services.dag_summary_service.airflow_client.get_all_dags",
-            new_callable=AsyncMock,
-            return_value=[{
-                "dag_id": "test_dag",
-                "is_paused": False,
-                "description": None,
-                "schedule_interval": {"value": "0 0 * * *", "__type": "CronDataIntervalTimetable"},
-            }],
-        ):
-            result = await service.get_dag_summaries()
-
-        assert result.dags[0].schedule_interval == "0 0 * * *"
 
     async def test_period_label_propagated_to_response(
         self, service, dag_task_repo, resource_repo, airflow_repo
@@ -348,11 +281,6 @@ class TestGetDagSummaries:
         date_from = datetime(2024, 1, 1, tzinfo=UTC)
         date_to = datetime(2024, 1, 7, tzinfo=UTC)
 
-        with patch(
-            "app.services.dag_summary_service.airflow_client.get_all_dags",
-            new_callable=AsyncMock,
-            return_value=[],
-        ):
-            result = await service.get_dag_summaries(date_from=date_from, date_to=date_to)
+        result = await service.get_dag_summaries(date_from=date_from, date_to=date_to)
 
         assert result.aggregate.period_label == "7d"

@@ -62,14 +62,12 @@ async def health_detail(
 
     Checks:
     - Database connectivity (live SELECT 1)
-    - Airflow client connection state
     - Spark Connect client connection state
     - DB connection pool statistics
     - Scheduler liveness (when ``settings.scheduler_enabled``)
 
     Returns HTTP 503 if the database is unreachable.
     """
-    from app.integrations.airflow_client import airflow_client
     from app.integrations.spark_connect_client import spark_connect_client
 
     # Verify actual database connectivity
@@ -92,16 +90,15 @@ async def health_detail(
         "status": "healthy" if db_ok else "unhealthy",
         "services": {
             "database": "connected" if db_ok else "disconnected",
-            "airflow": "connected" if airflow_client.is_connected else "unknown",
             "spark_connect": "connected" if spark_connect_client.is_connected else "unknown",
         },
         "db_pool": pool_status,
     }
 
-    # Scheduler liveness check
+    # Scheduler liveness check — the catalog mirror reports completion each run
     if settings.scheduler_enabled:
         stale_threshold = timedelta(
-            minutes=settings.airflow_poll_interval_minutes * 2
+            seconds=max(300, settings.catalog_mirror_interval_seconds * 10)
         )
         if _last_sync_completed_at is None:
             # Not yet completed — treat as unknown rather than stale on fresh start

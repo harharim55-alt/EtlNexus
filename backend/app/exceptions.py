@@ -9,14 +9,6 @@ class EtlNexusError(Exception):
     """Base exception for all EtlNexus domain errors."""
 
 
-class AirflowConnectionError(EtlNexusError):
-    """Airflow API is unreachable or returned an unexpected error."""
-
-
-class AirflowSyncError(EtlNexusError):
-    """Error during pipeline sync from Airflow."""
-
-
 class PipelineNotFoundError(EtlNexusError):
     """Requested pipeline does not exist."""
 
