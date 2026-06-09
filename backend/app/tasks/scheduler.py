@@ -1,8 +1,7 @@
 """APScheduler setup for background tasks.
 
-Uses an asyncio.Lock to prevent concurrent sync/poll executions, avoiding
-race conditions on shared DB tables (pipelines, airflow_run_statuses,
-pipeline_run_history).
+Uses an asyncio.Lock to prevent overlapping catalog-mirror refreshes, avoiding
+race conditions on shared DB tables (catalog_columns, pipeline_fields).
 """
 
 import asyncio
@@ -15,46 +14,8 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# Separate locks allow sync, poll, and catalog mirror to run independently
-_sync_lock = asyncio.Lock()
-_poll_lock = asyncio.Lock()
+# Guards the catalog mirror so a slow refresh can't overlap the next tick.
 _mirror_lock = asyncio.Lock()
-
-
-async def _guarded_sync() -> None:
-    """Run pipeline sync under its own lock."""
-    if _sync_lock.locked():
-        logger.info("Skipping sync — another sync is already running")
-        return
-    async with _sync_lock:
-        from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
-        try:
-            await sync_pipelines_from_airflow()
-            from app.routers.health import report_sync_completed
-            report_sync_completed()
-        except Exception:
-            logger.exception("Scheduled pipeline sync failed")
-        finally:
-            from app.cache import clear_all
-            clear_all()
-
-
-async def _guarded_poll() -> None:
-    """Run status poll under its own lock."""
-    if _poll_lock.locked():
-        logger.info("Skipping poll — another poll is already running")
-        return
-    async with _poll_lock:
-        from app.tasks.airflow_poll_task import poll_airflow_statuses
-        try:
-            await poll_airflow_statuses()
-            from app.routers.health import report_sync_completed
-            report_sync_completed()
-        except Exception:
-            logger.exception("Scheduled status poll failed")
-        finally:
-            from app.cache import clear_all
-            clear_all()
 
 
 async def _guarded_mirror() -> None:
@@ -70,6 +31,8 @@ async def _guarded_mirror() -> None:
         from app.tasks.catalog_mirror_task import refresh_catalog_mirror
         try:
             await refresh_catalog_mirror()
+            from app.routers.health import report_sync_completed
+            report_sync_completed()
         except Exception:
             logger.exception("Scheduled catalog mirror refresh failed")
         finally:
@@ -78,102 +41,48 @@ async def _guarded_mirror() -> None:
 
 
 async def run_startup_sync() -> None:
-    """Run the initial sync at startup, waiting for Airflow to be ready.
+    """Run the initial seed + catalog-mirror refresh at startup.
 
-    Waits for Airflow health (up to 5 min), then runs all sync tasks under
-    _sync_lock to prevent overlap with scheduled jobs.  Each task has its own
-    error handling so independent tasks proceed even if others fail.
+    Seeds bouncer volumes and usage data, then refreshes the catalog mirror
+    (under _mirror_lock to avoid overlapping the scheduled refresh). Each step
+    has its own error handling so one failure doesn't block the others.
     """
-    from app.integrations.airflow_client import airflow_client
+    from app.tasks.seed_bouncer_volumes import seed_bouncer_volumes
+    from app.tasks.seed_usage_data import seed_usage_data
 
-    # Wait for Airflow to become available
-    max_attempts = settings.airflow_startup_max_attempts
-    retry_seconds = settings.airflow_startup_retry_seconds
-    for attempt in range(1, max_attempts + 1):
-        if await airflow_client.check_health():
-            logger.info("Airflow is ready (attempt %d)", attempt)
-            break
-        if attempt < max_attempts:
-            logger.info(
-                "Airflow not ready (attempt %d/%d), retrying in %ds",
-                attempt, max_attempts, retry_seconds,
-            )
-            await asyncio.sleep(retry_seconds)
-    else:
-        logger.warning(
-            "Airflow not available after %d attempts — scheduler will retry at next interval",
-            max_attempts,
-        )
-        return
+    try:
+        await seed_bouncer_volumes()
+    except Exception:
+        logger.exception("Startup seed bouncer volumes failed")
 
-    async with _sync_lock:
-        from app.tasks.airflow_poll_task import poll_airflow_statuses
-        from app.tasks.airflow_sync_task import sync_pipelines_from_airflow
+    try:
+        await seed_usage_data()
+    except Exception:
+        logger.exception("Startup seed usage data failed")
+
+    async with _mirror_lock:
         from app.tasks.catalog_mirror_task import refresh_catalog_mirror
-        from app.tasks.seed_bouncer_volumes import seed_bouncer_volumes
-        from app.tasks.seed_usage_data import seed_usage_data
-
-        pipeline_sync_ok = False
-        try:
-            await sync_pipelines_from_airflow()
-            pipeline_sync_ok = True
-        except Exception:
-            logger.exception("Startup pipeline sync failed")
-
-        try:
-            await seed_bouncer_volumes()
-        except Exception:
-            logger.exception("Startup seed bouncer volumes failed")
-
-        try:
-            await seed_usage_data()
-        except Exception:
-            logger.exception("Startup seed usage data failed")
-
         try:
             await refresh_catalog_mirror()
         except Exception:
             logger.exception("Startup catalog mirror refresh failed")
 
-        if pipeline_sync_ok:
-            try:
-                await poll_airflow_statuses()
-            except Exception:
-                logger.exception("Startup status poll failed")
-        else:
-            logger.warning("Skipping startup poll — pipeline sync did not succeed")
-
-        from app.cache import clear_all
-        clear_all()
+    from app.cache import clear_all
+    clear_all()
 
 
 async def setup_scheduler() -> AsyncScheduler:
     """Configure and return the scheduler with all background tasks.
 
     Jobs start after their first interval, NOT immediately — the initial
-    sync is handled by run_startup_sync() which waits for Airflow readiness
-    and runs under _sync_lock to prevent concurrent DB mutations.
+    seed + catalog refresh is handled by run_startup_sync().
     """
     scheduler = AsyncScheduler()
     # APScheduler 4.x requires entering the context manager before adding schedules
     await scheduler.__aenter__()
 
-    # Airflow pipeline discovery (independent from poll)
-    await scheduler.add_schedule(
-        _guarded_sync,
-        IntervalTrigger(minutes=settings.airflow_poll_interval_minutes),
-        id="airflow_pipeline_sync",
-    )
-
-    # Airflow status poll (runs independently)
-    await scheduler.add_schedule(
-        _guarded_poll,
-        IntervalTrigger(minutes=settings.airflow_poll_interval_minutes),
-        id="airflow_status_poll",
-    )
-
-    # Spark Connect catalog mirror — the only live Spark reader. Refreshes the
-    # Postgres mirror + projects pipeline fields every CATALOG_MIRROR_INTERVAL_SECONDS.
+    # Spark Connect catalog mirror — refreshes the Postgres mirror + projects
+    # pipeline fields every CATALOG_MIRROR_INTERVAL_SECONDS.
     mirror_interval = settings.catalog_mirror_interval_seconds
     if mirror_interval < 1:
         logger.warning(
@@ -198,9 +107,7 @@ async def setup_scheduler() -> AsyncScheduler:
         )
 
     logger.info(
-        "Scheduler configured: airflow_sync=%dmin, airflow_poll=%dmin, catalog_mirror=%ds, retention=%dd",
-        settings.airflow_poll_interval_minutes,
-        settings.airflow_poll_interval_minutes,
+        "Scheduler configured: catalog_mirror=%ds, retention=%dd",
         mirror_interval,
         settings.run_history_retention_days,
     )

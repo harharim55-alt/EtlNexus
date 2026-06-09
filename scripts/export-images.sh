@@ -2,7 +2,7 @@
 # Export all Docker images needed for closed-network deployment.
 # Usage:
 #   ./scripts/export-images.sh prod [output-dir]   # db + backend + frontend only
-#   ./scripts/export-images.sh dev  [output-dir]   # full stack (Airflow, Keycloak, Iceberg, etc.)
+#   ./scripts/export-images.sh dev  [output-dir]   # full stack (Keycloak, Spark Connect, etc.)
 set -euo pipefail
 
 MODE=${1:-prod}
@@ -32,21 +32,15 @@ else
     "postgres:16-alpine"
     "etlnexus-backend"
     "etlnexus-frontend"
-    "etlnexus-airflow-webserver"
-    "etlnexus-airflow-scheduler"
-    "etlnexus-airflow-init"
-    "etlnexus-iceberg-data-seed"
-    "tabulario/iceberg-rest:latest"
+    "etlnexus-spark-connect"
     "quay.io/keycloak/keycloak:26.2"
-    "python:3.12-slim"
     "alpine:latest"
   )
   python3 "$SCRIPT_DIR/strip_compose_build.py" docker-compose.yml "$OUT_DIR/docker-compose.yml"
 
-  # Bundle runtime files needed by volume mounts (DAGs, seeds, Keycloak realm)
+  # Bundle runtime files needed by volume mounts (seeds, Keycloak realm)
   echo "=== Bundling dev runtime files ==="
   mkdir -p "$OUT_DIR/dev"
-  cp -r dev/dags "$OUT_DIR/dev/dags"
   cp -r dev/seeds "$OUT_DIR/dev/seeds"
   cp -r dev/keycloak "$OUT_DIR/dev/keycloak"
 fi

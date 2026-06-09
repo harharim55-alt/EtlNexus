@@ -112,7 +112,6 @@ services:
       dockerfile: Dockerfile
       target: production
     environment:
-      VITE_AIRFLOW_URL: ${VITE_AIRFLOW_URL:-}
       BACKEND_HOST: backend-api
     networks:
       - frontend

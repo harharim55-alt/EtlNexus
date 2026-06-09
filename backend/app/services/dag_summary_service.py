@@ -4,7 +4,6 @@ import logging
 from datetime import datetime
 
 from app.cache import dag_summary_cache
-from app.integrations.airflow_client import airflow_client
 from app.repositories.airflow_repo import AirflowRepository
 from app.repositories.dag_task_repo import DagTaskRepository
 from app.repositories.resource_repo import ResourceRepository
@@ -92,11 +91,10 @@ class DagSummaryService:
         task_counts = await self.dag_task_repo.count_tasks_per_dag()
         pipeline_counts = await self.dag_task_repo.count_pipelines_per_dag()
 
-        # Airflow metadata (cached 5min by airflow_client)
-        airflow_dags = await airflow_client.get_all_dags()
-        dag_info_map = {d["dag_id"]: d for d in airflow_dags}
+        # No live DAG metadata source (Airflow removed) — defaults are used below
+        dag_info_map: dict[str, dict] = {}
 
-        # Airflow statuses for per-task status lookup
+        # Per-task run statuses (unpopulated without a status source — defaults to "unknown")
         all_statuses = await self.airflow_repo.get_all()
         status_by_pipeline = {str(s.pipeline_id): s for s in all_statuses}
 

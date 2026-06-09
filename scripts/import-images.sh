@@ -25,5 +25,5 @@ docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}' | head -20
 echo ""
 echo "Next steps:"
 echo "  1. cp .env.example .env"
-echo "  2. Edit .env with your environment settings (database, Airflow URL, SSO, etc.)"
+echo "  2. Edit .env with your environment settings (database, Spark Connect, SSO, etc.)"
 echo "  3. docker compose up -d"
