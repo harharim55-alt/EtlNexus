@@ -3,6 +3,8 @@ import {
   User,
   Calendar,
   Clock,
+  RefreshCw,
+  ExternalLink,
 } from "lucide-react";
 import { formatRelativeTime, formatFreshness } from "@/lib/format";
 import { Button } from "@/components/ui/button";
@@ -18,6 +20,12 @@ interface HeaderActionsProps {
   lastUpdatedBy: string | null;
   lastUpdatedAt: string | null;
   executionDate: string | null;
+  dagId?: string | null;
+  taskId?: string | null;
+  airflowUrl?: string;
+  isSyncing?: boolean;
+  onSync?: () => void;
+  activateAirflow?: boolean;
   onOpenSettings?: () => void;
   canEdit?: boolean;
 }
@@ -28,6 +36,12 @@ export function HeaderActions({
   lastUpdatedBy,
   lastUpdatedAt,
   executionDate,
+  dagId,
+  taskId,
+  airflowUrl,
+  isSyncing,
+  onSync,
+  activateAirflow,
   onOpenSettings,
   canEdit,
 }: HeaderActionsProps) {
@@ -80,6 +94,61 @@ export function HeaderActions({
           </TooltipTrigger>
           <TooltipContent side="bottom">
             Settings
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* Open in Airflow */}
+      {activateAirflow && dagId && taskId && airflowUrl && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() =>
+                  window.open(
+                    `${airflowUrl}/dags/${dagId}/grid?task_id=${taskId}`,
+                    "_blank",
+                    "noopener,noreferrer",
+                  )
+                }
+                className="border-border-prominent bg-hover-bg text-text-secondary hover:text-amber-400 hover:bg-amber-500/10 hover:border-amber-500/20 transition-all duration-200"
+              />
+            }
+          >
+            <ExternalLink className="size-3.5" />
+            <span className="text-xs">Airflow</span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Open in Airflow ({dagId})
+          </TooltipContent>
+        </Tooltip>
+      )}
+
+      {/* Sync button — only for Airflow-linked pipelines */}
+      {activateAirflow && dagId && taskId && onSync && (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isSyncing}
+                onClick={onSync}
+                className="border-border-prominent bg-hover-bg text-text-secondary hover:text-foreground hover:bg-hover-bg-strong transition-all duration-200"
+              />
+            }
+          >
+            <RefreshCw
+              className={`size-3.5 ${isSyncing ? "animate-spin" : ""}`}
+            />
+            <span className="text-xs">
+              {isSyncing ? "Syncing…" : "Sync"}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent side="bottom">
+            Refresh this pipeline from Airflow
           </TooltipContent>
         </Tooltip>
       )}

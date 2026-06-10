@@ -10,6 +10,24 @@ class Settings(BaseSettings):
     db_echo: bool = False
     db_command_timeout: int = 30  # asyncpg query timeout in seconds
 
+    # Airflow Integration (opt-in — disabled by default).
+    # When activate_airflow=False the backend never starts the Airflow client,
+    # sync/poll jobs, or endpoints. Flip to True (and start the airflow Compose
+    # profile) to restore pipeline discovery/status/lineage from Airflow.
+    activate_airflow: bool = False
+    airflow_base_url: str = "http://airflow-webserver:8080/api/v1"
+    airflow_username: str = "admin"
+    airflow_password: str = "admin"
+    airflow_poll_interval_minutes: int = 20
+    airflow_semaphore_limit: int = 6
+    airflow_startup_max_attempts: int = 20
+    airflow_startup_retry_seconds: int = 15
+    airflow_cb_threshold: int = 5           # consecutive failures before opening circuit
+    airflow_cb_cooldown_seconds: int = 30   # seconds before retrying after circuit opens
+    airflow_sync_chunk_size: int = 50       # DAGs per chunk during full sync
+    airflow_exclude_operator_types: str = "EmptyOperator,DummyOperator,BranchPythonOperator,TriggerDagRunOperator,ShortCircuitOperator"
+    infer_lineage_from_dag_graph: bool = False  # Infer reads_from edges from DAG task dependencies
+
     # Spark Connect (Iceberg catalog access — replaces the Iceberg REST catalog)
     spark_connect_url: str = "sc://spark-connect:15002"
     spark_catalog_name: str = "iceberg"  # Spark catalog alias holding the Iceberg tables
@@ -48,6 +66,7 @@ class Settings(BaseSettings):
     # Cache TTLs (seconds) and page limits
     cache_ttl_short: int = 30
     cache_ttl_medium: int = 60
+    cache_ttl_airflow: int = 300
     default_page_limit: int = 200
     default_page_limit_small: int = 20
 

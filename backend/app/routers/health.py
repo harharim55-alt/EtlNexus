@@ -95,6 +95,13 @@ async def health_detail(
         "db_pool": pool_status,
     }
 
+    # Airflow connection state (only when the integration is enabled)
+    if settings.activate_airflow:
+        from app.integrations.airflow_client import airflow_client
+        response_data["services"]["airflow"] = (
+            "connected" if airflow_client.is_connected else "unknown"
+        )
+
     # Scheduler liveness check — the catalog mirror reports completion each run
     if settings.scheduler_enabled:
         stale_threshold = timedelta(

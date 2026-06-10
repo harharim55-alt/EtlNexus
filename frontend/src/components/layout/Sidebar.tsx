@@ -1,9 +1,13 @@
-import { BarChart3, Database, HelpCircle, LogOut, Moon, Network, Package, Palette, Radio, Shield, Sparkles, Sun } from "lucide-react";
+import { useState } from "react";
+import { BarChart3, Database, HelpCircle, LogOut, Moon, Network, Package, Palette, Radio, RefreshCw, Shield, Sparkles, Sun } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
+import { toast } from "sonner";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useFeatureFlagCheck } from "@/hooks/use-feature-flags";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { isAdmin } from "@/lib/permissions";
+import { syncAllPipelines } from "@/api/airflow";
 import { useThemeStore } from "@/stores/theme-store";
 import { useAuth } from "react-oidc-context";
 import { NavIcon } from "./NavIcon";
@@ -47,10 +51,13 @@ export function Sidebar() {
   const { activeTab, setActiveTab } = useNavigationStore();
   const user = useAuthStore((s) => s.user);
   const ssoEnabled = useAuthStore((s) => s.ssoEnabled);
+  const activateAirflow = useAuthStore((s) => s.activateAirflow);
   const { data: dagFlag } = useFeatureFlagCheck("dag_dashboard");
   const { data: bouncerFlag } = useFeatureFlagCheck("bouncer_dashboard");
   const showDags = isAdmin(user) || dagFlag?.accessible;
   const showBouncers = isAdmin(user) || bouncerFlag?.accessible;
+  const [isSyncingAll, setIsSyncingAll] = useState(false);
+  const queryClient = useQueryClient();
   const theme = useThemeStore((s) => s.theme);
   const cycleTheme = useThemeStore((s) => s.cycleTheme);
 
@@ -132,6 +139,51 @@ export function Sidebar() {
 
       {/* User + theme */}
       <div className="mt-auto flex flex-col items-center gap-4">
+        {activateAirflow && isAdmin(user) && (
+          <Tooltip>
+            <TooltipTrigger
+              className={`p-1.5 rounded-lg transition-all duration-200 cursor-pointer ${
+                isSyncingAll
+                  ? "text-amber-400 bg-amber-500/10"
+                  : "text-text-faint hover:text-amber-400 hover:bg-amber-500/10"
+              }`}
+              onClick={async () => {
+                if (isSyncingAll) return;
+                setIsSyncingAll(true);
+                try {
+                  const result = await syncAllPipelines();
+                  toast.success(`Synced ${result.synced} pipelines from Airflow`);
+                  queryClient.invalidateQueries({ queryKey: ["pipelines"] });
+                  queryClient.invalidateQueries({ queryKey: ["pipeline"] });
+                  queryClient.invalidateQueries({ queryKey: ["airflow-statuses"] });
+                  queryClient.invalidateQueries({ queryKey: ["dag-summary"] });
+                  queryClient.invalidateQueries({ queryKey: ["topology"] });
+                  queryClient.invalidateQueries({ queryKey: ["lineage"] });
+                  queryClient.invalidateQueries({ queryKey: ["resource-metrics"] });
+                  queryClient.invalidateQueries({ queryKey: ["pipeline-runs"] });
+                  queryClient.invalidateQueries({ queryKey: ["execution-plan"] });
+                  queryClient.invalidateQueries({ queryKey: ["execution-plan-runs"] });
+                  queryClient.invalidateQueries({ queryKey: ["resource-history"] });
+                  queryClient.invalidateQueries({ queryKey: ["schema-matrix"] });
+                  queryClient.invalidateQueries({ queryKey: ["bouncers"] });
+                } catch {
+                  toast.error("Failed to sync pipelines from Airflow");
+                } finally {
+                  setIsSyncingAll(false);
+                }
+              }}
+            >
+              <RefreshCw className={`size-4 ${isSyncingAll ? "animate-spin" : ""}`} />
+            </TooltipTrigger>
+            <TooltipContent
+              side="right"
+              className="bg-card border-border-prominent text-foreground text-xs font-medium"
+            >
+              {isSyncingAll ? "Syncing all pipelines..." : "Sync all pipelines"}
+            </TooltipContent>
+          </Tooltip>
+        )}
+
         <Tooltip>
           <TooltipTrigger
             className="p-1.5 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-all duration-200 cursor-pointer"

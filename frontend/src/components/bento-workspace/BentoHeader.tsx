@@ -1,11 +1,15 @@
 import { lazy, Suspense, useState } from "react";
 import { Users, Clock } from "lucide-react";
+import { useSyncPipeline } from "@/hooks/use-sync-pipeline";
+import { useTopology } from "@/hooks/use-topology";
+import { useAuthStore } from "@/stores/auth-store";
 import type { PipelineDetail } from "@/types/pipeline";
 import { stripDummy } from "@/lib/format";
 import { HeaderActions } from "./HeaderActions";
 import { EditableTitle } from "./EditableTitle";
 import { RunSelector } from "./RunSelector";
 import { PipelineSettingsModal } from "./PipelineSettingsModal";
+import { AIRFLOW_URL } from "@/lib/config";
 
 const DocumentationModal = lazy(() =>
   import("./DocumentationModal").then((m) => ({ default: m.DocumentationModal }))
@@ -28,6 +32,9 @@ export function BentoHeader({
   isSaving,
   canEdit,
 }: BentoHeaderProps) {
+  const activateAirflow = useAuthStore((s) => s.activateAirflow);
+  const { mutate: sync, isPending: isSyncing } = useSyncPipeline(pipeline.id);
+  const { data: topology } = useTopology(pipeline.id);
   const [docOpen, setDocOpen] = useState(false);
   const [settingsOpen, setSettingsOpen] = useState(false);
 
@@ -68,6 +75,12 @@ export function BentoHeader({
               lastUpdatedBy={pipeline.last_updated_by}
               lastUpdatedAt={pipeline.last_updated_at}
               executionDate={pipeline.execution_date}
+              dagId={topology?.dag_ids?.[0] ?? null}
+              taskId={pipeline.task_id}
+              airflowUrl={AIRFLOW_URL}
+              isSyncing={isSyncing}
+              onSync={() => sync()}
+              activateAirflow={activateAirflow}
               onOpenSettings={() => setSettingsOpen(true)}
               canEdit={canEdit}
             />

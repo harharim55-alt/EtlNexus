@@ -10,12 +10,13 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
-from app.exceptions import AuthorizationError, PipelineNotFoundError
+from app.exceptions import AirflowSyncError, AuthorizationError, PipelineNotFoundError
 from app.logging_config import build_log_config
 from app.middleware import BodySizeLimitMiddleware, RequestIdMiddleware, RequestLoggingMiddleware
 from app.rate_limit import limiter
 from app.routers import (
     ai,
+    airflow,
     auth,
     bouncers,
     consumers,
@@ -105,6 +106,9 @@ async def lifespan(app: FastAPI):
         logger.info("Cancelled in-progress startup sync")
     if sched is not None:
         await sched.__aexit__(None, None, None)
+    if settings.activate_airflow:
+        from app.integrations.airflow_client import airflow_client
+        await airflow_client.close()
     from app.integrations.oidc_client import oidc_client as _oidc
     await _oidc.close()
     from app.integrations.llm_client import llm_client
@@ -166,6 +170,11 @@ async def pipeline_not_found_handler(request: Request, exc: PipelineNotFoundErro
     return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
+@app.exception_handler(AirflowSyncError)
+async def airflow_sync_error_handler(request: Request, exc: AirflowSyncError):
+    return JSONResponse(status_code=502, content={"detail": "Airflow sync error"})
+
+
 @app.exception_handler(AuthorizationError)
 async def authorization_error_handler(request: Request, exc: AuthorizationError):
     return JSONResponse(status_code=403, content={"detail": str(exc)})
@@ -175,6 +184,8 @@ async def authorization_error_handler(request: Request, exc: AuthorizationError)
 app.include_router(health.router, prefix="/api")
 app.include_router(pipelines.router)
 app.include_router(lineage.router)
+if settings.activate_airflow:
+    app.include_router(airflow.router)
 app.include_router(schema_matrix.router)
 app.include_router(usage.router)
 app.include_router(consumers.router)
