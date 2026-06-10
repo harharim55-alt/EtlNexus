@@ -172,7 +172,7 @@ export function DataProductRegistry() {
 
   return (
     <>
-      <div className="w-[400px] border-r border-border flex flex-col bg-background shrink-0">
+      <div data-section="data-products-registry" className="w-[400px] border-r border-border flex flex-col bg-background shrink-0">
         <div className="p-6 border-b border-border">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-xl font-medium text-foreground tracking-tight">

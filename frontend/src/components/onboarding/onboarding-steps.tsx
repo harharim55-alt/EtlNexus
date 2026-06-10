@@ -3,6 +3,7 @@ import {
   Zap,
   Database,
   LayoutGrid,
+  Package,
   Network,
   BarChart3,
   Radio,
@@ -29,6 +30,7 @@ export interface OnboardingStep {
   navigateTo?: TabType;
   panelPosition: PanelPosition;
   adminOnly?: boolean;
+  airflowOnly?: boolean;  // shown only when the Airflow integration is enabled
   features?: string[];
   isWelcome?: boolean;
   isFinal?: boolean;
@@ -101,6 +103,28 @@ const ALL_STEPS: OnboardingStep[] = [
     ],
   },
   {
+    id: "data-products",
+    title: "Data Products",
+    subtitle: "MODULE: DATA_PRODUCTS",
+    description:
+      "Curated, published datasets promoted from pipelines. Browse data products grouped by category, search and filter by team, network, or tag, and open any product to inspect its schema, lineage, and consumption snippets.",
+    icon: Package,
+    iconBg: "bg-sky-500/10",
+    iconBorder: "border-sky-500/20",
+    iconText: "text-sky-400",
+    dotColor: "bg-sky-400/60",
+    spotlightTarget: "data-products",
+    sectionTarget: "data-products-registry",
+    navigateTo: "data-products",
+    panelPosition: "right",
+    features: [
+      "Category-grouped data product registry",
+      "Search + team / network / tag filters",
+      "Promote a pipeline to a data product",
+      "Per-product schema, lineage, and consume snippets",
+    ],
+  },
+  {
     id: "matrix",
     title: "Global Schema Matrix",
     subtitle: "MODULE: FIELD_FREQUENCY",
@@ -123,6 +147,7 @@ const ALL_STEPS: OnboardingStep[] = [
   },
   {
     id: "dags",
+    airflowOnly: true,
     title: "DAG Operations Dashboard",
     subtitle: "MODULE: DAG_OVERVIEW",
     description:
@@ -145,6 +170,7 @@ const ALL_STEPS: OnboardingStep[] = [
   },
   {
     id: "bouncers",
+    airflowOnly: true,
     title: "Bouncer Monitoring",
     subtitle: "MODULE: BOUNCER_WATCH",
     description:
@@ -226,6 +252,13 @@ const ALL_STEPS: OnboardingStep[] = [
   },
 ];
 
-export function getOnboardingSteps(isUserAdmin: boolean): OnboardingStep[] {
-  return ALL_STEPS.filter((step) => !step.adminOnly || isUserAdmin);
+export function getOnboardingSteps(
+  isUserAdmin: boolean,
+  activateAirflow: boolean,
+): OnboardingStep[] {
+  return ALL_STEPS.filter(
+    (step) =>
+      (!step.adminOnly || isUserAdmin) &&
+      (!step.airflowOnly || activateAirflow),
+  );
 }

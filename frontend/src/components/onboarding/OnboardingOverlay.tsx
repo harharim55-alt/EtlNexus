@@ -57,6 +57,7 @@ export function OnboardingOverlay() {
     startOnboarding, nextStep, prevStep, goToStep, completeOnboarding, finalizeExit,
   } = useOnboardingStore();
   const user = useAuthStore((s) => s.user);
+  const activateAirflow = useAuthStore((s) => s.activateAirflow);
   const setActiveTab = useNavigationStore((s) => s.setActiveTab);
   const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
   const setSelectedPipelineId = usePipelineStore((s) => s.setSelectedPipelineId);
@@ -66,7 +67,7 @@ export function OnboardingOverlay() {
   const admin = isAdmin(user);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const steps = useMemo(() => getOnboardingSteps(admin), [admin]);
+  const steps = useMemo(() => getOnboardingSteps(admin, activateAirflow), [admin, activateAirflow]);
   const step = steps[currentStep];
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === steps.length - 1;
