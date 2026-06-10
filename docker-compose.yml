@@ -154,6 +154,9 @@ services:
   seed-schema:
     container_name: seed-schema
     image: etlnexus-spark-connect
+    # Clear the spark-connect image's ENTRYPOINT (which starts the Connect server)
+    # so the command below runs the one-shot seed instead.
+    entrypoint: []
     user: "0"
     environment:
       SPARK_WAREHOUSE: /tmp/warehouse
@@ -169,6 +172,8 @@ services:
   seed-data:
     container_name: seed-data
     image: etlnexus-spark-connect
+    # Clear the spark-connect image's ENTRYPOINT so the seed command runs.
+    entrypoint: []
     user: "0"
     environment:
       SPARK_WAREHOUSE: /tmp/warehouse

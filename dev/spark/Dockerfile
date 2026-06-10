@@ -19,7 +19,11 @@ RUN mkdir -p "$SPARK_IVY_DIR" && \
       /opt/spark/examples/jars/spark-examples_*.jar 1
 
 COPY dev/spark/entrypoint.sh /opt/spark/connect-entrypoint.sh
-RUN chmod +x /opt/spark/connect-entrypoint.sh && chown -R spark:spark "$SPARK_IVY_DIR"
+# Strip CRLF in case the script was checked out with Windows line endings,
+# then make it executable.
+RUN sed -i 's/\r$//' /opt/spark/connect-entrypoint.sh && \
+    chmod +x /opt/spark/connect-entrypoint.sh && \
+    chown -R spark:spark "$SPARK_IVY_DIR"
 
 USER spark
 
