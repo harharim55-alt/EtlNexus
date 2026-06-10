@@ -9,6 +9,8 @@ EXPOSE 5173
 
 # Build stage
 FROM dev AS build
+ARG VITE_AIRFLOW_URL=http://localhost:8080
+ENV VITE_AIRFLOW_URL=${VITE_AIRFLOW_URL}
 RUN pnpm build
 
 # Production stage

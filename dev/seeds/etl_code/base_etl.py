@@ -47,6 +47,7 @@ class BaseETL(*_bases):
             SparkSession.builder
             .appName("EtlNexus-ETL")
             .master("local[*]")
+            .config("spark.jars", "/opt/airflow/jars/iceberg-spark-runtime.jar")
             .config("spark.sql.catalog.iceberg", "org.apache.iceberg.spark.SparkCatalog")
             .config("spark.sql.catalog.iceberg.type", "hadoop")
             .config("spark.sql.catalog.iceberg.warehouse", os.environ.get("SPARK_WAREHOUSE", "/tmp/warehouse"))

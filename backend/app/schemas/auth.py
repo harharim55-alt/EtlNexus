@@ -16,6 +16,9 @@ class AuthConfigResponse(BaseModel):
     issuer_url: str = Field(description="OIDC issuer URL for the frontend OIDC client")
     client_id: str = Field(description="OIDC client ID for the SPA")
     audience: str = Field(description="Expected OIDC audience claim")
+    activate_airflow: bool = Field(
+        default=False, description="Whether the Airflow integration (UI controls) is enabled"
+    )
 
 
 class TeamMembershipResponse(BaseModel):

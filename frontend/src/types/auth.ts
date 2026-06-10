@@ -3,6 +3,7 @@ export interface AuthConfig {
   issuer_url: string;
   client_id: string;
   audience: string;
+  activate_airflow: boolean;
 }
 
 export interface TeamMembership {

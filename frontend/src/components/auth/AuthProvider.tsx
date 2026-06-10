@@ -36,6 +36,7 @@ export function AuthBootstrap({ children }: Props) {
   const [authConfig, setAuthConfig] = useState<AuthConfig | null>(null);
   const [loading, setLoading] = useState(true);
   const setSsoEnabled = useAuthStore((s) => s.setSsoEnabled);
+  const setActivateAirflow = useAuthStore((s) => s.setActivateAirflow);
   const setUser = useAuthStore((s) => s.setUser);
   const setToken = useAuthStore((s) => s.setToken);
 
@@ -49,6 +50,7 @@ export function AuthBootstrap({ children }: Props) {
 
         setAuthConfig(config);
         setSsoEnabled(config.sso_enabled);
+        setActivateAirflow(config.activate_airflow ?? false);
 
         if (!config.sso_enabled) {
           // No SSO: set a default admin user so everything works
@@ -60,6 +62,7 @@ export function AuthBootstrap({ children }: Props) {
         // If auth config endpoint doesn't exist, treat as SSO disabled
         console.warn("Auth config fetch failed, assuming SSO disabled:", err);
         setSsoEnabled(false);
+        setActivateAirflow(false);
         setUser(DEFAULT_USER);
         setToken("no-sso");
       } finally {
@@ -71,7 +74,7 @@ export function AuthBootstrap({ children }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [setSsoEnabled, setUser, setToken]);
+  }, [setSsoEnabled, setActivateAirflow, setUser, setToken]);
 
   if (loading) {
     return (

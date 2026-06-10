@@ -7,6 +7,7 @@ interface AuthState {
   token: string | null;
   isAuthenticated: boolean;
   ssoEnabled: boolean;
+  activateAirflow: boolean;
   oidcSignout: (() => Promise<void>) | null;
   /** OIDC signinSilent callback for non-React contexts (e.g. axios 401 interceptor) */
   oidcSigninSilent: (() => Promise<User | null>) | null;
@@ -14,6 +15,7 @@ interface AuthState {
   setToken: (token: string | null) => void;
   logout: () => void;
   setSsoEnabled: (enabled: boolean) => void;
+  setActivateAirflow: (enabled: boolean) => void;
   setOidcSignout: (fn: (() => Promise<void>) | null) => void;
   setOidcSigninSilent: (fn: (() => Promise<User | null>) | null) => void;
 }
@@ -23,12 +25,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   token: null,
   isAuthenticated: false,
   ssoEnabled: false,
+  activateAirflow: false,
   oidcSignout: null,
   oidcSigninSilent: null,
   setUser: (user) => set({ user, isAuthenticated: !!user }),
   setToken: (token) => set({ token }),
   logout: () => set({ user: null, token: null, isAuthenticated: false }),
   setSsoEnabled: (enabled) => set({ ssoEnabled: enabled }),
+  setActivateAirflow: (enabled) => set({ activateAirflow: enabled }),
   setOidcSignout: (fn) => set({ oidcSignout: fn }),
   setOidcSigninSilent: (fn) => set({ oidcSigninSilent: fn }),
 }));

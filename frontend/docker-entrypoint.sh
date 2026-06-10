@@ -2,7 +2,9 @@
 # Runtime config injection — generates a config.js with environment-specific
 # values, avoiding fragile sed replacement in compiled JS assets.
 cat <<EOF > /usr/share/nginx/html/config.js
-window.__RUNTIME_CONFIG__ = {};
+window.__RUNTIME_CONFIG__ = {
+  AIRFLOW_URL: "${VITE_AIRFLOW_URL:-http://localhost:8080}"
+};
 EOF
 
 # Resolve environment variables in nginx config (defaults for local dev)
