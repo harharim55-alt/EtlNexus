@@ -8,7 +8,6 @@ const makeUser = (role: string): UserInfo => ({
   display_name: "Test User",
   role,
   is_active: true,
-  is_beta: false,
   teams: [{ id: "team-1", name: "Dagger", role_in_team: "member" }],
 });
 

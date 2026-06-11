@@ -16,7 +16,6 @@ const DEFAULT_USER = {
   display_name: "Local Admin",
   role: "admin",
   is_active: true,
-  is_beta: true,
   teams: [],
 };
 

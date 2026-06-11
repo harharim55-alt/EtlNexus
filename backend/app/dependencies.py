@@ -6,7 +6,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.auth import get_current_user
 from app.database import get_db_session
 from app.models.user import User
-from app.repositories.feature_flag_repo import FeatureFlagRepository
 from app.repositories.field_frequency_repo import FieldFrequencyRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.revision_repo import RevisionRepository
@@ -15,7 +14,6 @@ from app.repositories.team_repo import TeamRepository
 from app.repositories.user_repo import UserRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.ai_service import AIService
-from app.services.feature_flag_service import FeatureFlagService
 from app.services.pipeline_service import PipelineService
 from app.services.schema_matrix_service import SchemaMatrixService
 from app.services.tag_service import TagService
@@ -52,10 +50,6 @@ def get_visibility_grant_repo(
 
 def get_tag_repo(session: AsyncSession = Depends(get_db_session)) -> TagRepository:
     return TagRepository(session)
-
-
-def get_feature_flag_repo(session: AsyncSession = Depends(get_db_session)) -> FeatureFlagRepository:
-    return FeatureFlagRepository(session)
 
 
 # Services
@@ -96,12 +90,6 @@ def get_tag_service(
     tag_repo: TagRepository = Depends(get_tag_repo),
 ) -> TagService:
     return TagService(tag_repo)
-
-
-def get_feature_flag_service(
-    flag_repo: FeatureFlagRepository = Depends(get_feature_flag_repo),
-) -> FeatureFlagService:
-    return FeatureFlagService(flag_repo)
 
 
 # ---------------------------------------------------------------------------

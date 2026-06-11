@@ -87,11 +87,3 @@ export interface JoinSuggestion {
 export interface JoinSuggestionsResponse {
   schema_matches: JoinSuggestion[];
 }
-
-export interface FeatureFlag {
-  id: string;
-  name: string;
-  enabled: boolean;
-  beta_only: boolean;
-  description: string | null;
-}

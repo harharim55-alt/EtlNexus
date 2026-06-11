@@ -17,7 +17,6 @@ from app.rate_limit import limiter
 from app.routers import (
     ai,
     auth,
-    feature_flags,
     health,
     metrics,
     pipelines,
@@ -168,5 +167,4 @@ app.include_router(users.router)
 app.include_router(metrics.router)
 app.include_router(tags.router)
 app.include_router(tags.pipeline_tag_router)
-app.include_router(feature_flags.router)
 app.include_router(pipelines.data_product_router)

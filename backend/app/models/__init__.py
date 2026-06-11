@@ -1,5 +1,4 @@
 from app.models.catalog_mirror import CatalogColumn  # noqa: F401
-from app.models.feature_flag import FeatureFlag  # noqa: F401
 from app.models.pipeline import Pipeline, PipelineField  # noqa: F401
 from app.models.pipeline_revision import PipelineRevision  # noqa: F401
 from app.models.tag import PipelineTag, Tag  # noqa: F401

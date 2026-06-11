@@ -32,7 +32,6 @@ class UserResponse(BaseModel):
     display_name: str = Field(description="User display name from SSO claims")
     role: str = Field(description="Global role: admin, member, or viewer")
     is_active: bool = Field(description="Whether the user account is active")
-    is_beta: bool = Field(default=False, description="Whether the user has beta feature access")
     teams: list[TeamMembershipResponse] = Field(description="Teams the user belongs to")
 
     model_config = ConfigDict(from_attributes=True)
@@ -51,10 +50,6 @@ class RoleUpdateRequest(BaseModel):
 
 class ActiveUpdateRequest(BaseModel):
     is_active: bool = Field(description="Whether the user account is active")
-
-
-class BetaUpdateRequest(BaseModel):
-    is_beta: bool = Field(description="Whether the user has beta feature access")
 
 
 def user_to_response(u: User) -> UserResponse:
@@ -76,6 +71,5 @@ def user_to_response(u: User) -> UserResponse:
         display_name=u.display_name,
         role=u.role,
         is_active=u.is_active,
-        is_beta=u.is_beta,
         teams=teams,
     )
