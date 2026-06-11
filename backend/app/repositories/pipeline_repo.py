@@ -9,7 +9,6 @@ from sqlalchemy.orm import selectinload
 
 from app.cache import task_id_map_cache
 from app.models.pipeline import Pipeline, PipelineField
-from app.models.tag import PipelineTag, Tag
 from app.repositories.base import apply_updates
 
 _UNSET = object()
@@ -71,12 +70,24 @@ class PipelineRepository:
         task_id_map_cache.set(cache_key, pipeline_map)
         return pipeline_map
 
+    async def tags_for_product(self, product_id: uuid.UUID) -> list[Pipeline]:
+        """Tag-products (is_tag) applied to the given product, via product_tags."""
+        from app.models.product_tag import ProductTag
+
+        stmt = (
+            select(Pipeline)
+            .join(ProductTag, ProductTag.tag_id == Pipeline.id)
+            .where(ProductTag.product_id == product_id)
+            .order_by(Pipeline.name)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_by_id(self, pipeline_id: uuid.UUID) -> Pipeline | None:
         stmt = (
             select(Pipeline)
             .options(
                 selectinload(Pipeline.fields),
-                selectinload(Pipeline.tags).selectinload(PipelineTag.tag),
             )
             .where(Pipeline.id == pipeline_id)
         )
@@ -294,8 +305,8 @@ class PipelineRepository:
         limit: int = 200,
         team_names: list[str] | None = None,
         schedule_types: list[str] | None = None,
-        tag_names: list[str] | None = None,
         is_data_product: bool | None = None,
+        is_tag: bool | None = None,
     ) -> tuple[list[Pipeline], int]:
         """Return pipelines filtered by team visibility + optional text search.
 
@@ -327,18 +338,11 @@ class PipelineRepository:
         if schedule_types:
             conditions.append(Pipeline.schedule_type.in_(schedule_types))
 
-        if tag_names:
-            tag_subq = (
-                select(PipelineTag.pipeline_id)
-                .join(Tag, PipelineTag.tag_id == Tag.id)
-                .where(Tag.name.in_(tag_names))
-                .distinct()
-                .scalar_subquery()
-            )
-            conditions.append(Pipeline.id.in_(tag_subq))
-
         if is_data_product is not None:
             conditions.append(Pipeline.is_data_product == is_data_product)
+
+        if is_tag is not None:
+            conditions.append(Pipeline.is_tag == is_tag)
 
         # All products are visible to every authenticated user (edit is gated
         # separately by team membership). No view-time team scoping.
@@ -353,9 +357,6 @@ class PipelineRepository:
         # Fetch paginated data
         data_stmt = (
             select(Pipeline)
-            .options(
-                selectinload(Pipeline.tags).selectinload(PipelineTag.tag),
-            )
             .order_by(Pipeline.name)
             .offset(skip)
             .limit(limit)

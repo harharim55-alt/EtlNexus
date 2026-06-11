@@ -26,7 +26,7 @@ from app.schemas.pipeline import (
     PipelineUpdateResponse,
     RevisionListResponse,
 )
-from app.services.pipeline_service import PipelineService
+from app.services.pipeline_service import DuplicateProductNameError, PipelineService
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
 
@@ -38,8 +38,8 @@ async def list_pipelines(
     limit: int = Query(settings.default_page_limit, ge=1, le=500),
     team: list[str] | None = Query(None),
     schedule: list[str] | None = Query(None),
-    tag: list[str] | None = Query(None),
     is_data_product: bool | None = Query(None),
+    is_tag: bool | None = Query(None),
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
@@ -58,8 +58,8 @@ async def list_pipelines(
         limit=limit,
         team_names=team,
         schedule_types=schedule,
-        tag_names=tag,
         is_data_product=is_data_product,
+        is_tag=is_tag,
     )
 
 
@@ -203,6 +203,7 @@ class DataProductCreateRequest(BaseModel):
     description: str | None = None
     documentation: str | None = None
     schedule_type: str | None = None
+    is_tag: bool = False
 
 
 data_product_router = APIRouter(prefix="/api/data-products", tags=["data-products"])
@@ -214,28 +215,32 @@ async def create_data_product(
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
-    """Create a data product owned by the creator's team.
+    """Create a data product (or a tag, when is_tag=true) owned by the creator's team.
 
-    Only team members (and admins) may create products; viewers cannot. The
-    product belongs to the creator's first team — its schema + consume snippet
-    auto-fill from Spark Connect by name.
+    Only team members (and admins/master admins) may create; viewers cannot. The
+    product belongs to the creator's first team. A regular product's schema +
+    consume auto-fill from Spark Connect by name; a tag has no schema.
     """
-    is_admin = user.role == "admin"
-    if not is_admin and user.role == "viewer":
+    is_privileged = user.role == "admin" or is_master_admin(user.display_name)
+    if not is_privileged and user.role == "viewer":
         raise HTTPException(status_code=403, detail="Viewers cannot create data products")
 
     team_id = user.team_memberships[0].team_id if user.team_memberships else None
-    if not is_admin and team_id is None:
+    if not is_privileged and team_id is None:
         raise HTTPException(status_code=403, detail="You must belong to a team to create a data product")
 
-    return await service.create_data_product(
-        name=body.name,
-        description=body.description,
-        documentation=body.documentation,
-        team_id=team_id,
-        schedule_type=body.schedule_type,
-        created_by=user.display_name,
-    )
+    try:
+        return await service.create_data_product(
+            name=body.name,
+            description=body.description,
+            documentation=body.documentation,
+            team_id=team_id,
+            schedule_type=body.schedule_type,
+            created_by=user.display_name,
+            is_tag=body.is_tag,
+        )
+    except DuplicateProductNameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @data_product_router.post(

@@ -1,6 +1,8 @@
 import uuid
 from datetime import UTC, datetime
 
+from sqlalchemy.exc import IntegrityError
+
 from app.cache import join_suggestions_cache, pipeline_list_cache
 from app.models.pipeline import Pipeline
 from app.repositories.pipeline_repo import PipelineRepository
@@ -16,6 +18,14 @@ from app.schemas.pipeline import (
 )
 
 RESTORABLE_FIELDS = frozenset({"description", "documentation"})
+
+
+class DuplicateProductNameError(Exception):
+    """Raised when a data product / tag name collides with an existing one."""
+
+    def __init__(self, name: str):
+        self.name = name
+        super().__init__(f"A data product named '{name}' already exists.")
 
 
 class PipelineService:
@@ -37,12 +47,15 @@ class PipelineService:
         limit: int = 200,
         team_names: list[str] | None = None,
         schedule_types: list[str] | None = None,
-        tag_names: list[str] | None = None,
         is_data_product: bool | None = None,
+        is_tag: bool | None = None,
     ) -> PipelineListResponse:
         # Cache only unfiltered requests
         cache_key: str | None = None
-        has_filters = query or team_names or schedule_types or tag_names or is_data_product is not None
+        has_filters = (
+            query or team_names or schedule_types
+            or is_data_product is not None or is_tag is not None
+        )
         if not has_filters:
             if is_admin:
                 cache_key = f"all:{skip}:{limit}"
@@ -66,8 +79,8 @@ class PipelineService:
             limit=limit,
             team_names=team_names,
             schedule_types=schedule_types,
-            tag_names=tag_names,
             is_data_product=is_data_product,
+            is_tag=is_tag,
         )
 
         items = [self._to_list_item(p) for p in pipelines]
@@ -193,9 +206,8 @@ class PipelineService:
         if not pipeline:
             return None
 
-        tags = []
-        if pipeline.tags:
-            tags = [TagResponse.model_validate(pt.tag) for pt in pipeline.tags if pt.tag]
+        tag_pipelines = await self.pipeline_repo.tags_for_product(pipeline.id)
+        tags = [TagResponse.model_validate(t) for t in tag_pipelines]
 
         return PipelineDetail(
             id=pipeline.id,
@@ -223,6 +235,7 @@ class PipelineService:
             schedule_type=pipeline.schedule_type,
             schema_manually_edited=pipeline.schema_manually_edited,
             is_data_product=pipeline.is_data_product,
+            is_tag=pipeline.is_tag,
         )
 
     async def get_pipeline_detail_for_user(
@@ -323,12 +336,14 @@ class PipelineService:
         team_id: uuid.UUID | None = None,
         schedule_type: str | None = None,
         created_by: str = "System",
+        is_tag: bool = False,
     ) -> PipelineDetail:
-        """Create a new data product.
+        """Create a new data product, or a tag (is_tag=True).
 
-        ``task_id`` is set to the product name so the Spark Connect catalog mirror
-        auto-fills its schema (and the consume snippet renders) when an Iceberg
-        table of the same name exists.
+        For a product, ``task_id`` is set to the name so the Spark Connect catalog
+        mirror auto-fills its schema. A tag has no schema: ``task_id`` stays None
+        (no catalog match), it gets a read_by_tag consume snippet, and a detail
+        page of its tagged sub-products.
         """
         team_name = None
         if team_id:
@@ -339,19 +354,24 @@ class PipelineService:
 
         pipeline = Pipeline(
             name=name,
-            task_id=name,
+            task_id=None if is_tag else name,
             description=description,
             documentation=documentation,
             team=team_name,
             team_id=team_id,
-            schedule_type=schedule_type,
+            schedule_type=None if is_tag else schedule_type,
             is_data_product=True,
+            is_tag=is_tag,
             last_updated_by=created_by,
             last_updated_at=datetime.now(UTC),
         )
         self.pipeline_repo.session.add(pipeline)
-        await self.pipeline_repo.session.flush()
-        await self.pipeline_repo.session.commit()
+        try:
+            await self.pipeline_repo.session.flush()
+            await self.pipeline_repo.session.commit()
+        except IntegrityError as exc:
+            await self.pipeline_repo.session.rollback()
+            raise DuplicateProductNameError(name) from exc
         pipeline_list_cache.clear()
         return await self.get_pipeline_detail(pipeline.id)
 
@@ -374,18 +394,12 @@ class PipelineService:
 
     @staticmethod
     def _to_list_item(pipeline: Pipeline) -> PipelineListItem:
-        from app.schemas.tag import TagResponse
-
-        tags = []
-        if pipeline.tags:
-            tags = [TagResponse.model_validate(pt.tag) for pt in pipeline.tags if pt.tag]
-
         return PipelineListItem(
             id=pipeline.id,
             name=pipeline.name,
             description=pipeline.description,
             schedule_type=pipeline.schedule_type,
             team=pipeline.team,
-            tags=tags,
             is_data_product=pipeline.is_data_product,
+            is_tag=pipeline.is_tag,
         )

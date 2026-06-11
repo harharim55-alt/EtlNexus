@@ -7,6 +7,8 @@ import { BentoHeader } from "@/components/bento-workspace/BentoHeader";
 import { DocumentationPreview } from "@/components/bento-workspace/DocumentationPreview";
 import { ConsumeSnippet } from "@/components/bento-workspace/ConsumeSnippet";
 import { SchemaViewer } from "@/components/bento-workspace/SchemaViewer";
+import { ProductTags } from "./ProductTags";
+import { TagWorkspace } from "./TagWorkspace";
 import { stripDummy } from "@/lib/format";
 
 export function DataProductWorkspace() {
@@ -42,6 +44,10 @@ export function DataProductWorkspace() {
         <ErrorState message="Failed to load data product" onRetry={refetch} />
       </div>
     );
+  }
+
+  if (pipeline.is_tag) {
+    return <TagWorkspace tag={pipeline} onSave={(body) => updatePipeline(body)} isSaving={isSaving} />;
   }
 
   return (
@@ -84,6 +90,11 @@ export function DataProductWorkspace() {
             isSaving={isSaving}
             onSave={(snippet) => updatePipeline({ import_snippet: snippet })}
           />
+        </div>
+
+        {/* Tags */}
+        <div className="col-span-12">
+          <ProductTags productId={pipeline.id} tags={pipeline.tags} canEdit={pipeline.can_edit} />
         </div>
       </div>
     </div>

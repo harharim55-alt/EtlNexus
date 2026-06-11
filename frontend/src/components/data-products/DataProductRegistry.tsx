@@ -7,7 +7,7 @@ import { DataProductFilters } from "./DataProductFilters";
 import { DataProductListItem } from "./DataProductListItem";
 import { CreateDataProductModal } from "./CreateDataProductModal";
 
-import { Plus, X } from "lucide-react";
+import { Plus, Tag, X } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
 import type { PipelineFilterParams } from "@/api/pipelines";
@@ -30,6 +30,7 @@ export function DataProductRegistry() {
   } = useDataProductStore();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [createTagOpen, setCreateTagOpen] = useState(false);
 
   const serverFilters = useMemo<PipelineFilterParams | undefined>(() => {
     const f: PipelineFilterParams = {};
@@ -157,6 +158,15 @@ export function DataProductRegistry() {
               <Tooltip>
                 <TooltipTrigger
                   className="p-1.5 text-text-muted hover:text-foreground rounded-lg transition-colors cursor-pointer"
+                  onClick={() => setCreateTagOpen(true)}
+                >
+                  <Tag className="size-4" />
+                </TooltipTrigger>
+                <TooltipContent>New Tag</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger
+                  className="p-1.5 text-text-muted hover:text-foreground rounded-lg transition-colors cursor-pointer"
                   onClick={() => setCreateOpen(true)}
                 >
                   <Plus className="size-4" />
@@ -274,6 +284,16 @@ export function DataProductRegistry() {
         onClose={() => setCreateOpen(false)}
         onCreated={(product) => {
           setCreateOpen(false);
+          setSelectedProductId(product.id);
+        }}
+      />
+
+      <CreateDataProductModal
+        isTag
+        open={createTagOpen}
+        onClose={() => setCreateTagOpen(false)}
+        onCreated={(product) => {
+          setCreateTagOpen(false);
           setSelectedProductId(product.id);
         }}
       />

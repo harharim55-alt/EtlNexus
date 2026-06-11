@@ -7,6 +7,8 @@ interface ConsumeSnippetProps {
   pipelineName: string;
   team?: string | null;
   importSnippet?: string | null;
+  /** A tag uses the read_by_tag consume syntax instead of the iceberg namespace path. */
+  isTag?: boolean;
   canEdit?: boolean;
   isSaving?: boolean;
   /** Persist a manual override (string) or clear it to fall back to auto (null). */
@@ -14,8 +16,11 @@ interface ConsumeSnippetProps {
 }
 
 /** Build the auto-generated catalog consume snippet from the product name + team. */
-function buildAutoSnippet(pipelineName: string, team?: string | null): string {
+function buildAutoSnippet(pipelineName: string, team: string | null | undefined, isTag: boolean): string {
   const importName = stripDummy(pipelineName).toLowerCase().replace(/ /g, "_");
+  if (isTag) {
+    return `from etls import Catalog, Engine\n\nCatalog(Engine.Spark).read_by_tag.${importName}("date").consume().as_pyspark()`;
+  }
   const ns = team?.toLowerCase() ?? "dagger";
   return `from etls import Catalog, Engine\n\nCatalog(Engine.Spark).iceberg.${ns}.${importName}("date").consume().as_pyspark()`;
 }
@@ -24,12 +29,13 @@ export function ConsumeSnippet({
   pipelineName,
   team,
   importSnippet,
+  isTag = false,
   canEdit = false,
   isSaving = false,
   onSave,
 }: ConsumeSnippetProps) {
   const isManual = !!importSnippet;
-  const autoSnippet = buildAutoSnippet(pipelineName, team);
+  const autoSnippet = buildAutoSnippet(pipelineName, team, isTag);
   const snippet = importSnippet || autoSnippet;
 
   const [editing, setEditing] = useState(false);

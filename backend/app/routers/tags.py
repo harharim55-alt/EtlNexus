@@ -1,18 +1,16 @@
-"""Tag endpoints — CRUD for user-defined pipeline tags."""
+"""Tag endpoints. Tags are data products (Pipeline with is_tag); these endpoints
+list tags, get/set the tags applied to a product, and list a tag's members.
+Creating a tag goes through POST /api/data-products with is_tag=true."""
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends
 
-from app.auth import get_current_user, require_role, require_team_membership
+from app.auth import get_current_user, require_team_membership
 from app.dependencies import get_tag_service
 from app.models.user import User
-from app.schemas.tag import (
-    PipelineTagsRequest,
-    TagCreateRequest,
-    TagListResponse,
-    TagResponse,
-)
+from app.schemas.pipeline import PipelineListItem
+from app.schemas.tag import PipelineTagsRequest, TagListResponse, TagResponse
 from app.services.tag_service import TagService
 
 router = APIRouter(prefix="/api/tags", tags=["tags"])
@@ -20,49 +18,26 @@ router = APIRouter(prefix="/api/tags", tags=["tags"])
 
 @router.get("", response_model=TagListResponse)
 async def list_tags(
-    team_id: uuid.UUID | None = Query(None),
     user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ):
-    tags = await service.list_tags(team_id=team_id)
+    """List all tag-products (for the tag picker)."""
+    tags = await service.list_tags()
     return TagListResponse(items=[TagResponse.model_validate(t) for t in tags])
-
-
-@router.post("", response_model=TagResponse, status_code=201)
-async def create_tag(
-    body: TagCreateRequest,
-    user: User = Depends(get_current_user),
-    service: TagService = Depends(get_tag_service),
-):
-    # Use the first team the user belongs to as the tag creator
-    team_id = user.team_memberships[0].team_id if user.team_memberships else None
-    tag = await service.create_tag(name=body.name, created_by_team_id=team_id)
-    return TagResponse.model_validate(tag)
-
-
-@router.delete("/{tag_id}", status_code=204)
-async def delete_tag(
-    tag_id: uuid.UUID,
-    user: User = Depends(require_role("admin")),
-    service: TagService = Depends(get_tag_service),
-):
-    await service.delete_tag(tag_id)
 
 
 # Pipeline-scoped tag management
 pipeline_tag_router = APIRouter(prefix="/api/pipelines", tags=["tags"])
 
 
-@pipeline_tag_router.get(
-    "/{pipeline_id}/tags",
-    response_model=TagListResponse,
-)
+@pipeline_tag_router.get("/{pipeline_id}/tags", response_model=TagListResponse)
 async def get_pipeline_tags(
     pipeline_id: uuid.UUID,
     user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ):
-    tags = await service.list_pipeline_tags(pipeline_id)
+    """Tags applied to a product."""
+    tags = await service.tags_for_product(pipeline_id)
     return TagListResponse(items=[TagResponse.model_validate(t) for t in tags])
 
 
@@ -77,5 +52,28 @@ async def set_pipeline_tags(
     user: User = Depends(get_current_user),
     service: TagService = Depends(get_tag_service),
 ):
-    tags = await service.set_pipeline_tags(pipeline_id, body.tag_ids)
+    """Replace the tags applied to a product (editors of that product only)."""
+    tags = await service.set_product_tags(pipeline_id, body.tag_ids)
     return TagListResponse(items=[TagResponse.model_validate(t) for t in tags])
+
+
+@pipeline_tag_router.get("/{pipeline_id}/members", response_model=list[PipelineListItem])
+async def get_tag_members(
+    pipeline_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    service: TagService = Depends(get_tag_service),
+) -> list[PipelineListItem]:
+    """Products tagged with the given tag (the tag detail page's sub-product tabs)."""
+    members = await service.members_of_tag(pipeline_id)
+    return [
+        PipelineListItem(
+            id=m.id,
+            name=m.name,
+            description=m.description,
+            schedule_type=m.schedule_type,
+            team=m.team,
+            is_data_product=m.is_data_product,
+            is_tag=m.is_tag,
+        )
+        for m in members
+    ]

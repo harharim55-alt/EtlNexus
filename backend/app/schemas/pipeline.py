@@ -21,8 +21,8 @@ class PipelineListItem(BaseModel):
     description: str | None = None
     schedule_type: str | None = None
     team: str | None = None
-    tags: list[TagResponse] = []
     is_data_product: bool = False
+    is_tag: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -51,6 +51,7 @@ class PipelineDetail(BaseModel):
     schedule_type: str | None = None
     schema_manually_edited: bool = False
     is_data_product: bool = False
+    is_tag: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

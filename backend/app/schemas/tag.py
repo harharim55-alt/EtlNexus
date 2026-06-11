@@ -1,22 +1,16 @@
-"""Tag schemas — request/response DTOs for tag management."""
+"""Tag schemas. A tag is a data product (Pipeline with is_tag), so TagResponse
+is just its id + name (populated directly from the tag Pipeline)."""
 
 import uuid
-from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 
 class TagResponse(BaseModel):
     id: uuid.UUID
     name: str
-    created_by_team_id: uuid.UUID | None = None
-    created_at: datetime | None = None
 
     model_config = ConfigDict(from_attributes=True)
-
-
-class TagCreateRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100)
 
 
 class PipelineTagsRequest(BaseModel):

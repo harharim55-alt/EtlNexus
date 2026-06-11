@@ -11,7 +11,6 @@ import type {
 export interface PipelineFilterParams {
   team?: string[];
   schedule?: string[];
-  tag?: string[];
   is_data_product?: boolean;
 }
 

@@ -35,6 +35,11 @@ class Pipeline(Base):
     is_data_product: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
+    # A tag is itself a data product (is_tag=True, is_data_product=True): no schema,
+    # a read_by_tag consume snippet, and a detail page of its tagged sub-products.
+    is_tag: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false")
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -45,9 +50,6 @@ class Pipeline(Base):
     revisions: Mapped[list["PipelineRevision"]] = relationship(
         back_populates="pipeline", cascade="all, delete-orphan",
         order_by="PipelineRevision.created_at.desc()"
-    )
-    tags: Mapped[list["PipelineTag"]] = relationship(
-        back_populates="pipeline", cascade="all, delete-orphan"
     )
 
 
@@ -67,4 +69,3 @@ class PipelineField(Base):
 
 # Avoid circular import issues — these are imported at module level by __init__.py
 from app.models.pipeline_revision import PipelineRevision  # noqa: E402
-from app.models.tag import PipelineTag  # noqa: E402

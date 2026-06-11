@@ -1,8 +1,6 @@
 export interface Tag {
   id: string;
   name: string;
-  created_by_team_id: string | null;
-  created_at: string | null;
 }
 
 export interface PipelineField {
@@ -18,8 +16,8 @@ export interface PipelineListItem {
   description: string | null;
   schedule_type: string | null;
   team: string | null;
-  tags: Tag[];
   is_data_product: boolean;
+  is_tag: boolean;
 }
 
 export interface PipelineListResponse {
@@ -46,6 +44,7 @@ export interface PipelineDetail {
   schedule_type: string | null;
   schema_manually_edited: boolean;
   is_data_product: boolean;
+  is_tag: boolean;
 }
 
 export interface PipelineUpdateRequest {

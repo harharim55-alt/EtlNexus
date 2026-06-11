@@ -1,4 +1,4 @@
-import { Users, Clock } from "lucide-react";
+import { Users, Clock, Tag } from "lucide-react";
 import type { PipelineDetail } from "@/types/pipeline";
 import { stripDummy } from "@/lib/format";
 import { EditableTitle } from "./EditableTitle";
@@ -24,6 +24,12 @@ export function BentoHeader({
         <h1 className="text-xl font-semibold text-foreground tracking-tight truncate">
           {stripDummy(pipeline.name)}
         </h1>
+        {pipeline.is_tag && (
+          <span className="flex items-center gap-1 text-[10px] font-mono uppercase tracking-widest text-amber-300 bg-amber-500/10 px-2.5 py-1 rounded-md border border-amber-500/20 shrink-0">
+            <Tag className="size-3" />
+            Tag
+          </span>
+        )}
         {pipeline.team && (
           <span className="flex items-center gap-1 text-[10px] font-mono text-emerald-400 bg-emerald-500/[0.08] px-2.5 py-1 rounded-md border border-emerald-500/15 shrink-0">
             <Users className="size-3" />

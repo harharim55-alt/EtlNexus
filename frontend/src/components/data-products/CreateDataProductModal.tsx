@@ -9,9 +9,12 @@ interface CreateDataProductModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: (product: PipelineDetail) => void;
+  /** Create a tag (no schema, no schedule) instead of a regular data product. */
+  isTag?: boolean;
 }
 
-export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataProductModalProps) {
+export function CreateDataProductModal({ open, onClose, onCreated, isTag = false }: CreateDataProductModalProps) {
+  const noun = isTag ? "Tag" : "Data Product";
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [documentation, setDocumentation] = useState("");
@@ -24,19 +27,23 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
         name,
         description: description || null,
         documentation: documentation || null,
-        schedule_type: scheduleType || null,
+        schedule_type: isTag ? null : scheduleType || null,
+        is_tag: isTag,
       });
       return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["data-products"] });
       queryClient.invalidateQueries({ queryKey: ["pipelines"] });
-      toast.success(`Data product "${name}" created`);
+      queryClient.invalidateQueries({ queryKey: ["tags"] });
+      toast.success(`${noun} "${name}" created`);
       onCreated(data);
       resetForm();
     },
-    onError: () => {
-      toast.error("Failed to create data product");
+    onError: (err) => {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail || `Failed to create ${noun.toLowerCase()}`);
     },
   });
 
@@ -53,7 +60,7 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-in fade-in duration-150">
       <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200">
         <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-semibold text-foreground">New Data Product</h2>
+          <h2 className="text-lg font-semibold text-foreground">New {noun}</h2>
           <button onClick={onClose} className="p-1 text-text-muted hover:text-foreground transition-colors cursor-pointer">
             <X className="size-4" />
           </button>
@@ -68,7 +75,7 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. PortScanCollector"
+              placeholder={isTag ? "e.g. ThreatBundle" : "e.g. PortScanCollector"}
               className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50"
             />
           </div>
@@ -101,21 +108,29 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
             />
           </div>
 
-          <div>
-            <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
-              Schedule
-            </label>
-            <select
-              value={scheduleType}
-              onChange={(e) => setScheduleType(e.target.value)}
-              className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50"
-            >
-              <option value="">Select schedule...</option>
-              <option value="daily">Daily</option>
-              <option value="hourly">Hourly</option>
-              <option value="stream">Stream</option>
-            </select>
-          </div>
+          {!isTag && (
+            <div>
+              <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
+                Schedule
+              </label>
+              <select
+                value={scheduleType}
+                onChange={(e) => setScheduleType(e.target.value)}
+                className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50"
+              >
+                <option value="">Select schedule...</option>
+                <option value="daily">Daily</option>
+                <option value="hourly">Hourly</option>
+                <option value="stream">Stream</option>
+              </select>
+            </div>
+          )}
+          {isTag && (
+            <p className="text-[11px] text-text-faint font-mono leading-relaxed">
+              A tag groups data products. It has no schema or schedule of its own —
+              tag products on their pages to add them here.
+            </p>
+          )}
         </div>
 
         <div className="flex justify-end gap-2 p-5 border-t border-border">

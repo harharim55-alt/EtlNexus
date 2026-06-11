@@ -1,31 +1,22 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { fetchTags, createTag, deleteTag, setPipelineTags } from "@/api/tags";
+import { fetchTags, fetchTagMembers, setPipelineTags } from "@/api/tags";
 
-export function useTags(teamId?: string) {
+/** All tag-products, for the tag picker. */
+export function useTags() {
   return useQuery({
-    queryKey: ["tags", teamId],
-    queryFn: () => fetchTags(teamId),
+    queryKey: ["tags"],
+    queryFn: () => fetchTags(),
     staleTime: 5 * 60_000,
   });
 }
 
-export function useCreateTag() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (name: string) => createTag(name),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tags"] });
-    },
-  });
-}
-
-export function useDeleteTag() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (tagId: string) => deleteTag(tagId),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["tags"] });
-    },
+/** Products tagged with a given tag — drives the tag detail page's tabs. */
+export function useTagMembers(tagId: string | null) {
+  return useQuery({
+    queryKey: ["tag-members", tagId],
+    queryFn: () => fetchTagMembers(tagId!),
+    enabled: !!tagId,
+    staleTime: 60_000,
   });
 }
 
@@ -35,6 +26,7 @@ export function useSetPipelineTags(pipelineId: string) {
     mutationFn: (tagIds: string[]) => setPipelineTags(pipelineId, tagIds),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["tags"] });
+      queryClient.invalidateQueries({ queryKey: ["tag-members"] });
       queryClient.invalidateQueries({ queryKey: ["pipeline", pipelineId] });
       queryClient.invalidateQueries({ queryKey: ["pipelines"] });
     },
