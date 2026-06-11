@@ -146,6 +146,11 @@ export function Sidebar() {
                   <span className="text-[10px] text-indigo-400 uppercase tracking-wider mt-0.5">
                     {user.role}
                   </span>
+                  <span className="text-[10px] text-emerald-400 mt-0.5">
+                    {user.teams && user.teams.length > 0
+                      ? user.teams.map((t) => t.name).join(", ")
+                      : "No team"}
+                  </span>
                 </div>
               </TooltipContent>
             </Tooltip>
