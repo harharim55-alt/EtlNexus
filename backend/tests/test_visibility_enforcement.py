@@ -83,12 +83,11 @@ class TestRequirePipelineVisibility:
         result = await checker(request=request, user=user, session=mock_session)
         assert result is not None
 
-    @patch("app.repositories.visibility_grant_repo.VisibilityGrantRepository.user_can_see_pipeline")
     @patch("app.repositories.pipeline_repo.PipelineRepository.get_by_id")
-    async def test_user_without_access_gets_404(
-        self, mock_get_by_id, mock_can_see, mock_session
+    async def test_non_team_member_can_view_any_pipeline(
+        self, mock_get_by_id, mock_session
     ):
-        """Non-admin user without team membership or grant gets HTTP 404."""
+        """View is not team-scoped: any authenticated user may view any product."""
         from app.auth import require_pipeline_visibility
 
         other_team = make_team(name="Vault")
@@ -98,16 +97,13 @@ class TestRequirePipelineVisibility:
         user = make_user(role="member")
         user.team_memberships = []
 
-        mock_can_see.return_value = False
-
         checker = require_pipeline_visibility()
         request = MagicMock()
         request.path_params = {"pipeline_id": str(pipeline.id)}
         request.state = MagicMock()
 
-        with pytest.raises(HTTPException) as exc_info:
-            await checker(request=request, user=user, session=mock_session)
-        assert exc_info.value.status_code == 404
+        result = await checker(request=request, user=user, session=mock_session)
+        assert result is user
 
     @patch("app.repositories.pipeline_repo.PipelineRepository.get_by_id")
     async def test_unassigned_pipeline_accessible_to_all(

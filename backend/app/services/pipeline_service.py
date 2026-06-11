@@ -234,42 +234,14 @@ class PipelineService:
         is_admin: bool,
         grant_repo: VisibilityGrantRepository,
     ) -> PipelineDetail | None:
-        """Fetch pipeline detail with visibility enforcement and can_edit computation.
-
-        ``can_edit`` is True only for admins and members of the owning team
-        (viewers and visibility-grant holders get read-only).
+        """Fetch pipeline detail. Every authenticated user may view any product;
+        ``can_edit`` is True only for admins and members of the owning team.
         """
         result = await self.get_pipeline_detail(pipeline_id)
         if not result:
             return None
 
-        if is_admin:
-            result.can_edit = True
-            return result
-
-        if not result.team_id:
-            result.can_edit = True
-            return result
-
-        pipeline_team_id = result.team_id
-
-        if pipeline_team_id in user_team_ids:
-            result.can_edit = True
-            return result
-
-        # A single query proves visibility AND returns the grant level.
-        # If no grant exists the user cannot see the pipeline — return None.
-        grant_level = await grant_repo.get_grant_level_for_pipeline(
-            pipeline_id=pipeline_id,
-            user_id=user_id,
-            user_team_ids=user_team_ids,
-            pipeline_team_id=pipeline_team_id,
-        )
-        if not grant_level:
-            return None
-
-        # Editing is restricted to the owning team (and admins).
-        result.can_edit = False
+        result.can_edit = is_admin or not result.team_id or result.team_id in user_team_ids
         return result
 
     async def get_join_suggestions(
@@ -290,18 +262,7 @@ class PipelineService:
         if not pipeline:
             return None
 
-        if not is_admin:
-            if grant_repo is None:
-                return None  # Fail closed
-            can_see = await grant_repo.user_can_see_pipeline(
-                pipeline_id=pipeline_id,
-                pipeline_team_id=pipeline.team_id,
-                user_id=user_id,
-                user_team_ids=user_team_ids or set(),
-            )
-            if not can_see:
-                return None
-
+        # Every authenticated user may view any product (and its join matches).
         rows = await self.pipeline_repo.get_shared_field_pipelines(pipeline_id)
         suggestions = [
             JoinSuggestion(

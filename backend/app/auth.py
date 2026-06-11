@@ -273,9 +273,7 @@ def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        if user.role == UserRole.ADMIN:
-            return user
-
+        # Every authenticated user may view any product; only verify it exists.
         pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
 
         if pipeline_uuid is None:
@@ -286,21 +284,6 @@ def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
 
         # Store for downstream reuse
         request.state.pipeline = pipeline
-
-        # Unassigned pipeline — visible to everyone
-        if not pipeline.team_id:
-            return user
-
-        user_team_ids = {ut.team_id for ut in user.team_memberships}
-        can_see = await VisibilityGrantRepository(session).user_can_see_pipeline(
-            pipeline_id=pipeline_uuid,
-            pipeline_team_id=pipeline.team_id,
-            user_id=user.id,
-            user_team_ids=user_team_ids,
-        )
-        if not can_see:
-            raise HTTPException(status_code=404, detail="Pipeline not found")
-
         return user
 
     return _check

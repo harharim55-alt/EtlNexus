@@ -11,7 +11,6 @@ from app.cache import task_id_map_cache
 from app.models.pipeline import Pipeline, PipelineField
 from app.models.tag import PipelineTag, Tag
 from app.repositories.base import apply_updates
-from app.repositories.visibility_filter import VisibilityFilter
 
 _UNSET = object()
 
@@ -341,11 +340,8 @@ class PipelineRepository:
         if is_data_product is not None:
             conditions.append(Pipeline.is_data_product == is_data_product)
 
-        if not is_admin:
-            visibility_conditions = await VisibilityFilter.build_batch_visibility_conditions(
-                self.session, user_id, user_team_ids,
-            )
-            conditions.append(or_(*visibility_conditions))
+        # All products are visible to every authenticated user (edit is gated
+        # separately by team membership). No view-time team scoping.
 
         # Count total matching rows (without offset/limit)
         count_stmt = select(func.count()).select_from(Pipeline)
