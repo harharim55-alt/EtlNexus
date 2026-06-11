@@ -176,15 +176,19 @@ def require_team_membership(pipeline_id_param: str = "pipeline_id"):
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        # Admins can always proceed
+        # Admins (team leaders) can always proceed
         if user.role == UserRole.ADMIN:
             return user
+
+        # Viewers are read-only — they never edit, regardless of team membership
+        if user.role == UserRole.VIEWER:
+            raise HTTPException(status_code=403, detail="Viewers cannot edit")
 
         pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
         if pipeline_uuid is None:
             return user
 
-        # Unassigned pipeline — everyone may edit
+        # Unassigned pipeline — any team member may edit
         if not pipeline or not pipeline.team_id:
             return user
 

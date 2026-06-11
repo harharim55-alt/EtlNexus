@@ -10,30 +10,20 @@ from slowapi import _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
 
 from app.config import settings
-from app.exceptions import AirflowSyncError, AuthorizationError, PipelineNotFoundError
+from app.exceptions import AuthorizationError, PipelineNotFoundError
 from app.logging_config import build_log_config
 from app.middleware import BodySizeLimitMiddleware, RequestIdMiddleware, RequestLoggingMiddleware
 from app.rate_limit import limiter
 from app.routers import (
     ai,
-    airflow,
     auth,
-    bouncers,
-    consumers,
-    dag_summary,
     feature_flags,
     health,
-    lineage,
     metrics,
-    networks,
-    pipeline_logs,
     pipelines,
-    resources,
     schema_matrix,
     tags,
     teams,
-    topology,
-    usage,
     users,
     visibility,
 )
@@ -69,10 +59,6 @@ async def lifespan(app: FastAPI):
     from app.integrations.oidc_client import oidc_client
     await oidc_client.initialize()
 
-    # Initialize Oasis Prod client (no-op if URL not configured)
-    from app.integrations.oasis_prod_client import oasis_prod_client
-    await oasis_prod_client.initialize()
-
     startup_task = None
     sched = None
 
@@ -106,15 +92,10 @@ async def lifespan(app: FastAPI):
         logger.info("Cancelled in-progress startup sync")
     if sched is not None:
         await sched.__aexit__(None, None, None)
-    if settings.activate_airflow:
-        from app.integrations.airflow_client import airflow_client
-        await airflow_client.close()
     from app.integrations.oidc_client import oidc_client as _oidc
     await _oidc.close()
     from app.integrations.llm_client import llm_client
     await llm_client.close()
-    from app.integrations.oasis_prod_client import oasis_prod_client as _oasis
-    await _oasis.close()
     from app.integrations.spark_connect_client import spark_connect_client
     spark_connect_client.stop()
     logger.info("ETL Explorer Hub shutting down")
@@ -170,11 +151,6 @@ async def pipeline_not_found_handler(request: Request, exc: PipelineNotFoundErro
     return JSONResponse(status_code=404, content={"detail": str(exc)})
 
 
-@app.exception_handler(AirflowSyncError)
-async def airflow_sync_error_handler(request: Request, exc: AirflowSyncError):
-    return JSONResponse(status_code=502, content={"detail": "Airflow sync error"})
-
-
 @app.exception_handler(AuthorizationError)
 async def authorization_error_handler(request: Request, exc: AuthorizationError):
     return JSONResponse(status_code=403, content={"detail": str(exc)})
@@ -183,16 +159,7 @@ async def authorization_error_handler(request: Request, exc: AuthorizationError)
 # Routers
 app.include_router(health.router, prefix="/api")
 app.include_router(pipelines.router)
-app.include_router(lineage.router)
-if settings.activate_airflow:
-    app.include_router(airflow.router)
 app.include_router(schema_matrix.router)
-app.include_router(usage.router)
-app.include_router(consumers.router)
-app.include_router(topology.router)
-app.include_router(resources.router)
-app.include_router(dag_summary.router)
-app.include_router(bouncers.router)
 app.include_router(ai.router)
 app.include_router(auth.router)
 app.include_router(teams.router)
@@ -201,7 +168,5 @@ app.include_router(users.router)
 app.include_router(metrics.router)
 app.include_router(tags.router)
 app.include_router(tags.pipeline_tag_router)
-app.include_router(networks.router)
 app.include_router(feature_flags.router)
-app.include_router(pipeline_logs.router)
 app.include_router(pipelines.data_product_router)

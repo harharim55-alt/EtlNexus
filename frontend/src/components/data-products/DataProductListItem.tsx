@@ -60,9 +60,9 @@ export const DataProductListItem = memo(function DataProductListItem({
       )}
 
       <div className="flex gap-2 text-[10px] font-mono flex-wrap ml-5">
-        {product.schedule && (
+        {product.schedule_type && (
           <span className="px-2 py-0.5 rounded bg-hover-bg text-text-secondary border border-border">
-            {product.schedule}
+            {product.schedule_type}
           </span>
         )}
         {(product.tags ?? []).slice(0, 3).map((tag) => (

@@ -10,39 +10,13 @@ class Settings(BaseSettings):
     db_echo: bool = False
     db_command_timeout: int = 30  # asyncpg query timeout in seconds
 
-    # Airflow Integration (opt-in — disabled by default).
-    # When activate_airflow=False the backend never starts the Airflow client,
-    # sync/poll jobs, or endpoints. Flip to True (and start the airflow Compose
-    # profile) to restore pipeline discovery/status/lineage from Airflow.
-    activate_airflow: bool = False
-    airflow_base_url: str = "http://airflow-webserver:8080/api/v1"
-    airflow_username: str = "admin"
-    airflow_password: str = "admin"
-    airflow_poll_interval_minutes: int = 20
-    airflow_semaphore_limit: int = 6
-    airflow_startup_max_attempts: int = 20
-    airflow_startup_retry_seconds: int = 15
-    airflow_cb_threshold: int = 5           # consecutive failures before opening circuit
-    airflow_cb_cooldown_seconds: int = 30   # seconds before retrying after circuit opens
-    airflow_sync_chunk_size: int = 50       # DAGs per chunk during full sync
-    airflow_exclude_operator_types: str = "EmptyOperator,DummyOperator,BranchPythonOperator,TriggerDagRunOperator,ShortCircuitOperator"
-    infer_lineage_from_dag_graph: bool = False  # Infer reads_from edges from DAG task dependencies
-
-    # Spark Connect (Iceberg catalog access — replaces the Iceberg REST catalog)
+    # Spark Connect (Iceberg catalog access)
     spark_connect_url: str = "sc://spark-connect:15002"
     spark_catalog_name: str = "iceberg"  # Spark catalog alias holding the Iceberg tables
     spark_namespace_prefix: str = "dagger,prism,vault,oasis"
     # How often the backend polls Spark Connect and refreshes the Postgres catalog
     # mirror (catalog_columns). End-user reads hit Postgres, never Spark live.
     catalog_mirror_interval_seconds: int = 30
-    # Timestamp column assumed present on every ETL table. Its value resolution
-    # is sampled via Spark Connect to infer each pipeline's schedule: all values
-    # at 00:00:00 -> "daily", otherwise -> "hourly".
-    ts_column_name: str = "ts"
-    # Catalog-discovered pipelines whose table name contains any of these
-    # (case-insensitive) substrings are auto-promoted to data products — the
-    # curated/published outputs, vs raw collectors. Manual promotions are kept.
-    data_product_name_patterns: str = "Summary,Snapshot,Digest,Scorecard,Assessment,Forecast,Rollup,Pivot"
     # Max time to wait for a Spark Connect catalog read before abandoning the
     # refresh. Must be < interval so a hung Spark server can't stall all refreshes.
     catalog_mirror_spark_timeout_seconds: int = 25
@@ -61,35 +35,11 @@ class Settings(BaseSettings):
     deployment_env: str = "development"  # "development", "staging", "production"
     trusted_proxy_depth: int = 1  # Trusted reverse proxy hops; 0 = ignore X-Forwarded-For
 
-    # Spark Cluster Capacity (for resource utilization display)
-    spark_max_driver_memory_gb: int = 16
-    spark_max_executor_memory_gb: int = 64
-    spark_max_executor_cores: int = 32
-    spark_max_total_executors: int = 20
-
-    # Run history retention
-    run_history_retention_days: int = 90  # Delete run history older than this; 0 = keep forever
-
-
     # Cache TTLs (seconds) and page limits
     cache_ttl_short: int = 30
     cache_ttl_medium: int = 60
-    cache_ttl_airflow: int = 300
     default_page_limit: int = 200
     default_page_limit_small: int = 20
-
-    # Oasis Prod (external usage metrics database)
-    oasis_prod_database_url: str = ""  # Empty = disabled, falls back to seed data
-    oasis_prod_username: str = ""
-    oasis_prod_password: str = ""
-    oasis_prod_pool_size: int = 5
-    oasis_prod_max_overflow: int = 3
-    # External observation table consumption is counted from. A row counts as one
-    # consumption when storage_types == oasis_observer_storage_type and its
-    # (data_source_name, data_name) match the pipeline's team + name. Table name
-    # is env-driven (never hard-coded in SQL); validated as a SQL identifier.
-    oasis_observer_table: str = "observer"
-    oasis_observer_storage_type: str = "iceberg"
 
     # SSO / OIDC
     sso_enabled: bool = False

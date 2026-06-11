@@ -1,16 +1,10 @@
 import { useEffect, useMemo, useCallback, useRef } from "react";
-import { useQueryClient } from "@tanstack/react-query";
 import { useOnboardingStore } from "@/stores/onboarding-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useNavigationStore } from "@/stores/navigation-store";
-import { usePipelineStore } from "@/stores/pipeline-store";
-import { useBouncerStore } from "@/stores/bouncer-store";
 import { isAdmin } from "@/lib/permissions";
 import { getOnboardingSteps } from "./onboarding-steps";
 import type { PanelPosition } from "./onboarding-steps";
-import type { PipelineListItem } from "@/types/pipeline";
-import type { BouncerListResponse } from "@/types/bouncer";
-import { fetchBouncers } from "@/api/bouncers";
 import { SidebarSpotlight } from "./SidebarSpotlight";
 import { SectionSpotlight } from "./SectionSpotlight";
 import { SpotlightConnector } from "./SpotlightConnector";
@@ -57,17 +51,11 @@ export function OnboardingOverlay() {
     startOnboarding, nextStep, prevStep, goToStep, completeOnboarding, finalizeExit,
   } = useOnboardingStore();
   const user = useAuthStore((s) => s.user);
-  const activateAirflow = useAuthStore((s) => s.activateAirflow);
   const setActiveTab = useNavigationStore((s) => s.setActiveTab);
-  const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
-  const setSelectedPipelineId = usePipelineStore((s) => s.setSelectedPipelineId);
-  const selectedBouncers = useBouncerStore((s) => s.selectedBouncers);
-  const toggleBouncer = useBouncerStore((s) => s.toggleBouncer);
-  const queryClient = useQueryClient();
   const admin = isAdmin(user);
   const panelRef = useRef<HTMLDivElement>(null);
 
-  const steps = useMemo(() => getOnboardingSteps(admin, activateAirflow), [admin, activateAirflow]);
+  const steps = useMemo(() => getOnboardingSteps(admin), [admin]);
   const step = steps[currentStep];
   const isFirstStep = currentStep === 0;
   const isLastStep = currentStep === steps.length - 1;
@@ -79,119 +67,11 @@ export function OnboardingOverlay() {
     }
   }, [user, hasCompleted, isActive, startOnboarding]);
 
-  // Navigate to the relevant tab + auto-select ETL pipeline for workspace step
+  // Navigate to the relevant tab for each step
   useEffect(() => {
     if (!isActive || isExiting || !step?.navigateTo) return;
     setActiveTab(step.navigateTo);
-
-    // Auto-select first non-API pipeline for catalog/workspace steps
-    if ((step.id === "catalog" || step.id === "workspace")) {
-      // Use partial key match — the full key is ["pipelines", searchQuery, dateParams]
-      const queries = queryClient.getQueriesData<{
-        pages: Array<{ items: PipelineListItem[]; total: number }>;
-      }>({ queryKey: ["pipelines"] });
-      const cached = queries.find(([, data]) => data?.pages?.length)?.[1];
-      if (cached?.pages) {
-        const allPipelines = cached.pages.flatMap((p) => p.items);
-        const currentPipeline = selectedPipelineId
-          ? allPipelines.find((p) => p.id === selectedPipelineId)
-          : null;
-        // Force non-API selection if nothing selected or current is API
-        if (!currentPipeline || currentPipeline.pipeline_type === "api") {
-          const etlPipeline = allPipelines.find(
-            (p) => p.pipeline_type !== "api",
-          );
-          // Fallback to first pipeline if all are API
-          const target = etlPipeline ?? allPipelines[0];
-          if (target) {
-            setSelectedPipelineId(target.id);
-          }
-        }
-      }
-    }
-
-    // Prefetch + auto-select two bouncers with intersection mode for the bouncers step
-    if (step.id === "bouncers" && selectedBouncers.length === 0) {
-      const selectBouncers = (data: BouncerListResponse) => {
-        const store = useBouncerStore.getState();
-        if (store.selectedBouncers.length > 0) return;
-        const bouncers = data.bouncers;
-        if (bouncers.length === 0) return;
-        if (bouncers.length === 1) {
-          store.toggleBouncer(bouncers[0].bouncer_name);
-          return;
-        }
-        // Single-pass: find a pair sharing a dag_id for intersection mode
-        const dagToBouncer = new Map<string, string>();
-        let picked: [string, string] | null = null;
-        for (const bouncer of bouncers) {
-          for (const dagId of bouncer.dag_ids) {
-            const other = dagToBouncer.get(dagId);
-            if (other && other !== bouncer.bouncer_name) {
-              picked = [other, bouncer.bouncer_name];
-              break;
-            }
-            dagToBouncer.set(dagId, bouncer.bouncer_name);
-          }
-          if (picked) break;
-        }
-        if (picked) {
-          store.toggleBouncer(picked[0]);
-          store.toggleBouncer(picked[1]);
-          store.setTopologyMode("intersection");
-        } else {
-          // No intersection found — pick first two with union
-          store.toggleBouncer(bouncers[0].bouncer_name);
-          store.toggleBouncer(bouncers[1].bouncer_name);
-          store.setTopologyMode("union");
-        }
-      };
-
-      const cached = queryClient.getQueryData<BouncerListResponse>(["bouncers", "all"]);
-      if (cached?.bouncers?.length) {
-        selectBouncers(cached);
-      } else {
-        queryClient.prefetchQuery({
-          queryKey: ["bouncers", "all"],
-          queryFn: () => fetchBouncers(),
-        }).then(() => {
-          const data = queryClient.getQueryData<BouncerListResponse>(["bouncers", "all"]);
-          if (data) selectBouncers(data);
-        });
-      }
-    }
-  }, [isActive, isExiting, currentStep, step?.navigateTo, step?.id, setActiveTab, selectedPipelineId, setSelectedPipelineId, selectedBouncers.length, toggleBouncer, queryClient]);
-
-  // Auto-scroll the bento workspace on the workspace step
-  useEffect(() => {
-    if (!isActive || isExiting || step?.id !== "workspace") return;
-
-    let rafId: number;
-    let scrollEl: HTMLElement | null = null;
-
-    // Wait for content to load before starting scroll
-    const startTimer = setTimeout(() => {
-      scrollEl = document.querySelector('[data-section="bento-workspace"]');
-      if (!scrollEl || scrollEl.scrollHeight <= scrollEl.clientHeight) return;
-
-      const speed = 0.4; // px per frame (~24px/s at 60fps)
-      const tick = () => {
-        if (!scrollEl) return;
-        // Stop near the bottom
-        if (scrollEl.scrollTop + scrollEl.clientHeight >= scrollEl.scrollHeight - 10) return;
-        scrollEl.scrollTop += speed;
-        rafId = requestAnimationFrame(tick);
-      };
-      rafId = requestAnimationFrame(tick);
-    }, 1200);
-
-    return () => {
-      clearTimeout(startTimer);
-      cancelAnimationFrame(rafId);
-      // Reset scroll position when leaving
-      if (scrollEl) scrollEl.scrollTop = 0;
-    };
-  }, [isActive, isExiting, step?.id]);
+  }, [isActive, isExiting, step?.navigateTo, setActiveTab]);
 
   // Keyboard navigation
   const handleKeyDown = useCallback(
@@ -239,15 +119,12 @@ export function OnboardingOverlay() {
 
   const isCentered = step.panelPosition === "center" || isExiting;
   const hasSectionTarget = !isCentered && !isExiting && !!step.sectionTarget;
-  // Snap to center for the CRT shutdown animation
   const panelStyle = isExiting ? getPanelStyle("center") : getPanelStyle(step.panelPosition);
 
-  // Direction-aware slide class for step content transitions
   const slideClass = direction === "forward"
     ? "slide-in-from-right-4"
     : "slide-in-from-left-4";
 
-  // Personalized welcome: extract first name + context
   const firstName = user?.display_name?.split(" ")[0] ?? "";
   const teamNames = user?.teams?.map((t) => t.name).join(", ");
   const roleLabel = user?.role ?? "";

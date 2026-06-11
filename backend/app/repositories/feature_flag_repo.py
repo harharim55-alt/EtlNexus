@@ -38,6 +38,4 @@ class FeatureFlagRepository:
         flag = await self.get_by_name(name)
         if not flag or not flag.enabled:
             return False
-        if flag.beta_only and not is_beta:
-            return False
-        return True
+        return not (flag.beta_only and not is_beta)

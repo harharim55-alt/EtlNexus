@@ -129,13 +129,9 @@ async def get_team_pipelines(
             id=p.id,
             name=p.name,
             description=p.description,
-            category=p.category,
-            schedule=p.schedule,
-            rows_per_day=p.rows_per_day,
-            airflow_status=(
-                p.airflow_status.status if p.airflow_status else "unknown"
-            ),
+            schedule_type=p.schedule_type,
             team=p.team,
+            is_data_product=p.is_data_product,
         )
         for p in pipelines
     ]

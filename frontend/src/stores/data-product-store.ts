@@ -1,25 +1,21 @@
 import { create } from "zustand";
-import { useRunSelectorStore } from "./run-selector-store";
-import { buildHash } from "./navigation-store";
 
 export interface DataProductState {
   selectedProductId: string | null;
   searchQuery: string;
   filtersOpen: boolean;
   teamFilters: Set<string>;
-  networkFilters: Set<string>;
-  tagFilters: Set<string>;
+  scheduleFilters: Set<string>;
   setSelectedProductId: (id: string | null) => void;
   setSearchQuery: (query: string) => void;
   setFiltersOpen: (open: boolean) => void;
-  toggleFilter: (dimension: "team" | "network" | "tag", value: string) => void;
+  toggleFilter: (dimension: "team" | "schedule", value: string) => void;
   clearAllFilters: () => void;
 }
 
 const FILTER_KEYS = {
   team: "teamFilters",
-  network: "networkFilters",
-  tag: "tagFilters",
+  schedule: "scheduleFilters",
 } as const;
 
 export const useDataProductStore = create<DataProductState>((set) => ({
@@ -27,12 +23,10 @@ export const useDataProductStore = create<DataProductState>((set) => ({
   searchQuery: "",
   filtersOpen: false,
   teamFilters: new Set<string>(),
-  networkFilters: new Set<string>(),
-  tagFilters: new Set<string>(),
+  scheduleFilters: new Set<string>(),
   setSelectedProductId: (id) => {
-    useRunSelectorStore.getState().clearRun();
     set({ selectedProductId: id });
-    window.location.hash = buildHash("data-products", id);
+    window.location.hash = "data-products";
   },
   setSearchQuery: (query) => set({ searchQuery: query }),
   setFiltersOpen: (open) => set({ filtersOpen: open }),
@@ -50,7 +44,6 @@ export const useDataProductStore = create<DataProductState>((set) => ({
   clearAllFilters: () =>
     set({
       teamFilters: new Set<string>(),
-      networkFilters: new Set<string>(),
-      tagFilters: new Set<string>(),
+      scheduleFilters: new Set<string>(),
     }),
 }));

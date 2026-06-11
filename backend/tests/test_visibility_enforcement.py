@@ -5,13 +5,12 @@ pipelines they are allowed to see according to the visibility grant rules.
 """
 
 import uuid
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from fastapi import HTTPException
 
 from tests.conftest import make_pipeline, make_team, make_user, make_user_team
-
 
 # ---------------------------------------------------------------------------
 # require_pipeline_visibility

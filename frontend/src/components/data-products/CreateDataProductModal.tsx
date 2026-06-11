@@ -14,6 +14,7 @@ interface CreateDataProductModalProps {
 export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataProductModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [documentation, setDocumentation] = useState("");
   const [scheduleType, setScheduleType] = useState<string>("");
   const queryClient = useQueryClient();
 
@@ -22,6 +23,7 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
       const { data } = await apiClient.post<PipelineDetail>("/data-products", {
         name,
         description: description || null,
+        documentation: documentation || null,
         schedule_type: scheduleType || null,
       });
       return data;
@@ -41,6 +43,7 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
   const resetForm = () => {
     setName("");
     setDescription("");
+    setDocumentation("");
     setScheduleType("");
   };
 
@@ -83,6 +86,19 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
               className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 resize-none"
             />
             <span className="text-[10px] text-text-faint font-mono">{description.length}/270</span>
+          </div>
+
+          <div>
+            <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
+              Documentation
+            </label>
+            <textarea
+              value={documentation}
+              onChange={(e) => setDocumentation(e.target.value)}
+              rows={4}
+              placeholder="Markdown documentation (optional)..."
+              className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 resize-none font-mono"
+            />
           </div>
 
           <div>

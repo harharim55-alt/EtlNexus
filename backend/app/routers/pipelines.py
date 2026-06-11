@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from pydantic import BaseModel
 
 from app.auth import (
     get_current_user,
@@ -9,17 +10,14 @@ from app.auth import (
 )
 from app.config import settings
 from app.dependencies import (
-    get_airflow_sync_service,
     get_pipeline_service,
     get_revision_repo,
     get_visibility_grant_repo,
 )
 from app.models.user import User
-from app.rate_limit import limiter
 from app.repositories.revision_repo import RevisionRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.schemas.common import SuccessResponse
-from app.schemas.date_range import DateRangeParams
 from app.schemas.pipeline import (
     JoinSuggestionsResponse,
     PipelineDetail,
@@ -29,9 +27,7 @@ from app.schemas.pipeline import (
     PipelineUpdateRequest,
     PipelineUpdateResponse,
     RevisionListResponse,
-    SyncResponse,
 )
-from app.services.airflow_sync_service import AirflowSyncService
 from app.services.pipeline_service import PipelineService
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
@@ -43,11 +39,9 @@ async def list_pipelines(
     skip: int = Query(0, ge=0),
     limit: int = Query(settings.default_page_limit, ge=1, le=500),
     team: list[str] | None = Query(None),
-    dag_id: list[str] | None = Query(None),
-    status: list[str] | None = Query(None),
+    schedule: list[str] | None = Query(None),
     tag: list[str] | None = Query(None),
     is_data_product: bool | None = Query(None),
-    dates: DateRangeParams = Depends(),
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
@@ -64,11 +58,8 @@ async def list_pipelines(
         is_admin=is_admin,
         skip=skip,
         limit=limit,
-        date_from=dates.date_from,
-        date_to=dates.date_to,
         team_names=team,
-        dag_ids=dag_id,
-        statuses=status,
+        schedule_types=schedule,
         tag_names=tag,
         is_data_product=is_data_product,
     )
@@ -185,36 +176,10 @@ async def get_join_suggestions(
     return result
 
 
-@router.post(
-    "/{pipeline_id}/sync",
-    response_model=SyncResponse,
-    dependencies=[Depends(require_team_membership("pipeline_id"))],
-)
-@limiter.limit("30/minute")
-async def sync_pipeline(
-    request: Request,
-    pipeline_id: uuid.UUID,
-    user: User = Depends(get_current_user),
-    service: AirflowSyncService = Depends(get_airflow_sync_service),
-):
-    """Re-sync a single pipeline from Airflow. Only available when ACTIVATE_AIRFLOW is set."""
-    if not settings.activate_airflow:
-        raise HTTPException(status_code=404, detail="Airflow integration is disabled")
-    try:
-        result = await service.sync_single_pipeline(pipeline_id)
-        from app.cache import clear_all
-        clear_all()
-        return result
-    except ValueError as e:
-        raise HTTPException(status_code=404, detail=str(e)) from None
-
-
 # ---------- Schema manual override ----------
 
-from pydantic import BaseModel as _BaseModel  # noqa: E402
 
-
-class ManualFieldsRequest(_BaseModel):
+class ManualFieldsRequest(BaseModel):
     fields: list[PipelineFieldSchema]
 
 
@@ -229,7 +194,7 @@ async def set_pipeline_fields(
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
-    """Manually set pipeline fields, overriding dynamic Spark Connect catalog sync."""
+    """Manually set pipeline fields, overriding the Spark Connect catalog sync."""
     result = await service.set_manual_fields(pipeline_id, body.fields, updated_by=user.display_name)
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
@@ -239,10 +204,10 @@ async def set_pipeline_fields(
 # ---------- Data product creation ----------
 
 
-class DataProductCreateRequest(_BaseModel):
+class DataProductCreateRequest(BaseModel):
     name: str
     description: str | None = None
-    team_id: uuid.UUID | None = None
+    documentation: str | None = None
     schedule_type: str | None = None
 
 
@@ -255,13 +220,24 @@ async def create_data_product(
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
-    """Create a new manual data product entry."""
-    team_id = body.team_id
-    if not team_id and user.team_memberships:
-        team_id = user.team_memberships[0].team_id
+    """Create a data product owned by the creator's team.
+
+    Only team members (and admins) may create products; viewers cannot. The
+    product belongs to the creator's first team — its schema + consume snippet
+    auto-fill from Spark Connect by name.
+    """
+    is_admin = user.role == "admin"
+    if not is_admin and user.role == "viewer":
+        raise HTTPException(status_code=403, detail="Viewers cannot create data products")
+
+    team_id = user.team_memberships[0].team_id if user.team_memberships else None
+    if not is_admin and team_id is None:
+        raise HTTPException(status_code=403, detail="You must belong to a team to create a data product")
+
     return await service.create_data_product(
         name=body.name,
         description=body.description,
+        documentation=body.documentation,
         team_id=team_id,
         schedule_type=body.schedule_type,
         created_by=user.display_name,

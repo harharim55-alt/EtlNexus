@@ -1,11 +1,8 @@
-import re
 import uuid
 from datetime import UTC, datetime
 
 from app.cache import join_suggestions_cache, pipeline_list_cache
-from app.enums import PipelineType
 from app.models.pipeline import Pipeline
-from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.revision_repo import RevisionRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
@@ -21,21 +18,14 @@ from app.schemas.pipeline import (
 
 RESTORABLE_FIELDS = frozenset({"description", "documentation"})
 
-# PascalCase component pattern for API task detection — matches "Api" or
-# "API" as a PascalCase segment anywhere in the task_id.  Lowercase "api"
-# does NOT match (case-sensitive).
-_API_PATTERN = re.compile(r"Api|API")
-
 
 class PipelineService:
     def __init__(
         self,
         pipeline_repo: PipelineRepository,
-        lineage_repo: LineageRepository,
         revision_repo: RevisionRepository | None = None,
     ):
         self.pipeline_repo = pipeline_repo
-        self.lineage_repo = lineage_repo
         self.revision_repo = revision_repo
 
     async def list_pipelines(
@@ -46,17 +36,14 @@ class PipelineService:
         is_admin: bool = False,
         skip: int = 0,
         limit: int = 200,
-        date_from: datetime | None = None,
-        date_to: datetime | None = None,
         team_names: list[str] | None = None,
-        dag_ids: list[str] | None = None,
-        statuses: list[str] | None = None,
+        schedule_types: list[str] | None = None,
         tag_names: list[str] | None = None,
         is_data_product: bool | None = None,
     ) -> PipelineListResponse:
-        # Build cache key — only cache unfiltered (no search query, no date range, no filters) requests
+        # Cache only unfiltered requests
         cache_key: str | None = None
-        has_filters = query or date_from or date_to or team_names or dag_ids or statuses or tag_names or is_data_product is not None
+        has_filters = query or team_names or schedule_types or tag_names or is_data_product is not None
         if not has_filters:
             if is_admin:
                 cache_key = f"all:{skip}:{limit}"
@@ -78,28 +65,13 @@ class PipelineService:
             query=query,
             skip=skip,
             limit=limit,
-            last_run_after=date_from,
-            last_run_before=date_to,
             team_names=team_names,
-            dag_ids=dag_ids,
-            statuses=statuses,
+            schedule_types=schedule_types,
             tag_names=tag_names,
             is_data_product=is_data_product,
         )
 
         items = [self._to_list_item(p) for p in pipelines]
-        if pipelines:
-            ids = [p.id for p in pipelines]
-            rates = await self.pipeline_repo.get_success_rates(
-                ids, date_from=date_from, date_to=date_to,
-            )
-            run_dates = await self.pipeline_repo.get_last_run_dates(ids)
-            network_map = await self._batch_network_names(ids)
-            for item in items:
-                item.success_rate = rates.get(item.id)
-                item.last_run_at = run_dates.get(item.id)
-                item.network_names = network_map.get(item.id, [])
-
         result = PipelineListResponse(items=items, total=total)
         if cache_key:
             pipeline_list_cache.set(cache_key, result)
@@ -113,12 +85,10 @@ class PipelineService:
         preloaded_pipeline: "Pipeline | None" = None,
         revision_repo: RevisionRepository | None = None,
     ) -> PipelineUpdateResponse | None:
-        # Load pipeline to snapshot previous values for revisions
         pipeline = preloaded_pipeline or await self.pipeline_repo.get_by_id(pipeline_id)
         if not pipeline:
             return None
 
-        # Use explicitly passed revision_repo, fall back to injected instance
         effective_revision_repo = revision_repo or self.revision_repo
 
         # Snapshot previous values before applying changes
@@ -142,11 +112,7 @@ class PipelineService:
 
         # Only forward fields the client explicitly included in the request
         repo_kwargs: dict = {}
-        for field_name in (
-            "description", "documentation", "import_snippet",
-            "schedule_type", "topology_enabled", "writes_to_manual",
-            "reads_from_manual", "feeds_into_manual",
-        ):
+        for field_name in ("description", "documentation", "import_snippet", "schedule_type"):
             if field_name in update.model_fields_set:
                 repo_kwargs[field_name] = getattr(update, field_name)
 
@@ -191,7 +157,6 @@ class PipelineService:
         if revision.field_name not in RESTORABLE_FIELDS:
             return None
 
-        # Snapshot current state before restoring
         field_name = revision.field_name
         current_content = getattr(pipeline, field_name)
         await effective_revision_repo.create(
@@ -202,7 +167,6 @@ class PipelineService:
             change_source="restore",
         )
 
-        # Apply the restored content
         kwargs = {field_name: revision.content}
         pipeline = await self.pipeline_repo.update_metadata(
             pipeline_id,
@@ -230,19 +194,8 @@ class PipelineService:
         if not pipeline:
             return None
 
-        lineage = await self.lineage_repo.get_by_pipeline_id(pipeline_id)
-        source_tables = list({e.source_table for e in lineage["reads_from"]})
-        destination_tables = list({e.target_table for e in lineage["writes_to"]})
-
-        # Use manual writes_to if set, otherwise use lineage-derived tables
-        effective_destinations = (
-            sorted(pipeline.writes_to_manual)
-            if pipeline.writes_to_manual
-            else sorted(destination_tables)
-        )
-
         tags = []
-        if hasattr(pipeline, "tags") and pipeline.tags:
+        if pipeline.tags:
             tags = [TagResponse.model_validate(pt.tag) for pt in pipeline.tags if pt.tag]
 
         return PipelineDetail(
@@ -250,13 +203,6 @@ class PipelineService:
             name=pipeline.name,
             task_id=pipeline.task_id,
             description=pipeline.description,
-            category=pipeline.category,
-            pipeline_type=self._detect_pipeline_type(pipeline.task_id),
-            schedule=pipeline.schedule,
-            rows_per_day=pipeline.rows_per_day,
-            airflow_status=(
-                pipeline.airflow_status.status if pipeline.airflow_status else "unknown"
-            ),
             fields=[
                 {
                     "id": f.id,
@@ -266,8 +212,6 @@ class PipelineService:
                 }
                 for f in pipeline.fields
             ],
-            source_tables=sorted(source_tables),
-            destination_tables=effective_destinations,
             documentation=pipeline.documentation,
             last_updated_by=pipeline.last_updated_by,
             last_updated_at=pipeline.last_updated_at,
@@ -275,24 +219,11 @@ class PipelineService:
             updated_at=pipeline.updated_at,
             team=pipeline.team,
             team_id=pipeline.team_id,
-            execution_date=(
-                pipeline.airflow_status.execution_date
-                if pipeline.airflow_status
-                else None
-            ),
-            last_checked_at=(
-                pipeline.airflow_status.last_checked_at
-                if pipeline.airflow_status
-                else None
-            ),
             tags=tags,
-            how_to_read=pipeline.how_to_read,
             import_snippet=pipeline.import_snippet,
             schedule_type=pipeline.schedule_type,
             schema_manually_edited=pipeline.schema_manually_edited,
-            topology_enabled=pipeline.topology_enabled,
             is_data_product=pipeline.is_data_product,
-            writes_to_manual=pipeline.writes_to_manual,
         )
 
     async def get_pipeline_detail_for_user(
@@ -305,9 +236,8 @@ class PipelineService:
     ) -> PipelineDetail | None:
         """Fetch pipeline detail with visibility enforcement and can_edit computation.
 
-        Returns None (callers should raise 404) if:
-        - Pipeline does not exist
-        - Non-admin user lacks visibility to the pipeline
+        ``can_edit`` is True only for admins and members of the owning team
+        (viewers and visibility-grant holders get read-only).
         """
         result = await self.get_pipeline_detail(pipeline_id)
         if not result:
@@ -328,8 +258,7 @@ class PipelineService:
             return result
 
         # A single query proves visibility AND returns the grant level.
-        # If no grant exists the user cannot see the pipeline — return None
-        # to prevent UUID enumeration.
+        # If no grant exists the user cannot see the pipeline — return None.
         grant_level = await grant_repo.get_grant_level_for_pipeline(
             pipeline_id=pipeline_id,
             user_id=user_id,
@@ -339,8 +268,7 @@ class PipelineService:
         if not grant_level:
             return None
 
-        # Editing is restricted to the owning team (and admins). A visibility
-        # grant — even editor-level — confers read access only.
+        # Editing is restricted to the owning team (and admins).
         result.can_edit = False
         return result
 
@@ -352,22 +280,7 @@ class PipelineService:
         is_admin: bool = False,
         grant_repo: VisibilityGrantRepository | None = None,
     ) -> JoinSuggestionsResponse | None:
-        """Return schema-based join suggestions for the given pipeline.
-
-        When ``grant_repo`` is provided and the caller is not an admin, the
-        pipeline visibility is enforced before returning results.
-
-        Args:
-            pipeline_id: UUID of the pipeline to fetch join suggestions for.
-            user_id: ID of the requesting user (used for visibility checks).
-            user_team_ids: Set of team IDs the user belongs to.
-            is_admin: When ``True``, bypass all visibility checks.
-            grant_repo: Repository used for visibility enforcement.
-
-        Returns:
-            ``JoinSuggestionsResponse`` when the pipeline is visible and found,
-            ``None`` otherwise (callers should raise 404).
-        """
+        """Return schema-based join suggestions (pipelines sharing field names)."""
         cache_key = f"{pipeline_id}:{user_id}:{is_admin}"
         cached = join_suggestions_cache.get(cache_key)
         if cached is not None:
@@ -379,7 +292,7 @@ class PipelineService:
 
         if not is_admin:
             if grant_repo is None:
-                return None  # Fail closed — deny if no grant_repo provided
+                return None  # Fail closed
             can_see = await grant_repo.user_can_see_pipeline(
                 pipeline_id=pipeline_id,
                 pipeline_team_id=pipeline.team_id,
@@ -389,7 +302,6 @@ class PipelineService:
             if not can_see:
                 return None
 
-        # Use SQL-based field intersection instead of loading all pipelines into memory
         rows = await self.pipeline_repo.get_shared_field_pipelines(pipeline_id)
         suggestions = [
             JoinSuggestion(
@@ -415,7 +327,6 @@ class PipelineService:
         if not pipeline:
             return False
 
-        # Delete existing fields and insert new ones
         from app.models.pipeline import PipelineField
 
         for f in list(pipeline.fields):
@@ -444,12 +355,17 @@ class PipelineService:
         self,
         name: str,
         description: str | None = None,
+        documentation: str | None = None,
         team_id: uuid.UUID | None = None,
         schedule_type: str | None = None,
         created_by: str = "System",
     ) -> PipelineDetail:
-        """Create a new manual data product entry (not synced from Airflow)."""
-        # Resolve team name from team_id
+        """Create a new data product.
+
+        ``task_id`` is set to the product name so the Spark Connect catalog mirror
+        auto-fills its schema (and the consume snippet renders) when an Iceberg
+        table of the same name exists.
+        """
         team_name = None
         if team_id:
             from app.models.team import Team
@@ -459,7 +375,9 @@ class PipelineService:
 
         pipeline = Pipeline(
             name=name,
+            task_id=name,
             description=description,
+            documentation=documentation,
             team=team_name,
             team_id=team_id,
             schedule_type=schedule_type,
@@ -490,61 +408,20 @@ class PipelineService:
         pipeline_list_cache.clear()
         return await self.get_pipeline_detail(pipeline_id)
 
-    async def _batch_network_names(self, pipeline_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[str]]:
-        """Batch-load network names for a list of pipeline IDs."""
-        if not pipeline_ids:
-            return {}
-        from sqlalchemy import select
-
-        from app.models.network import Network
-        from app.models.pipeline_log import PipelineLog, PipelineLogNetwork
-
-        stmt = (
-            select(PipelineLog.pipeline_id, Network.name)
-            .join(PipelineLogNetwork, PipelineLogNetwork.log_id == PipelineLog.id)
-            .join(Network, Network.id == PipelineLogNetwork.network_id)
-            .where(PipelineLog.pipeline_id.in_(pipeline_ids))
-            .distinct()
-        )
-        result = await self.pipeline_repo.session.execute(stmt)
-        mapping: dict[uuid.UUID, list[str]] = {}
-        for row in result.all():
-            mapping.setdefault(row[0], []).append(row[1])
-        return mapping
-
-    @staticmethod
-    def _detect_pipeline_type(task_id: str | None) -> str:
-        """Derive pipeline type from task_id using word-boundary matching."""
-        if task_id and _API_PATTERN.search(task_id):
-            return PipelineType.API
-        return PipelineType.ETL
-
     @staticmethod
     def _to_list_item(pipeline: Pipeline) -> PipelineListItem:
         from app.schemas.tag import TagResponse
 
         tags = []
-        if hasattr(pipeline, "tags") and pipeline.tags:
+        if pipeline.tags:
             tags = [TagResponse.model_validate(pt.tag) for pt in pipeline.tags if pt.tag]
 
         return PipelineListItem(
             id=pipeline.id,
             name=pipeline.name,
             description=pipeline.description,
-            category=pipeline.category,
-            pipeline_type=PipelineService._detect_pipeline_type(pipeline.task_id),
-            schedule=pipeline.schedule,
             schedule_type=pipeline.schedule_type,
-            rows_per_day=pipeline.rows_per_day,
-            airflow_status=(
-                pipeline.airflow_status.status if pipeline.airflow_status else "unknown"
-            ),
             team=pipeline.team,
-            execution_date=(
-                pipeline.airflow_status.execution_date
-                if pipeline.airflow_status
-                else None
-            ),
             tags=tags,
             is_data_product=pipeline.is_data_product,
         )

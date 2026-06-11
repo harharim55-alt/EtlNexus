@@ -12,6 +12,7 @@ Create Date: 2026-06-07
 from collections.abc import Sequence
 
 import sqlalchemy as sa
+
 from alembic import op
 
 revision: str = "042_add_catalog_mirror"

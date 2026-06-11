@@ -9,7 +9,7 @@ HTTP client library.
 import json
 from collections.abc import Awaitable, Callable
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pytest
 

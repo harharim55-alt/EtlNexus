@@ -58,10 +58,6 @@ class TTLCache[T]:
 # ── Module-level singletons ──────────────────────────────────────────
 pipeline_list_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)     # list_pipelines (no query)
 schema_matrix_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium)    # schema matrix response
-topology_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)          # topology per pipeline+dag
-dag_summary_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium)      # dag summary/statistics
-bouncer_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium)          # bouncer list
-bouncer_topology_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)  # bouncer topology
 grant_level_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)       # per-user grant level for pipeline
 join_suggestions_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium) # join suggestions per pipeline
 task_id_map_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)       # lightweight {task_id: summary} lookup
@@ -75,10 +71,6 @@ def clear_all() -> None:
     """
     pipeline_list_cache.clear()
     schema_matrix_cache.clear()
-    topology_cache.clear()
-    dag_summary_cache.clear()
-    bouncer_cache.clear()
-    bouncer_topology_cache.clear()
     grant_level_cache.clear()
     join_suggestions_cache.clear()
     task_id_map_cache.clear()

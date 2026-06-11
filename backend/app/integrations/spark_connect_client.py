@@ -22,7 +22,6 @@ class SparkTableSchema:
     table_name: str
     namespace: str
     fields: list[dict] = field(default_factory=list)  # [{"name": ..., "type": ...}]
-    schedule: str | None = None  # inferred from the ts column: "daily" | "hourly" | None
 
 
 def _validate_identifier(value: str, label: str) -> str:
@@ -127,36 +126,6 @@ class SparkConnectClient:
             )
         except Exception as e:
             logger.warning("Failed to read schema for %s.%s: %s", namespace, table_name, e)
-            return None
-
-    def detect_schedule(self, namespace: str, table_name: str) -> str | None:
-        """Infer a pipeline's cadence from the resolution of its timestamp column.
-
-        Samples DISTINCT time-of-day values of ``settings.ts_column_name``: if every
-        sampled value is ``00:00:00`` the data is day-grained ("daily"); any non-zero
-        time means it's hour-grained ("hourly"). Returns ``None`` when the column is
-        absent, the table is empty, or the query fails. Called lazily (only for
-        pipelines that don't yet have a schedule), never on the hot mirror path.
-        """
-        _validate_identifier(namespace, "namespace")
-        _validate_identifier(table_name, "table_name")
-        ts_col = settings.ts_column_name
-        _validate_identifier(ts_col, "ts_column_name")
-        spark = self._get_spark()
-        if not spark:
-            return None
-        try:
-            fqn = f"{self.catalog_name}.{namespace}.{table_name}"
-            rows = spark.sql(
-                f"SELECT DISTINCT date_format(`{ts_col}`, 'HH:mm:ss') AS hms "
-                f"FROM {fqn} WHERE `{ts_col}` IS NOT NULL LIMIT 5"
-            ).collect()
-            times = [r["hms"] for r in rows if r["hms"] is not None]
-            if not times:
-                return None
-            return "daily" if all(t == "00:00:00" for t in times) else "hourly"
-        except Exception as e:
-            logger.warning("Failed to infer schedule for %s.%s: %s", namespace, table_name, e)
             return None
 
     def get_all_schemas(self) -> list[SparkTableSchema]:

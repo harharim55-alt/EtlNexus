@@ -35,7 +35,7 @@ class TestRefreshFromSpark:
 
         result = await service.refresh_from_spark()
 
-        assert result == 0
+        assert result == []
         # Mirror left untouched on empty Spark response — no wipe, no commit
         service.repo.replace_all.assert_not_called()
         mock_session.commit.assert_not_awaited()
@@ -57,7 +57,8 @@ class TestRefreshFromSpark:
 
         result = await service.refresh_from_spark()
 
-        assert result == 3
+        # Returns the discovered schema list (2 tables); replace_all wrote 3 column rows
+        assert len(result) == 2
         service.repo.replace_all.assert_awaited_once()
         rows = service.repo.replace_all.call_args[0][0]
         assert len(rows) == 3
