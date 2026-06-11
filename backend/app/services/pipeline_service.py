@@ -5,7 +5,6 @@ from app.cache import join_suggestions_cache, pipeline_list_cache
 from app.models.pipeline import Pipeline
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.revision_repo import RevisionRepository
-from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.schemas.pipeline import (
     JoinSuggestion,
     JoinSuggestionsResponse,
@@ -232,7 +231,6 @@ class PipelineService:
         user_id: uuid.UUID,
         user_team_ids: set[uuid.UUID],
         is_admin: bool,
-        grant_repo: VisibilityGrantRepository,
     ) -> PipelineDetail | None:
         """Fetch pipeline detail. Every authenticated user may view any product;
         ``can_edit`` is True only for admins and members of the owning team.
@@ -250,7 +248,6 @@ class PipelineService:
         user_id: uuid.UUID | None = None,
         user_team_ids: set[uuid.UUID] | None = None,
         is_admin: bool = False,
-        grant_repo: VisibilityGrantRepository | None = None,
     ) -> JoinSuggestionsResponse | None:
         """Return schema-based join suggestions (pipelines sharing field names)."""
         cache_key = f"{pipeline_id}:{user_id}:{is_admin}"

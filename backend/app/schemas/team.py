@@ -2,7 +2,11 @@
 
 import uuid
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class AddMemberRequest(BaseModel):
+    username: str = Field(min_length=1, max_length=255, description="Username or email of an existing user")
 
 
 class TeamMemberInfo(BaseModel):

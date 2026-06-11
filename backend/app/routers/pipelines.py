@@ -12,11 +12,9 @@ from app.config import settings
 from app.dependencies import (
     get_pipeline_service,
     get_revision_repo,
-    get_visibility_grant_repo,
 )
 from app.models.user import User
 from app.repositories.revision_repo import RevisionRepository
-from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.schemas.common import SuccessResponse
 from app.schemas.pipeline import (
     JoinSuggestionsResponse,
@@ -70,7 +68,6 @@ async def get_pipeline(
     pipeline_id: uuid.UUID,
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
-    grant_repo: VisibilityGrantRepository = Depends(get_visibility_grant_repo),
 ):
     is_admin = user.role == "admin"
     user_team_ids = {ut.team_id for ut in (user.team_memberships or [])}
@@ -80,7 +77,6 @@ async def get_pipeline(
         user_id=user.id,
         user_team_ids=user_team_ids,
         is_admin=is_admin,
-        grant_repo=grant_repo,
     )
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
@@ -160,7 +156,6 @@ async def get_join_suggestions(
     pipeline_id: uuid.UUID,
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
-    grant_repo: VisibilityGrantRepository = Depends(get_visibility_grant_repo),
 ):
     is_admin = user.role == "admin"
     user_team_ids = {ut.team_id for ut in (user.team_memberships or [])}
@@ -169,7 +164,6 @@ async def get_join_suggestions(
         user_id=user.id,
         user_team_ids=user_team_ids,
         is_admin=is_admin,
-        grant_repo=grant_repo,
     )
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")

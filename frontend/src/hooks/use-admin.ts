@@ -5,15 +5,12 @@ import {
   updateUserActive,
   fetchTeams,
   fetchTeamDetail,
-  fetchGrants,
-  createGrant,
-  deleteGrant,
+  addTeamMember,
+  removeTeamMember,
 } from "@/api/admin";
-import type { VisibilityGrantRequest } from "@/types/admin";
 import { toast } from "sonner";
 
 const USERS_PAGE_SIZE = 100;
-const GRANTS_PAGE_SIZE = 100;
 
 export function useAdminUsers(enabled = true) {
   return useInfiniteQuery({
@@ -44,20 +41,6 @@ export function useTeamDetail(teamId: string | null) {
     queryFn: () => fetchTeamDetail(teamId!),
     enabled: !!teamId,
     staleTime: 2 * 60_000,
-  });
-}
-
-export function useAdminGrants(enabled = true) {
-  return useInfiniteQuery({
-    queryKey: ["admin-grants"],
-    queryFn: ({ pageParam = 0 }) => fetchGrants(pageParam, GRANTS_PAGE_SIZE),
-    initialPageParam: 0,
-    getNextPageParam: (lastPage, allPages) => {
-      const loaded = allPages.reduce((sum, p) => sum + p.items.length, 0);
-      return loaded < lastPage.total ? loaded : undefined;
-    },
-    staleTime: 2 * 60_000,
-    enabled,
   });
 }
 
@@ -92,30 +75,36 @@ export function useUpdateUserActive() {
 }
 
 
-export function useCreateGrant() {
+export function useAddTeamMember(teamId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (body: VisibilityGrantRequest) => createGrant(body),
-    onSuccess: () => {
-      toast.success("Grant created");
-      queryClient.invalidateQueries({ queryKey: ["admin-grants"] });
+    mutationFn: (username: string) => addTeamMember(teamId, username),
+    onSuccess: (member) => {
+      toast.success(`Added ${member.display_name} to the team`);
+      queryClient.invalidateQueries({ queryKey: ["admin-team-detail", teamId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-teams"] });
     },
-    onError: () => {
-      toast.error("Failed to create grant");
+    onError: (err: unknown) => {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail ?? "Failed to add member");
     },
   });
 }
 
-export function useDeleteGrant() {
+export function useRemoveTeamMember(teamId: string) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (grantId: string) => deleteGrant(grantId),
+    mutationFn: (userId: string) => removeTeamMember(teamId, userId),
     onSuccess: () => {
-      toast.success("Grant revoked");
-      queryClient.invalidateQueries({ queryKey: ["admin-grants"] });
+      toast.success("Member removed");
+      queryClient.invalidateQueries({ queryKey: ["admin-team-detail", teamId] });
+      queryClient.invalidateQueries({ queryKey: ["admin-teams"] });
     },
-    onError: () => {
-      toast.error("Failed to revoke grant");
+    onError: (err: unknown) => {
+      const detail =
+        (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+      toast.error(detail ?? "Failed to remove member");
     },
   });
 }

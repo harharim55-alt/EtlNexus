@@ -28,6 +28,21 @@ class TeamService:
         """Get all pipelines owned by this team."""
         return await self.pipeline_repo.get_by_team_id(team_id)
 
+    async def add_member_by_username(self, team_id: uuid.UUID, username: str):
+        """Add an existing user (looked up by username/email) to a team.
+
+        Returns the added User, or None when no user matches the username.
+        """
+        user = await self.team_repo.find_user_by_username(username)
+        if not user:
+            return None
+        await self.team_repo.add_member(team_id, user.id)
+        return user
+
+    async def remove_member(self, team_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """Remove a user from a team. Returns True if a membership was removed."""
+        return await self.team_repo.remove_member(team_id, user_id)
+
     @staticmethod
     def user_can_access_team(user: "object", team_id: uuid.UUID) -> bool:
         """Return whether the user may access team detail or team pipelines.

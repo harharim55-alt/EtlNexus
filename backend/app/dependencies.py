@@ -12,13 +12,11 @@ from app.repositories.revision_repo import RevisionRepository
 from app.repositories.tag_repo import TagRepository
 from app.repositories.team_repo import TeamRepository
 from app.repositories.user_repo import UserRepository
-from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.ai_service import AIService
 from app.services.pipeline_service import PipelineService
 from app.services.schema_matrix_service import SchemaMatrixService
 from app.services.tag_service import TagService
 from app.services.team_service import TeamService
-from app.services.visibility_service import VisibilityService
 
 
 # Repositories
@@ -40,12 +38,6 @@ def get_user_repo(session: AsyncSession = Depends(get_db_session)) -> UserReposi
 
 def get_team_repo(session: AsyncSession = Depends(get_db_session)) -> TeamRepository:
     return TeamRepository(session)
-
-
-def get_visibility_grant_repo(
-    session: AsyncSession = Depends(get_db_session),
-) -> VisibilityGrantRepository:
-    return VisibilityGrantRepository(session)
 
 
 def get_tag_repo(session: AsyncSession = Depends(get_db_session)) -> TagRepository:
@@ -77,13 +69,6 @@ def get_team_service(
     pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
 ) -> TeamService:
     return TeamService(team_repo, pipeline_repo)
-
-
-def get_visibility_service(
-    grant_repo: VisibilityGrantRepository = Depends(get_visibility_grant_repo),
-    team_repo: TeamRepository = Depends(get_team_repo),
-) -> VisibilityService:
-    return VisibilityService(grant_repo, team_repo)
 
 
 def get_tag_service(

@@ -120,7 +120,7 @@ const ALL_STEPS: OnboardingStep[] = [
     title: "Access Control Panel",
     subtitle: "MODULE: ADMIN_RBAC",
     description:
-      "As an administrator (team leader), you have access to the Access Control panel. Manage users, teams and visibility grants. Roles come from Keycloak: admin, member, viewer.",
+      "As an administrator (team leader), you have access to the Access Control panel. Manage user roles, browse teams, and manage your team's membership — add users by username and remove members (you can't remove yourself). Roles come from Keycloak: admin, member, viewer.",
     icon: Shield,
     iconBg: "bg-rose-500/10",
     iconBorder: "border-rose-500/20",
@@ -133,8 +133,8 @@ const ALL_STEPS: OnboardingStep[] = [
     adminOnly: true,
     features: [
       "User management with role assignment",
-      "Team overview and membership",
-      "Visibility grant management",
+      "Team overview",
+      "Add/remove your team's members by username",
     ],
   },
   {

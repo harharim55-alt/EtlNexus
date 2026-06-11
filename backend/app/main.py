@@ -24,7 +24,6 @@ from app.routers import (
     tags,
     teams,
     users,
-    visibility,
 )
 
 # Structured logging
@@ -162,7 +161,6 @@ app.include_router(schema_matrix.router)
 app.include_router(ai.router)
 app.include_router(auth.router)
 app.include_router(teams.router)
-app.include_router(visibility.router)
 app.include_router(users.router)
 app.include_router(metrics.router)
 app.include_router(tags.router)

@@ -10,7 +10,6 @@ from app.models.pipeline import Pipeline
 from app.models.team import Team
 from app.models.user import User
 from app.models.user_team import UserTeam
-from app.models.visibility_grant import VisibilityGrant
 
 # ---------------------------------------------------------------------------
 # Factory helpers
@@ -88,31 +87,6 @@ def make_pipeline(
     pipeline.fields = []
     pipeline.airflow_status = None
     return pipeline
-
-
-def make_grant(
-    *,
-    grantee_team_id: uuid.UUID | None = None,
-    grantee_user_id: uuid.UUID | None = None,
-    pipeline_id: uuid.UUID | None = None,
-    source_team_id: uuid.UUID | None = None,
-    grant_level: str = "viewer",
-    granted_by: str = "Admin",
-) -> VisibilityGrant:
-    """Create a VisibilityGrant ORM-like object for testing."""
-    grant = MagicMock(spec=VisibilityGrant)
-    grant.id = uuid.uuid4()
-    grant.grantee_team_id = grantee_team_id
-    grant.grantee_user_id = grantee_user_id
-    grant.pipeline_id = pipeline_id
-    grant.source_team_id = source_team_id
-    grant.grant_level = grant_level
-    grant.granted_by = granted_by
-    grant.created_at = datetime.now(UTC)
-    grant.grantee_team = None
-    grant.grantee_user = None
-    grant.source_team = None
-    return grant
 
 
 # ---------------------------------------------------------------------------

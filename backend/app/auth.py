@@ -25,7 +25,6 @@ from app.enums import UserRole
 from app.integrations.oidc_client import oidc_client
 from app.models.user import User
 from app.repositories.pipeline_repo import PipelineRepository
-from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.user_auth_service import UserAuthService
 
 logger = logging.getLogger(__name__)
@@ -203,49 +202,6 @@ def require_team_membership(pipeline_id_param: str = "pipeline_id"):
     return _check
 
 
-def require_team_membership_or_editor_grant(pipeline_id_param: str = "pipeline_id"):
-    """Like ``require_team_membership``, but also allows users with an editor-level grant."""
-
-    async def _check(
-        request: Request,
-        user: User = Depends(get_current_user),
-        session: AsyncSession = Depends(get_db_session),
-    ) -> User:
-        if user.role == UserRole.ADMIN:
-            return user
-
-        pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
-
-        # Store loaded pipeline to avoid re-fetching in downstream handler
-        request.state.pipeline = pipeline
-
-        if pipeline_uuid is None or not pipeline or not pipeline.team_id:
-            return user
-
-        user_team_ids = {ut.team_id for ut in user.team_memberships}
-
-        # Team member — allowed
-        if pipeline.team_id in user_team_ids:
-            return user
-
-        # Check for editor-level grant
-        has_editor = await VisibilityGrantRepository(session).has_editor_grant(
-            pipeline_id=pipeline_uuid,
-            user_id=user.id,
-            user_team_ids=user_team_ids,
-            pipeline_team_id=pipeline.team_id,
-        )
-        if has_editor:
-            return user
-
-        raise HTTPException(
-            status_code=403,
-            detail="Not a member of this pipeline's team and no editor grant",
-        )
-
-    return _check
-
-
 def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
     """Return a dependency that checks the caller can *see* the pipeline.
 
@@ -288,56 +244,34 @@ def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
     return _check
 
 
-def require_pipeline_visibility_by_name(param_name: str = "etl_name"):
-    """Return a dependency that checks pipeline visibility for name-keyed endpoints.
+def require_team_admin(team_id_param: str = "team_id"):
+    """Dependency: the caller must be an admin (team leader) who belongs to the team.
 
-    Looks up the pipeline by ``task_id`` matching the path parameter, then
-    performs the same visibility check as ``require_pipeline_visibility``.
-
-    If no pipeline is found for the given name the check is skipped and the
-    endpoint is allowed to handle "not found" gracefully.
-
-    Args:
-        param_name: Name of the path parameter carrying the ETL task name
-            (default ``"etl_name"``).
-
-    Returns:
-        Async dependency function.
+    Admins manage only the membership of teams they are a member of. The
+    resolved team_id is stored on ``request.state.team_id``.
     """
 
     async def _check(
         request: Request,
         user: User = Depends(get_current_user),
-        session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        if user.role == UserRole.ADMIN:
-            return user
+        if user.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Admin role required")
 
-        etl_name: str | None = request.path_params.get(param_name)
-        if not etl_name:
-            return user
-
-        pipeline = await PipelineRepository(session).get_by_task_id(etl_name)
-        if not pipeline:
-            # Let the endpoint handle "not found" gracefully
-            return user
-
-        request.state.pipeline = pipeline
-
-        # Unassigned pipeline — visible to everyone
-        if not pipeline.team_id:
-            return user
+        raw = request.path_params.get(team_id_param)
+        try:
+            team_id = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=404, detail="Team not found") from None
 
         user_team_ids = {ut.team_id for ut in user.team_memberships}
-        can_see = await VisibilityGrantRepository(session).user_can_see_pipeline(
-            pipeline_id=pipeline.id,
-            pipeline_team_id=pipeline.team_id,
-            user_id=user.id,
-            user_team_ids=user_team_ids,
-        )
-        if not can_see:
-            raise HTTPException(status_code=404, detail="Pipeline not found")
+        if team_id not in user_team_ids:
+            raise HTTPException(
+                status_code=403,
+                detail="You can only manage teams you belong to",
+            )
 
+        request.state.team_id = team_id
         return user
 
     return _check
