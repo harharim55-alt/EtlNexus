@@ -157,8 +157,9 @@ async def _resolve_pipeline_team(
 def require_team_membership(pipeline_id_param: str = "pipeline_id"):
     """Return a dependency that checks the caller belongs to the pipeline's team.
 
-    Admins bypass the check.  Pipelines without an assigned team are
-    accessible to everyone.
+    Editing is scoped to the owning team for everyone, admins included: an admin
+    is a team leader of their own team(s), not a global super-editor. Viewers are
+    read-only. Pipelines without an assigned team are editable by any non-viewer.
 
     Args:
         pipeline_id_param: Name of the path parameter that carries the
@@ -174,10 +175,6 @@ def require_team_membership(pipeline_id_param: str = "pipeline_id"):
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        # Admins (team leaders) can always proceed
-        if user.role == UserRole.ADMIN:
-            return user
-
         # Viewers are read-only — they never edit, regardless of team membership
         if user.role == UserRole.VIEWER:
             raise HTTPException(status_code=403, detail="Viewers cannot edit")

@@ -163,16 +163,25 @@ class TestRequireRole:
 
 
 class TestRequireTeamMembership:
-    async def test_admin_bypasses(self, mock_session):
+    @patch("app.repositories.pipeline_repo.PipelineRepository.get_by_id")
+    async def test_admin_not_in_team_is_blocked(self, mock_get_by_id, mock_session):
+        """Editing is team-scoped even for admins (team leader != global editor)."""
         from app.auth import require_team_membership
 
-        checker = require_team_membership()
-        user = make_user(role="admin")
-        request = MagicMock()
-        request.path_params = {"pipeline_id": str(uuid.uuid4())}
+        pipeline = make_pipeline(team="Vault", team_id=uuid.uuid4())
+        mock_get_by_id.return_value = pipeline
 
-        result = await checker(request=request, user=user, session=mock_session)
-        assert result.role == "admin"
+        user = make_user(role="admin")
+        user.team_memberships = []  # admin, but not a member of Vault
+
+        checker = require_team_membership()
+        request = MagicMock()
+        request.path_params = {"pipeline_id": str(pipeline.id)}
+        request.state = MagicMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await checker(request=request, user=user, session=mock_session)
+        assert exc_info.value.status_code == 403
 
     async def test_no_pipeline_id_passes(self, mock_session):
         from app.auth import require_team_membership

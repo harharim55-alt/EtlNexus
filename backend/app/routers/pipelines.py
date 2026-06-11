@@ -69,14 +69,13 @@ async def get_pipeline(
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
-    is_admin = user.role == "admin"
     user_team_ids = {ut.team_id for ut in (user.team_memberships or [])}
 
     result = await service.get_pipeline_detail_for_user(
         pipeline_id=pipeline_id,
         user_id=user.id,
         user_team_ids=user_team_ids,
-        is_admin=is_admin,
+        user_role=user.role,
     )
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
