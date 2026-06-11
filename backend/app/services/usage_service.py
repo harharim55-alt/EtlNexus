@@ -28,24 +28,25 @@ class UsageService:
         date_to: datetime | None = None,
         network: str | None = None,
     ) -> PipelineUsageResponse:
-        """Find downstream consumers from DAG topology and enrich with oasis_prod read metrics."""
+        """Count this ETL's consumption from the observer table, plus any downstream
+        consumers discovered from DAG topology (when Airflow is enabled).
 
-        # 1. Find all DAGs containing this task
-        dag_entries = await self.dag_task_repo.get_dags_for_task(etl_name)
-        if not dag_entries:
-            return PipelineUsageResponse(usages=[])
+        The ETL's own consumption count comes purely from the observer table, so it
+        works without Airflow. Downstream-consumer discovery still needs DAG topology
+        and is simply empty when there are no DAG entries.
+        """
 
-        # 2. Build pipeline lookup by task_id
+        # 1. Build pipeline lookup by task_id (catalog-driven; no Airflow needed)
         task_id_to_pipeline = await self.pipeline_repo.get_task_id_map()
+        current_pipeline = task_id_to_pipeline.get(etl_name)
+
+        # 2. Find downstream consumers via DAG topology — empty when Airflow is off
+        dag_entries = await self.dag_task_repo.get_dags_for_task(etl_name)
 
         # 3. Collect downstream task_ids + status across all DAGs
         downstream_info: dict[str, dict] = {}
-        my_status = "unknown"
-        my_dag_id = dag_entries[0].dag_id
-
-        current_pipeline = task_id_to_pipeline.get(etl_name)
-        if current_pipeline:
-            my_status = current_pipeline.status
+        my_status = current_pipeline.status if current_pipeline else "unknown"
+        my_dag_id = dag_entries[0].dag_id if dag_entries else None
 
         for entry in dag_entries:
             for tid in entry.downstream_task_ids or []:
@@ -80,8 +81,7 @@ class UsageService:
             if metrics:
                 own_unique_reads = metrics.unique_reads
                 own_total_reads = metrics.total_reads
-                if metrics.consumers:
-                    own_last_accessed = metrics.consumers[0].last_accessed_at
+                own_last_accessed = metrics.last_accessed_at
 
         # 4a. Batch fetch metrics for all downstream consumers in a single query
         downstream_products: list[tuple[str, str]] = []

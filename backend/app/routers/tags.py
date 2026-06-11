@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Query
 
-from app.auth import get_current_user, require_role, require_team_membership_or_editor_grant
+from app.auth import get_current_user, require_role, require_team_membership
 from app.dependencies import get_tag_service
 from app.models.user import User
 from app.schemas.tag import (
@@ -69,7 +69,7 @@ async def get_pipeline_tags(
 @pipeline_tag_router.put(
     "/{pipeline_id}/tags",
     response_model=TagListResponse,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def set_pipeline_tags(
     pipeline_id: uuid.UUID,

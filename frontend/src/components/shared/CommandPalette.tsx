@@ -6,6 +6,7 @@ import { fetchDagSummary } from "@/api/dag-summary";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { usePipelineStore } from "@/stores/pipeline-store";
 import { useBouncerStore } from "@/stores/bouncer-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { stripDummy } from "@/lib/format";
 import type { PipelineListItem } from "@/types/pipeline";
 
@@ -30,6 +31,7 @@ export function CommandPalette() {
 
   const setActiveTab = useNavigationStore((s) => s.setActiveTab);
   const setSelectedPipelineId = usePipelineStore((s) => s.setSelectedPipelineId);
+  const activateAirflow = useAuthStore((s) => s.activateAirflow);
 
   // Open/close with Cmd+K
   useEffect(() => {
@@ -101,7 +103,7 @@ export function CommandPalette() {
           });
         }
 
-        if (bouncerRes.status === "fulfilled") {
+        if (activateAirflow && bouncerRes.status === "fulfilled") {
           bouncerRes.value.bouncers
             .filter((b) =>
               b.bouncer_name.toLowerCase().includes(q) ||
@@ -125,7 +127,7 @@ export function CommandPalette() {
             });
         }
 
-        if (dagRes.status === "fulfilled") {
+        if (activateAirflow && dagRes.status === "fulfilled") {
           dagRes.value.dags
             .filter((d) => d.dag_id.toLowerCase().includes(q))
             .slice(0, 5)

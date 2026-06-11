@@ -3,6 +3,7 @@ import { usePipelineDetail } from "@/hooks/use-pipeline-detail";
 import { useUpdatePipeline } from "@/hooks/use-update-pipeline";
 import { usePipelineLogs } from "@/hooks/use-pipeline-logs";
 import { useDataProductStore } from "@/stores/data-product-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { BentoHeader } from "@/components/bento-workspace/BentoHeader";
@@ -15,6 +16,7 @@ import { stripDummy } from "@/lib/format";
 
 export function DataProductWorkspace() {
   const selectedProductId = useDataProductStore((s) => s.selectedProductId);
+  const activateAirflow = useAuthStore((s) => s.activateAirflow);
   const { data: pipeline, isLoading, error, refetch } = usePipelineDetail(selectedProductId);
   const { mutate: updatePipeline, isPending: isSaving } = useUpdatePipeline(selectedProductId ?? "");
   const { data: logsData } = usePipelineLogs(selectedProductId);
@@ -81,7 +83,10 @@ export function DataProductWorkspace() {
           canEdit={pipeline.can_edit}
         />
 
-        {pipeline.topology_enabled && (
+        {/* Topology and Data Structure (pipeline logs/networks) are Airflow-fed
+            and gated. Schema viewer + Consumers & Usage are catalog/observer-driven
+            and always shown (usage is counted from the Oasis observer table). */}
+        {activateAirflow && pipeline.topology_enabled && (
           <LineageTopology pipelineId={pipeline.id} fullWidth />
         )}
 
@@ -98,13 +103,15 @@ export function DataProductWorkspace() {
           <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
         </div>
 
-        <div className="col-span-12">
-          <DataStructureCard
-            pipelineId={pipeline.id}
-            schedule={pipeline.schedule}
-            canEdit={pipeline.can_edit}
-          />
-        </div>
+        {activateAirflow && (
+          <div className="col-span-12">
+            <DataStructureCard
+              pipelineId={pipeline.id}
+              schedule={pipeline.schedule}
+              canEdit={pipeline.can_edit}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

@@ -54,8 +54,9 @@ export function Sidebar() {
   const activateAirflow = useAuthStore((s) => s.activateAirflow);
   const { data: dagFlag } = useFeatureFlagCheck("dag_dashboard");
   const { data: bouncerFlag } = useFeatureFlagCheck("bouncer_dashboard");
-  const showDags = isAdmin(user) || dagFlag?.accessible;
-  const showBouncers = isAdmin(user) || bouncerFlag?.accessible;
+  // DAG Summary + Bouncers are Airflow-fed — only show them when Airflow is enabled.
+  const showDags = activateAirflow && (isAdmin(user) || dagFlag?.accessible);
+  const showBouncers = activateAirflow && (isAdmin(user) || bouncerFlag?.accessible);
   const [isSyncingAll, setIsSyncingAll] = useState(false);
   const queryClient = useQueryClient();
   const theme = useThemeStore((s) => s.theme);

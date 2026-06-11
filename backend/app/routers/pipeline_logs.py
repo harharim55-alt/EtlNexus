@@ -4,7 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends
 
-from app.auth import get_current_user, require_team_membership_or_editor_grant
+from app.auth import get_current_user, require_team_membership
 from app.dependencies import get_pipeline_log_service
 from app.models.user import User
 from app.schemas.pipeline_log import (
@@ -34,7 +34,7 @@ async def list_logs(
     "/{pipeline_id}/logs",
     response_model=LogResponse,
     status_code=201,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def create_log(
     pipeline_id: uuid.UUID,
@@ -48,7 +48,7 @@ async def create_log(
 @router.patch(
     "/{pipeline_id}/logs/{log_id}",
     response_model=LogResponse,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def update_log(
     pipeline_id: uuid.UUID,
@@ -63,7 +63,7 @@ async def update_log(
 @router.delete(
     "/{pipeline_id}/logs/{log_id}",
     status_code=204,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def delete_log(
     pipeline_id: uuid.UUID,
@@ -77,7 +77,7 @@ async def delete_log(
 @router.put(
     "/{pipeline_id}/logs/{log_id}/networks",
     response_model=LogResponse,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def set_log_networks(
     pipeline_id: uuid.UUID,
@@ -93,7 +93,7 @@ async def set_log_networks(
 @router.put(
     "/{pipeline_id}/logs/{log_id}/fields",
     response_model=LogResponse,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def set_log_fields(
     pipeline_id: uuid.UUID,

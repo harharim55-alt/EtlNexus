@@ -1,6 +1,15 @@
-"""Oasis Prod client — queries external observation tables for data product usage metrics."""
+"""Oasis Prod client — counts data consumption from the external ``observer`` table.
+
+A consumption is one row in the observation table (env: ``OASIS_OBSERVER_TABLE``)
+where ``storage_types`` equals ``OASIS_OBSERVER_STORAGE_TYPE`` (default ``iceberg``)
+and the row's ``(data_source_name, data_name)`` match a pipeline's team + name.
+``total_reads`` is the row count; ``unique_reads`` is the number of distinct days
+(``ts``) on which the data was consumed. The table has no per-consumer column, so
+no per-principal breakdown is produced.
+"""
 
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from urllib.parse import urlparse, urlunparse
@@ -12,63 +21,22 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-
-@dataclass
-class ConsumerMetric:
-    principal: str
-    total_reads: int
-    last_accessed_at: datetime | None
+# A bare SQL identifier — table names are interpolated (bind params can't name a
+# table), so the env-provided name must be validated to prevent SQL injection.
+_IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
 
 @dataclass
 class UsageMetrics:
-    unique_reads: int
-    total_reads: int
-    consumers: list[ConsumerMetric]
+    unique_reads: int          # distinct days (ts) with at least one consumption
+    total_reads: int           # total matching observation rows
+    last_accessed_at: datetime | None
 
 
-_USAGE_QUERY = text("""
-SELECT
-    principal,
-    COUNT(timestamp) as total_reads,
-    MAX(timestamp) as last_accessed_at
-FROM (
-    SELECT principal, timestamp FROM data_interpaction_observeration_hdfs
-    WHERE data_source_name = :source AND data_name = :name
-      AND (:date_from::timestamptz IS NULL OR timestamp >= :date_from)
-      AND (:date_to::timestamptz IS NULL OR timestamp <= :date_to)
-    UNION ALL
-    SELECT principal, timestamp FROM data_interpaction_observeration_iceberg
-    WHERE data_source_name = :source AND data_name = :name
-      AND (:date_from::timestamptz IS NULL OR timestamp >= :date_from)
-      AND (:date_to::timestamptz IS NULL OR timestamp <= :date_to)
-) combined
-GROUP BY principal
-ORDER BY total_reads DESC
-""")
-
-_BATCH_USAGE_QUERY = text("""
-SELECT
-    data_source_name,
-    data_name,
-    COUNT(DISTINCT principal) as unique_reads,
-    COUNT(timestamp) as total_reads,
-    MAX(timestamp) as last_accessed_at
-FROM (
-    SELECT data_source_name, data_name, principal, timestamp
-    FROM data_interpaction_observeration_hdfs
-    WHERE (data_source_name, data_name) IN (SELECT s, n FROM unnest(:sources::text[], :names::text[]) AS t(s, n))
-      AND (:date_from::timestamptz IS NULL OR timestamp >= :date_from)
-      AND (:date_to::timestamptz IS NULL OR timestamp <= :date_to)
-    UNION ALL
-    SELECT data_source_name, data_name, principal, timestamp
-    FROM data_interpaction_observeration_iceberg
-    WHERE (data_source_name, data_name) IN (SELECT s, n FROM unnest(:sources::text[], :names::text[]) AS t(s, n))
-      AND (:date_from::timestamptz IS NULL OR timestamp >= :date_from)
-      AND (:date_to::timestamptz IS NULL OR timestamp <= :date_to)
-) combined
-GROUP BY data_source_name, data_name
-""")
+def _safe_table(name: str) -> str:
+    if not _IDENT_RE.match(name):
+        raise ValueError(f"Invalid observer table name (must be a plain SQL identifier): {name!r}")
+    return name
 
 
 class OasisProdClient:
@@ -76,6 +44,8 @@ class OasisProdClient:
         self._engine = None
         self._session_factory: async_sessionmaker[AsyncSession] | None = None
         self._connected = False
+        self._usage_query = None
+        self._batch_query = None
 
     @property
     def is_configured(self) -> bool:
@@ -99,11 +69,48 @@ class OasisProdClient:
             url = urlunparse(parsed._replace(netloc=netloc))
         return url
 
+    def _build_queries(self) -> None:
+        """Build the SQL once, with the validated, env-provided table name."""
+        table = _safe_table(settings.oasis_observer_table)
+
+        # Single ETL: count matching consumption rows + distinct consumption days.
+        self._usage_query = text(f"""
+            SELECT
+                COUNT(*) AS total_reads,
+                COUNT(DISTINCT date_trunc('day', ts)) AS unique_reads,
+                MAX(ts) AS last_accessed_at
+            FROM {table}
+            WHERE storage_types = :storage_type
+              AND data_source_name = :source
+              AND data_name = :name
+              AND (:date_from::timestamptz IS NULL OR ts >= :date_from)
+              AND (:date_to::timestamptz IS NULL OR ts <= :date_to)
+        """)
+
+        # Batch (downstream consumers): one aggregate row per (source, name).
+        self._batch_query = text(f"""
+            SELECT
+                data_source_name,
+                data_name,
+                COUNT(*) AS total_reads,
+                COUNT(DISTINCT date_trunc('day', ts)) AS unique_reads,
+                MAX(ts) AS last_accessed_at
+            FROM {table}
+            WHERE storage_types = :storage_type
+              AND (data_source_name, data_name) IN (
+                  SELECT s, n FROM unnest(:sources::text[], :names::text[]) AS t(s, n)
+              )
+              AND (:date_from::timestamptz IS NULL OR ts >= :date_from)
+              AND (:date_to::timestamptz IS NULL OR ts <= :date_to)
+            GROUP BY data_source_name, data_name
+        """)
+
     async def initialize(self) -> None:
         if not self.is_configured:
             logger.info("Oasis Prod DB not configured — usage metrics disabled")
             return
         try:
+            self._build_queries()
             url = self._build_url()
             self._engine = create_async_engine(
                 url,
@@ -119,7 +126,13 @@ class OasisProdClient:
             async with self._session_factory() as session:
                 await session.execute(text("SELECT 1"))
             self._connected = True
-            logger.info("Oasis Prod DB connected")
+            logger.info(
+                "Oasis Prod DB connected (observer table=%s, storage_types=%s)",
+                settings.oasis_observer_table, settings.oasis_observer_storage_type,
+            )
+        except ValueError:
+            logger.exception("Oasis Prod observer table misconfigured — metrics disabled")
+            self._connected = False
         except ConnectionRefusedError:
             logger.warning("Oasis Prod DB connection refused — metrics disabled")
             self._connected = False
@@ -141,34 +154,23 @@ class OasisProdClient:
             return None
         try:
             async with self._session_factory() as session:
-                result = await session.execute(
-                    _USAGE_QUERY,
+                row = (await session.execute(
+                    self._usage_query,
                     {
+                        "storage_type": settings.oasis_observer_storage_type,
                         "source": data_source_name,
                         "name": data_name,
                         "date_from": date_from,
                         "date_to": date_to,
                     },
-                )
-                rows = result.fetchall()
-
-            consumers = [
-                ConsumerMetric(
-                    principal=row.principal,
-                    total_reads=row.total_reads,
-                    last_accessed_at=row.last_accessed_at,
-                )
-                for row in rows
-            ]
-            unique_reads = len(consumers)
-            total_reads = sum(c.total_reads for c in consumers)
+                )).one()
             return UsageMetrics(
-                unique_reads=unique_reads,
-                total_reads=total_reads,
-                consumers=consumers,
+                unique_reads=row.unique_reads or 0,
+                total_reads=row.total_reads or 0,
+                last_accessed_at=row.last_accessed_at,
             )
         except Exception:
-            logger.exception("Failed to query Oasis Prod usage metrics for %s.%s", data_source_name, data_name)
+            logger.exception("Failed to query Oasis Prod consumption for %s.%s", data_source_name, data_name)
             return None
 
     async def get_batch_usage_metrics(
@@ -177,12 +179,12 @@ class OasisProdClient:
         date_from: datetime | None = None,
         date_to: datetime | None = None,
     ) -> dict[str, UsageMetrics]:
-        """Fetch aggregated metrics for multiple data products in a single query.
+        """Fetch consumption counts for multiple data products in a single query.
 
         Args:
             products: list of (data_source_name, data_name) tuples
         Returns:
-            dict keyed by "source.name" -> UsageMetrics (aggregate only, no per-principal breakdown)
+            dict keyed by "source.name" -> UsageMetrics
         """
         if not self._connected or not self._session_factory or not products:
             return {}
@@ -191,8 +193,9 @@ class OasisProdClient:
             names = [p[1] for p in products]
             async with self._session_factory() as session:
                 result = await session.execute(
-                    _BATCH_USAGE_QUERY,
+                    self._batch_query,
                     {
+                        "storage_type": settings.oasis_observer_storage_type,
                         "sources": sources,
                         "names": names,
                         "date_from": date_from,
@@ -205,13 +208,13 @@ class OasisProdClient:
             for row in rows:
                 key = f"{row.data_source_name}.{row.data_name}"
                 metrics_map[key] = UsageMetrics(
-                    unique_reads=row.unique_reads,
-                    total_reads=row.total_reads,
-                    consumers=[],
+                    unique_reads=row.unique_reads or 0,
+                    total_reads=row.total_reads or 0,
+                    last_accessed_at=row.last_accessed_at,
                 )
             return metrics_map
         except Exception:
-            logger.exception("Failed to batch query Oasis Prod usage metrics")
+            logger.exception("Failed to batch query Oasis Prod consumption")
             return {}
 
     async def close(self) -> None:

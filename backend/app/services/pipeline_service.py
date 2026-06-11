@@ -3,7 +3,7 @@ import uuid
 from datetime import UTC, datetime
 
 from app.cache import join_suggestions_cache, pipeline_list_cache
-from app.enums import GrantLevel, PipelineType
+from app.enums import PipelineType
 from app.models.pipeline import Pipeline
 from app.repositories.lineage_repo import LineageRepository
 from app.repositories.pipeline_repo import PipelineRepository
@@ -339,7 +339,9 @@ class PipelineService:
         if not grant_level:
             return None
 
-        result.can_edit = grant_level == GrantLevel.EDITOR
+        # Editing is restricted to the owning team (and admins). A visibility
+        # grant — even editor-level — confers read access only.
+        result.can_edit = False
         return result
 
     async def get_join_suggestions(
@@ -493,8 +495,9 @@ class PipelineService:
         if not pipeline_ids:
             return {}
         from sqlalchemy import select
-        from app.models.pipeline_log import PipelineLog, PipelineLogNetwork
+
         from app.models.network import Network
+        from app.models.pipeline_log import PipelineLog, PipelineLogNetwork
 
         stmt = (
             select(PipelineLog.pipeline_id, Network.name)

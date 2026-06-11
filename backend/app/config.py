@@ -35,6 +35,14 @@ class Settings(BaseSettings):
     # How often the backend polls Spark Connect and refreshes the Postgres catalog
     # mirror (catalog_columns). End-user reads hit Postgres, never Spark live.
     catalog_mirror_interval_seconds: int = 30
+    # Timestamp column assumed present on every ETL table. Its value resolution
+    # is sampled via Spark Connect to infer each pipeline's schedule: all values
+    # at 00:00:00 -> "daily", otherwise -> "hourly".
+    ts_column_name: str = "ts"
+    # Catalog-discovered pipelines whose table name contains any of these
+    # (case-insensitive) substrings are auto-promoted to data products — the
+    # curated/published outputs, vs raw collectors. Manual promotions are kept.
+    data_product_name_patterns: str = "Summary,Snapshot,Digest,Scorecard,Assessment,Forecast,Rollup,Pivot"
     # Max time to wait for a Spark Connect catalog read before abandoning the
     # refresh. Must be < interval so a hung Spark server can't stall all refreshes.
     catalog_mirror_spark_timeout_seconds: int = 25
@@ -76,6 +84,12 @@ class Settings(BaseSettings):
     oasis_prod_password: str = ""
     oasis_prod_pool_size: int = 5
     oasis_prod_max_overflow: int = 3
+    # External observation table consumption is counted from. A row counts as one
+    # consumption when storage_types == oasis_observer_storage_type and its
+    # (data_source_name, data_name) match the pipeline's team + name. Table name
+    # is env-driven (never hard-coded in SQL); validated as a SQL identifier.
+    oasis_observer_table: str = "observer"
+    oasis_observer_storage_type: str = "iceberg"
 
     # SSO / OIDC
     sso_enabled: bool = False

@@ -1,6 +1,7 @@
 import { usePipelineDetail } from "@/hooks/use-pipeline-detail";
 import { useUpdatePipeline } from "@/hooks/use-update-pipeline";
 import { usePipelineStore } from "@/stores/pipeline-store";
+import { useAuthStore } from "@/stores/auth-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { BentoHeader } from "./BentoHeader";
@@ -16,6 +17,7 @@ import { stripDummy } from "@/lib/format";
 
 export function BentoWorkspace() {
   const selectedPipelineId = usePipelineStore((s) => s.selectedPipelineId);
+  const activateAirflow = useAuthStore((s) => s.activateAirflow);
   const { data: pipeline, isLoading, error, refetch } = usePipelineDetail(selectedPipelineId);
   const { mutate: updatePipeline, isPending: isSaving } = useUpdatePipeline(selectedPipelineId ?? "");
 
@@ -86,9 +88,12 @@ export function BentoWorkspace() {
           />
         </div>
 
+        {/* Topology, resources and execution-plan are Airflow-fed and gated.
+            Schema, consume snippets and Consumers & Usage are catalog/observer-driven
+            and always shown (usage is counted from the Oasis observer table). */}
         {isApiPipeline(pipeline.pipeline_type) ? (
           <>
-            {pipeline.topology_enabled && (
+            {activateAirflow && pipeline.topology_enabled && (
               <LineageTopology pipelineId={pipeline.id} fullWidth />
             )}
             <div className="col-span-12 lg:col-span-7">
@@ -105,11 +110,11 @@ export function BentoWorkspace() {
           </>
         ) : (
           <>
-            {pipeline.topology_enabled && (
+            {activateAirflow && pipeline.topology_enabled && (
               <LineageTopology pipelineId={pipeline.id} fullWidth />
             )}
-            <ResourcePerformanceCard pipelineId={pipeline.id} />
-            <TransformInspectorCard pipelineId={pipeline.id} />
+            {activateAirflow && <ResourcePerformanceCard pipelineId={pipeline.id} />}
+            {activateAirflow && <TransformInspectorCard pipelineId={pipeline.id} />}
             <div className="col-span-12 lg:col-span-7">
               <SchemaViewer
                 fields={pipeline.fields}

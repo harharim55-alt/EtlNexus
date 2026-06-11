@@ -48,6 +48,7 @@ ignore = ["E501", "B008", "B905", "S101", "S105", "RUF059"]
 "app/models/*.py" = ["F821"]  # SQLAlchemy forward references in Mapped["ModelName"]
 "alembic/versions/*.py" = ["F401"]  # Alembic auto-imports
 "app/services/airflow_service.py" = ["E402"]  # Deferred imports for circular dep avoidance
+"app/integrations/oasis_prod_client.py" = ["S608"]  # Table name interpolated only after _safe_table() identifier validation
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

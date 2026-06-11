@@ -6,7 +6,6 @@ from app.auth import (
     get_current_user,
     require_pipeline_visibility,
     require_team_membership,
-    require_team_membership_or_editor_grant,
 )
 from app.config import settings
 from app.dependencies import (
@@ -19,8 +18,8 @@ from app.models.user import User
 from app.rate_limit import limiter
 from app.repositories.revision_repo import RevisionRepository
 from app.repositories.visibility_grant_repo import VisibilityGrantRepository
-from app.schemas.date_range import DateRangeParams
 from app.schemas.common import SuccessResponse
+from app.schemas.date_range import DateRangeParams
 from app.schemas.pipeline import (
     JoinSuggestionsResponse,
     PipelineDetail,
@@ -100,7 +99,7 @@ async def get_pipeline(
 @router.patch(
     "/{pipeline_id}",
     response_model=PipelineUpdateResponse,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def update_pipeline(
     request: Request,
@@ -110,7 +109,7 @@ async def update_pipeline(
     service: PipelineService = Depends(get_pipeline_service),
     revision_repo: RevisionRepository = Depends(get_revision_repo),
 ):
-    # Reuse pipeline loaded by require_team_membership_or_editor_grant
+    # Reuse pipeline loaded by require_team_membership
     preloaded = getattr(request.state, "pipeline", None)
     result = await service.update_pipeline_metadata(
         pipeline_id,
@@ -145,7 +144,7 @@ async def list_revisions(
 @router.post(
     "/{pipeline_id}/revisions/{revision_id}/restore",
     response_model=PipelineUpdateResponse,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def restore_revision(
     pipeline_id: uuid.UUID,
@@ -222,7 +221,7 @@ class ManualFieldsRequest(_BaseModel):
 @router.put(
     "/{pipeline_id}/fields",
     response_model=SuccessResponse,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def set_pipeline_fields(
     pipeline_id: uuid.UUID,
@@ -272,7 +271,7 @@ async def create_data_product(
 @data_product_router.post(
     "/from-pipeline/{pipeline_id}",
     response_model=PipelineDetail,
-    dependencies=[Depends(require_team_membership_or_editor_grant("pipeline_id"))],
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
 )
 async def promote_to_data_product(
     pipeline_id: uuid.UUID,

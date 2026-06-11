@@ -32,6 +32,8 @@ services:
       OASIS_PROD_DATABASE_URL: postgresql+asyncpg://oasis-prod-db:5432/oasis_prod
       OASIS_PROD_USERNAME: oasis
       OASIS_PROD_PASSWORD: oasis
+      OASIS_OBSERVER_TABLE: observer
+      OASIS_OBSERVER_STORAGE_TYPE: iceberg
       SSO_PUBLIC_ISSUER_URL: http://${HOSTNAME:-localhost}:8090/realms/etlnexus
       CORS_ORIGINS: '["http://localhost:5173","http://${HOSTNAME:-localhost}:5173"]'
     ports:
