@@ -231,17 +231,20 @@ class PipelineService:
         user_id: uuid.UUID,
         user_team_ids: set[uuid.UUID],
         user_role: str,
+        is_master: bool = False,
     ) -> PipelineDetail | None:
-        """Fetch pipeline detail. Every authenticated user may view any product;
-        ``can_edit`` is True only for non-viewer members of the owning team
-        (admins are team leaders, not global super-editors).
+        """Fetch pipeline detail. Every authenticated user may view any product.
+
+        ``can_edit`` is True for master admins (any product), and otherwise for
+        non-viewer members of the owning team (team-leader admins included, but
+        only for their own team).
         """
         result = await self.get_pipeline_detail(pipeline_id)
         if not result:
             return None
 
-        result.can_edit = user_role != "viewer" and (
-            not result.team_id or result.team_id in user_team_ids
+        result.can_edit = is_master or (
+            user_role != "viewer" and (not result.team_id or result.team_id in user_team_ids)
         )
         return result
 

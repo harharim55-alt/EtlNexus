@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { UserPlus, X, Users } from "lucide-react";
 import { useAuthStore } from "@/stores/auth-store";
-import { useTeamDetail, useAddTeamMember, useRemoveTeamMember } from "@/hooks/use-admin";
+import { useTeamDetail, useAddTeamMember, useRemoveTeamMember, useAdminTeams } from "@/hooks/use-admin";
 import { UserInitials } from "@/components/shared/UserInitials";
 
 /** Membership management for a single team the admin belongs to. */
@@ -86,12 +86,20 @@ function TeamMemberCard({ teamId, teamName }: { teamId: string; teamName: string
 }
 
 export function MembersPanel() {
-  const teams = useAuthStore((s) => s.user?.teams ?? []);
+  const user = useAuthStore((s) => s.user);
+  const isMaster = !!user?.is_master;
+  // Master admins manage every team; team-leader admins manage only their own.
+  const { data: allTeams } = useAdminTeams(isMaster);
+  const teams = isMaster
+    ? (allTeams ?? []).map((t) => ({ id: t.id, name: t.name }))
+    : (user?.teams ?? []);
 
   if (teams.length === 0) {
     return (
       <p className="text-sm text-text-muted">
-        You don't belong to any team, so there are no memberships to manage.
+        {isMaster
+          ? "No teams exist yet."
+          : "You don't belong to any team, so there are no memberships to manage."}
       </p>
     );
   }
@@ -99,7 +107,9 @@ export function MembersPanel() {
   return (
     <div className="space-y-4">
       <p className="text-xs text-text-muted font-mono">
-        Manage membership of your team(s). Add users by username; you can't remove yourself.
+        {isMaster
+          ? "Master admin: manage membership of any team. Add users by username; you can't remove yourself."
+          : "Manage membership of your team(s). Add users by username; you can't remove yourself."}
       </p>
       {teams.map((t) => (
         <TeamMemberCard key={t.id} teamId={t.id} teamName={t.name} />

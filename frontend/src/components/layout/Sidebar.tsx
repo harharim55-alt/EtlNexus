@@ -2,7 +2,7 @@ import { HelpCircle, LogOut, Moon, Network, Package, Palette, Shield, Sparkles, 
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
-import { isAdmin } from "@/lib/permissions";
+import { canManageAccess } from "@/lib/permissions";
 import { useThemeStore } from "@/stores/theme-store";
 import { useAuth } from "react-oidc-context";
 import { NavIcon } from "./NavIcon";
@@ -85,7 +85,7 @@ export function Sidebar() {
             tooltip="AI Architect"
           />
         </div>
-        {isAdmin(user) && (
+        {canManageAccess(user) && (
           <div data-nav-id="admin">
             <NavIcon
               active={activeTab === "admin"}

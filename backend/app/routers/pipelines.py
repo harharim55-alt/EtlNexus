@@ -8,7 +8,7 @@ from app.auth import (
     require_pipeline_visibility,
     require_team_membership,
 )
-from app.config import settings
+from app.config import is_master_admin, settings
 from app.dependencies import (
     get_pipeline_service,
     get_revision_repo,
@@ -76,6 +76,7 @@ async def get_pipeline(
         user_id=user.id,
         user_team_ids=user_team_ids,
         user_role=user.role,
+        is_master=is_master_admin(user.display_name),
     )
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")

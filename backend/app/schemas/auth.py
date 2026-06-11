@@ -32,6 +32,7 @@ class UserResponse(BaseModel):
     display_name: str = Field(description="User display name from SSO claims")
     role: str = Field(description="Global role: admin, member, or viewer")
     is_active: bool = Field(description="Whether the user account is active")
+    is_master: bool = Field(default=False, description="Master admin (superuser) — edits all teams")
     teams: list[TeamMembershipResponse] = Field(description="Teams the user belongs to")
 
     model_config = ConfigDict(from_attributes=True)
@@ -44,6 +45,7 @@ class UserListResponse(BaseModel):
 
 def user_to_response(u: User) -> UserResponse:
     """Convert a User ORM instance to a UserResponse schema."""
+    from app.config import is_master_admin
     from app.models.user_team import UserTeam
 
     teams = [
@@ -61,5 +63,6 @@ def user_to_response(u: User) -> UserResponse:
         display_name=u.display_name,
         role=u.role,
         is_active=u.is_active,
+        is_master=is_master_admin(u.display_name),
         teams=teams,
     )

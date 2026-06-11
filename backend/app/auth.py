@@ -19,7 +19,7 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import is_master_admin, settings
 from app.database import get_db_session
 from app.enums import UserRole
 from app.integrations.oidc_client import oidc_client
@@ -175,6 +175,10 @@ def require_team_membership(pipeline_id_param: str = "pipeline_id"):
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
+        # Master admins (superusers) may edit any product across all teams
+        if is_master_admin(user.display_name):
+            return user
+
         # Viewers are read-only — they never edit, regardless of team membership
         if user.role == UserRole.VIEWER:
             raise HTTPException(status_code=403, detail="Viewers cannot edit")
@@ -242,17 +246,19 @@ def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
 
 
 def require_team_admin(team_id_param: str = "team_id"):
-    """Dependency: the caller must be an admin (team leader) who belongs to the team.
+    """Dependency: the caller may manage this team's membership.
 
-    Admins manage only the membership of teams they are a member of. The
-    resolved team_id is stored on ``request.state.team_id``.
+    A team-leader admin may manage only teams they belong to; a master admin
+    (superuser) may manage any team. The resolved team_id is stored on
+    ``request.state.team_id``.
     """
 
     async def _check(
         request: Request,
         user: User = Depends(get_current_user),
     ) -> User:
-        if user.role != UserRole.ADMIN:
+        master = is_master_admin(user.display_name)
+        if not master and user.role != UserRole.ADMIN:
             raise HTTPException(status_code=403, detail="Admin role required")
 
         raw = request.path_params.get(team_id_param)
@@ -261,12 +267,14 @@ def require_team_admin(team_id_param: str = "team_id"):
         except (ValueError, TypeError):
             raise HTTPException(status_code=404, detail="Team not found") from None
 
-        user_team_ids = {ut.team_id for ut in user.team_memberships}
-        if team_id not in user_team_ids:
-            raise HTTPException(
-                status_code=403,
-                detail="You can only manage teams you belong to",
-            )
+        # Master admins manage any team; team-leader admins only their own.
+        if not master:
+            user_team_ids = {ut.team_id for ut in user.team_memberships}
+            if team_id not in user_team_ids:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You can only manage teams you belong to",
+                )
 
         request.state.team_id = team_id
         return user

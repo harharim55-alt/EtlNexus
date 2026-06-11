@@ -41,6 +41,12 @@ class Settings(BaseSettings):
     default_page_limit: int = 200
     default_page_limit_small: int = 20
 
+    # Master admins (superusers). Comma-separated usernames (Keycloak
+    # preferred_username). These users can edit every product across all teams
+    # and manage any team's membership — everything a team-leader admin can do,
+    # for all teams. Roles themselves still come from Keycloak.
+    master_admin_usernames: str = ""
+
     # SSO / OIDC
     sso_enabled: bool = False
     sso_issuer_url: str = "http://keycloak:8090/realms/etlnexus"
@@ -55,3 +61,11 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def is_master_admin(username: str | None) -> bool:
+    """Return whether the given username is configured as a master admin (superuser)."""
+    if not username:
+        return False
+    masters = {m.strip().lower() for m in settings.master_admin_usernames.split(",") if m.strip()}
+    return username.lower() in masters

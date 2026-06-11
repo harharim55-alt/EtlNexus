@@ -2,7 +2,7 @@ import { lazy, Suspense, useEffect } from "react";
 import { AppShell } from "@/components/layout/AppShell";
 import { useNavigationStore, parseHash } from "@/stores/navigation-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { isAdmin } from "@/lib/permissions";
+import { canManageAccess } from "@/lib/permissions";
 import { DataProductRegistry } from "@/components/data-products/DataProductRegistry";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuthBootstrap } from "@/components/auth/AuthProvider";
@@ -76,7 +76,7 @@ function AppContent() {
                 <AIArchitectView />
               </Suspense>
             )}
-            {activeTab === "admin" && isAdmin(user) && (
+            {activeTab === "admin" && canManageAccess(user) && (
               <Suspense fallback={<TabSkeleton />}>
                 <AdminView />
               </Suspense>
