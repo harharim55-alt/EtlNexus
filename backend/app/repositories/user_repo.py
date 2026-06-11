@@ -125,26 +125,3 @@ class UserRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one()
 
-    async def update_role(self, user_id: uuid.UUID, role: str) -> User | None:
-        """Update user's role (admin only)."""
-        user = await self.get_by_id(user_id)
-        if not user:
-            return None
-        user.role = role
-        await self.session.flush()
-        return user
-
-    async def update_active(self, user_id: uuid.UUID, is_active: bool) -> User | None:
-        """Activate or deactivate a user (admin only)."""
-        user = await self.get_by_id(user_id)
-        if not user:
-            return None
-        user.is_active = is_active
-        await self.session.flush()
-        return user
-
-    async def count_by_role(self, role: str) -> int:
-        """Count users with the given role."""
-        stmt = select(func.count()).select_from(User).where(User.role == role)
-        result = await self.session.execute(stmt)
-        return result.scalar_one()

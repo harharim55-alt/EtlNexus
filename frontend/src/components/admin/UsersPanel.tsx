@@ -1,13 +1,11 @@
 import { useMemo, useState } from "react";
-import { Ban, Search } from "lucide-react";
-import { useAdminUsers, useUpdateUserRole, useUpdateUserActive } from "@/hooks/use-admin";
+import { Search } from "lucide-react";
+import { useAdminUsers } from "@/hooks/use-admin";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { UserInitials } from "@/components/shared/UserInitials";
 import { ROLE_STYLES } from "@/lib/admin-styles";
-
-const ROLES = ["admin", "member", "viewer"] as const;
 
 export function UsersPanel() {
   const {
@@ -23,9 +21,6 @@ export function UsersPanel() {
     () => usersData?.pages.flatMap((p) => p.items) ?? [],
     [usersData],
   );
-  const updateRole = useUpdateUserRole();
-  const updateActive = useUpdateUserActive();
-  const [editingUserId, setEditingUserId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
   const filteredUsers = useMemo(() => {
@@ -44,6 +39,11 @@ export function UsersPanel() {
 
   return (
     <div className="space-y-3">
+      <p className="text-xs text-text-muted font-mono">
+        Read-only directory. Identity, roles and activation come from Keycloak.
+        Manage your team's membership in the Members tab.
+      </p>
+
       {/* Search */}
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-text-faint" />
@@ -95,64 +95,12 @@ export function UsersPanel() {
                 </p>
               </div>
 
-              {/* Role badge / editor */}
-              <div className="shrink-0">
-                {editingUserId === u.id ? (
-                  <div className="flex items-center gap-1">
-                    {ROLES.map((role) => (
-                      <button
-                        key={role}
-                        type="button"
-                        disabled={updateRole.isPending}
-                        onClick={() => {
-                          if (role !== u.role) {
-                            updateRole.mutate(
-                              { userId: u.id, role },
-                              { onSettled: () => setEditingUserId(null) },
-                            );
-                          } else {
-                            setEditingUserId(null);
-                          }
-                        }}
-                        className={`text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-md border transition-all cursor-pointer ${
-                          role === u.role
-                            ? ROLE_STYLES[role]
-                            : "text-text-faint bg-transparent border-border hover:border-border-prominent hover:text-text-secondary"
-                        }`}
-                      >
-                        {role}
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setEditingUserId(u.id)}
-                    className={`text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-md border cursor-pointer transition-all hover:brightness-125 ${ROLE_STYLES[u.role] ?? ROLE_STYLES.viewer}`}
-                  >
-                    {u.role}
-                  </button>
-                )}
-              </div>
-
-              {/* Activate / deactivate toggle */}
-              <div className="shrink-0">
-                <button
-                  type="button"
-                  onClick={() =>
-                    updateActive.mutate({ userId: u.id, isActive: !u.is_active })
-                  }
-                  disabled={updateActive.isPending}
-                  title={u.is_active ? "Deactivate user" : "Activate user"}
-                  className={`p-1.5 rounded-md border transition-all cursor-pointer ${
-                    u.is_active
-                      ? "text-text-muted border-transparent hover:text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/20"
-                      : "text-rose-400 bg-rose-500/10 border-rose-500/20"
-                  }`}
-                >
-                  <Ban className="size-3.5" />
-                </button>
-              </div>
+              {/* Role (read-only) */}
+              <span
+                className={`shrink-0 text-[10px] font-mono uppercase tracking-wider px-2.5 py-1 rounded-md border ${ROLE_STYLES[u.role] ?? ROLE_STYLES.viewer}`}
+              >
+                {u.role}
+              </span>
             </div>
           ))}
 

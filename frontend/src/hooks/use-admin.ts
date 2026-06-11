@@ -1,8 +1,6 @@
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   fetchUsers,
-  updateUserRole,
-  updateUserActive,
   fetchTeams,
   fetchTeamDetail,
   addTeamMember,
@@ -43,37 +41,6 @@ export function useTeamDetail(teamId: string | null) {
     staleTime: 2 * 60_000,
   });
 }
-
-export function useUpdateUserRole() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ userId, role }: { userId: string; role: string }) =>
-      updateUserRole(userId, role),
-    onSuccess: () => {
-      toast.success("Role updated");
-      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
-    },
-    onError: () => {
-      toast.error("Failed to update role");
-    },
-  });
-}
-
-export function useUpdateUserActive() {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ userId, isActive }: { userId: string; isActive: boolean }) =>
-      updateUserActive(userId, isActive),
-    onSuccess: () => {
-      toast.success("User status updated");
-      queryClient.invalidateQueries({ queryKey: ["admin-users"] });
-    },
-    onError: () => {
-      toast.error("Failed to update user status");
-    },
-  });
-}
-
 
 export function useAddTeamMember(teamId: string) {
   const queryClient = useQueryClient();

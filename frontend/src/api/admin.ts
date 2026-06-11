@@ -16,29 +16,6 @@ export async function fetchUsers(
   return data;
 }
 
-export async function updateUserRole(
-  userId: string,
-  role: string,
-): Promise<{ ok: boolean }> {
-  const { data } = await apiClient.patch<{ ok: boolean }>(
-    `/users/${userId}/role`,
-    { role },
-  );
-  return data;
-}
-
-export async function updateUserActive(
-  userId: string,
-  isActive: boolean,
-): Promise<{ ok: boolean }> {
-  const { data } = await apiClient.patch<{ ok: boolean }>(
-    `/users/${userId}/active`,
-    { is_active: isActive },
-  );
-  return data;
-}
-
-
 export async function fetchTeams(): Promise<AdminTeam[]> {
   const { data } = await apiClient.get<AdminTeam[]>("/teams");
   return data;

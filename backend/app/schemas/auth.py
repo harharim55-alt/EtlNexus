@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import uuid
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -40,16 +40,6 @@ class UserResponse(BaseModel):
 class UserListResponse(BaseModel):
     items: list[UserResponse]
     total: int
-
-
-class RoleUpdateRequest(BaseModel):
-    role: Literal["admin", "member", "viewer"] = Field(
-        description="New role to assign (admin, member, or viewer)"
-    )
-
-
-class ActiveUpdateRequest(BaseModel):
-    is_active: bool = Field(description="Whether the user account is active")
 
 
 def user_to_response(u: User) -> UserResponse:
