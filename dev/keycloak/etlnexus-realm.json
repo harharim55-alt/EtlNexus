@@ -126,7 +126,7 @@
           "temporary": false
         }
       ],
-      "groups": ["/Vault", "/Prism"],
+      "groups": ["/Vault"],
       "realmRoles": ["member"]
     },
     {
