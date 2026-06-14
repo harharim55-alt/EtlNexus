@@ -99,8 +99,8 @@ services:
     container_name: spark-volume-init
     image: alpine:latest
     volumes:
-      - iceberg-warehouse:/tmp/warehouse
-    command: sh -c "chmod 1777 /tmp/warehouse"
+      - iceberg-warehouse:${SPARK_WAREHOUSE:-/tmp/warehouse}
+    command: sh -c "chmod 1777 ${SPARK_WAREHOUSE:-/tmp/warehouse}"
 
   spark-connect:
     container_name: spark-connect
@@ -108,12 +108,16 @@ services:
     build:
       context: .
       dockerfile: dev/spark/Dockerfile
+    # Spark Connect server settings — override any of these in .env.
     environment:
-      SPARK_WAREHOUSE: /tmp/warehouse
+      SPARK_WAREHOUSE: ${SPARK_WAREHOUSE:-/tmp/warehouse}
+      SPARK_CONNECT_VERSION: ${SPARK_CONNECT_VERSION:-3.5.1}
+      ICEBERG_VERSION: ${ICEBERG_VERSION:-1.7.1}
+      SPARK_IVY_DIR: ${SPARK_IVY_DIR:-/opt/spark/.ivy2}
     volumes:
-      - iceberg-warehouse:/tmp/warehouse
+      - iceberg-warehouse:${SPARK_WAREHOUSE:-/tmp/warehouse}
     ports:
-      - "127.0.0.1:15002:15002"
+      - "127.0.0.1:${SPARK_CONNECT_PORT:-15002}:15002"
     depends_on:
       spark-volume-init:
         condition: service_completed_successfully
@@ -133,11 +137,11 @@ services:
     entrypoint: []
     user: "0"
     environment:
-      SPARK_WAREHOUSE: /tmp/warehouse
+      SPARK_WAREHOUSE: ${SPARK_WAREHOUSE:-/tmp/warehouse}
     volumes:
       - ./dev/seeds:/seeds
-      - iceberg-warehouse:/tmp/warehouse
-    command: bash -c "umask 000 && /opt/spark/bin/spark-submit --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.7.1 --conf spark.jars.ivy=/opt/spark/.ivy2 /seeds/seed_iceberg.py && chmod -R 777 /tmp/warehouse"
+      - iceberg-warehouse:${SPARK_WAREHOUSE:-/tmp/warehouse}
+    command: bash -c "umask 000 && /opt/spark/bin/spark-submit --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:${ICEBERG_VERSION:-1.7.1} --conf spark.jars.ivy=${SPARK_IVY_DIR:-/opt/spark/.ivy2} /seeds/seed_iceberg.py && chmod -R 777 ${SPARK_WAREHOUSE:-/tmp/warehouse}"
     depends_on:
       spark-volume-init:
         condition: service_completed_successfully
@@ -150,11 +154,11 @@ services:
     entrypoint: []
     user: "0"
     environment:
-      SPARK_WAREHOUSE: /tmp/warehouse
+      SPARK_WAREHOUSE: ${SPARK_WAREHOUSE:-/tmp/warehouse}
     volumes:
       - ./dev/seeds:/seeds
-      - iceberg-warehouse:/tmp/warehouse
-    command: bash -c "umask 000 && /opt/spark/bin/spark-submit --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:1.7.1 --conf spark.jars.ivy=/opt/spark/.ivy2 /seeds/seed_iceberg_data.py && chmod -R 777 /tmp/warehouse"
+      - iceberg-warehouse:${SPARK_WAREHOUSE:-/tmp/warehouse}
+    command: bash -c "umask 000 && /opt/spark/bin/spark-submit --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:${ICEBERG_VERSION:-1.7.1} --conf spark.jars.ivy=${SPARK_IVY_DIR:-/opt/spark/.ivy2} /seeds/seed_iceberg_data.py && chmod -R 777 ${SPARK_WAREHOUSE:-/tmp/warehouse}"
     depends_on:
       seed-schema:
         condition: service_completed_successfully

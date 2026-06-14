@@ -53,17 +53,26 @@ def strip_yaml_blocks(content: str, keys_to_strip: list[str]) -> str:
 
 
 def main():
-    if len(sys.argv) < 2:
-        print(f"Usage: {sys.argv[0]} <input.yml> [output.yml]", file=sys.stderr)
+    # Optional: --strip key1,key2,... overrides the default key list. Any
+    # matching block (a service like 'seed-data', or a nested key like 'build'
+    # / a 'depends_on' entry of the same name) is removed wherever it appears.
+    keys = ['build', 'develop']
+    args = sys.argv[1:]
+    if args and args[0] == '--strip':
+        keys = [k.strip() for k in args[1].split(',') if k.strip()]
+        args = args[2:]
+
+    if not args:
+        print(f"Usage: {sys.argv[0]} [--strip k1,k2] <input.yml> [output.yml]", file=sys.stderr)
         sys.exit(1)
 
-    input_path = sys.argv[1]
-    output_path = sys.argv[2] if len(sys.argv) > 2 else None
+    input_path = args[0]
+    output_path = args[1] if len(args) > 1 else None
 
     with open(input_path) as f:
         content = f.read()
 
-    result = strip_yaml_blocks(content, ['build', 'develop'])
+    result = strip_yaml_blocks(content, keys)
 
     if output_path:
         with open(output_path, 'w') as f:
