@@ -1,5 +1,5 @@
 import { memo } from "react";
-import { Star } from "lucide-react";
+import { Star, Tag } from "lucide-react";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
 import { stripDummy } from "@/lib/format";
 import { useFavoritesStore } from "@/stores/favorites-store";
@@ -51,6 +51,12 @@ export const DataProductListItem = memo(function DataProductListItem({
             {stripDummy(product.name)}
           </h3>
         </div>
+        {product.is_tag && (
+          <span className="shrink-0 flex items-center gap-1 text-[9px] font-mono uppercase tracking-widest text-amber-300 bg-amber-500/10 px-1.5 py-0.5 rounded border border-amber-500/20">
+            <Tag className="size-2.5" />
+            Tag
+          </span>
+        )}
       </div>
 
       {product.team && (
@@ -59,21 +65,13 @@ export const DataProductListItem = memo(function DataProductListItem({
         </div>
       )}
 
-      <div className="flex gap-2 text-[10px] font-mono flex-wrap ml-5">
-        {product.schedule && (
+      {product.schedule_type && (
+        <div className="flex gap-2 text-[10px] font-mono flex-wrap ml-5">
           <span className="px-2 py-0.5 rounded bg-hover-bg text-text-secondary border border-border">
-            {product.schedule}
+            {product.schedule_type}
           </span>
-        )}
-        {(product.tags ?? []).slice(0, 3).map((tag) => (
-          <span
-            key={tag.id}
-            className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-300 border border-amber-500/20"
-          >
-            {tag.name}
-          </span>
-        ))}
-      </div>
+        </div>
+      )}
     </div>
   );
 });

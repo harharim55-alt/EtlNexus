@@ -4,13 +4,15 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
 
-from app.auth import get_current_user
+from app.auth import get_current_user, require_team_admin
 from app.dependencies import get_team_service
 from app.models.user import User
 from app.models.user_team import UserTeam
+from app.schemas.common import SuccessResponse
 from app.schemas.pipeline import PipelineListItem
-from app.schemas.team import TeamDetailResponse, TeamMemberInfo, TeamResponse
+from app.schemas.team import AddMemberRequest, TeamDetailResponse, TeamMemberInfo, TeamResponse
 from app.services.team_service import TeamService
+from app.services.user_auth_service import invalidate_user_cache
 
 router = APIRouter(prefix="/api/teams", tags=["teams"])
 
@@ -129,13 +131,55 @@ async def get_team_pipelines(
             id=p.id,
             name=p.name,
             description=p.description,
-            category=p.category,
-            schedule=p.schedule,
-            rows_per_day=p.rows_per_day,
-            airflow_status=(
-                p.airflow_status.status if p.airflow_status else "unknown"
-            ),
+            schedule_type=p.schedule_type,
             team=p.team,
+            is_data_product=p.is_data_product,
         )
         for p in pipelines
     ]
+
+
+@router.post("/{team_id}/members", response_model=TeamMemberInfo, status_code=201)
+async def add_team_member(
+    team_id: uuid.UUID,
+    body: AddMemberRequest,
+    user: User = Depends(require_team_admin("team_id")),
+    service: TeamService = Depends(get_team_service),
+) -> TeamMemberInfo:
+    """Add an existing user to a team by username (team-admin only).
+
+    The target must have signed in at least once (so they exist in the system).
+    """
+    target = await service.add_member_by_username(team_id, body.username)
+    if not target:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No user found for '{body.username}'. They must sign in once before being added.",
+        )
+    await service.team_repo.session.commit()
+    await invalidate_user_cache()
+    return TeamMemberInfo(
+        id=target.id,
+        email=target.email,
+        display_name=target.display_name,
+        role=target.role,
+        role_in_team="member",
+    )
+
+
+@router.delete("/{team_id}/members/{user_id}", response_model=SuccessResponse)
+async def remove_team_member(
+    team_id: uuid.UUID,
+    user_id: uuid.UUID,
+    user: User = Depends(require_team_admin("team_id")),
+    service: TeamService = Depends(get_team_service),
+) -> SuccessResponse:
+    """Remove a user from a team (team-admin only). Admins cannot remove themselves."""
+    if user_id == user.id:
+        raise HTTPException(status_code=400, detail="You cannot remove yourself from the team")
+    removed = await service.remove_member(team_id, user_id)
+    if not removed:
+        raise HTTPException(status_code=404, detail="User is not a member of this team")
+    await service.team_repo.session.commit()
+    await invalidate_user_cache()
+    return SuccessResponse()

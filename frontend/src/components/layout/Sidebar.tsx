@@ -1,13 +1,8 @@
-import { useState } from "react";
-import { BarChart3, Database, HelpCircle, LogOut, Moon, Network, Package, Palette, Radio, RefreshCw, Shield, Sparkles, Sun } from "lucide-react";
-import { useQueryClient } from "@tanstack/react-query";
-import { toast } from "sonner";
+import { HelpCircle, LogOut, Moon, Network, Package, Palette, Shield, Sparkles, Sun } from "lucide-react";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useAuthStore } from "@/stores/auth-store";
-import { useFeatureFlagCheck } from "@/hooks/use-feature-flags";
 import { useOnboardingStore } from "@/stores/onboarding-store";
-import { isAdmin } from "@/lib/permissions";
-import { syncAllPipelines } from "@/api/airflow";
+import { canManageAccess } from "@/lib/permissions";
 import { useThemeStore } from "@/stores/theme-store";
 import { useAuth } from "react-oidc-context";
 import { NavIcon } from "./NavIcon";
@@ -51,13 +46,6 @@ export function Sidebar() {
   const { activeTab, setActiveTab } = useNavigationStore();
   const user = useAuthStore((s) => s.user);
   const ssoEnabled = useAuthStore((s) => s.ssoEnabled);
-  const activateAirflow = useAuthStore((s) => s.activateAirflow);
-  const { data: dagFlag } = useFeatureFlagCheck("dag_dashboard");
-  const { data: bouncerFlag } = useFeatureFlagCheck("bouncer_dashboard");
-  const showDags = isAdmin(user) || dagFlag?.accessible;
-  const showBouncers = isAdmin(user) || bouncerFlag?.accessible;
-  const [isSyncingAll, setIsSyncingAll] = useState(false);
-  const queryClient = useQueryClient();
   const theme = useThemeStore((s) => s.theme);
   const cycleTheme = useThemeStore((s) => s.cycleTheme);
 
@@ -73,14 +61,6 @@ export function Sidebar() {
 
       {/* Nav Icons */}
       <div className="flex-1 flex flex-col gap-4 w-full px-3">
-        <div data-nav-id="catalog">
-          <NavIcon
-            active={activeTab === "catalog"}
-            onClick={() => setActiveTab("catalog")}
-            icon={<Database className="w-5 h-5" />}
-            tooltip="ETL Catalog"
-          />
-        </div>
         <div data-nav-id="data-products">
           <NavIcon
             active={activeTab === "data-products"}
@@ -97,26 +77,6 @@ export function Sidebar() {
             tooltip="Field Matrix"
           />
         </div>
-        {showDags && (
-          <div data-nav-id="dags">
-            <NavIcon
-              active={activeTab === "dags"}
-              onClick={() => setActiveTab("dags")}
-              icon={<BarChart3 className="w-5 h-5" />}
-              tooltip="DAG Summary"
-            />
-          </div>
-        )}
-        {showBouncers && (
-          <div data-nav-id="bouncers">
-            <NavIcon
-              active={activeTab === "bouncers"}
-              onClick={() => setActiveTab("bouncers")}
-              icon={<Radio className="w-5 h-5" />}
-              tooltip="Bouncers"
-            />
-          </div>
-        )}
         <div data-nav-id="ai">
           <NavIcon
             active={activeTab === "ai"}
@@ -125,7 +85,7 @@ export function Sidebar() {
             tooltip="AI Architect"
           />
         </div>
-        {isAdmin(user) && (
+        {canManageAccess(user) && (
           <div data-nav-id="admin">
             <NavIcon
               active={activeTab === "admin"}
@@ -139,51 +99,6 @@ export function Sidebar() {
 
       {/* User + theme */}
       <div className="mt-auto flex flex-col items-center gap-4">
-        {activateAirflow && isAdmin(user) && (
-          <Tooltip>
-            <TooltipTrigger
-              className={`p-1.5 rounded-lg transition-all duration-200 cursor-pointer ${
-                isSyncingAll
-                  ? "text-amber-400 bg-amber-500/10"
-                  : "text-text-faint hover:text-amber-400 hover:bg-amber-500/10"
-              }`}
-              onClick={async () => {
-                if (isSyncingAll) return;
-                setIsSyncingAll(true);
-                try {
-                  const result = await syncAllPipelines();
-                  toast.success(`Synced ${result.synced} pipelines from Airflow`);
-                  queryClient.invalidateQueries({ queryKey: ["pipelines"] });
-                  queryClient.invalidateQueries({ queryKey: ["pipeline"] });
-                  queryClient.invalidateQueries({ queryKey: ["airflow-statuses"] });
-                  queryClient.invalidateQueries({ queryKey: ["dag-summary"] });
-                  queryClient.invalidateQueries({ queryKey: ["topology"] });
-                  queryClient.invalidateQueries({ queryKey: ["lineage"] });
-                  queryClient.invalidateQueries({ queryKey: ["resource-metrics"] });
-                  queryClient.invalidateQueries({ queryKey: ["pipeline-runs"] });
-                  queryClient.invalidateQueries({ queryKey: ["execution-plan"] });
-                  queryClient.invalidateQueries({ queryKey: ["execution-plan-runs"] });
-                  queryClient.invalidateQueries({ queryKey: ["resource-history"] });
-                  queryClient.invalidateQueries({ queryKey: ["schema-matrix"] });
-                  queryClient.invalidateQueries({ queryKey: ["bouncers"] });
-                } catch {
-                  toast.error("Failed to sync pipelines from Airflow");
-                } finally {
-                  setIsSyncingAll(false);
-                }
-              }}
-            >
-              <RefreshCw className={`size-4 ${isSyncingAll ? "animate-spin" : ""}`} />
-            </TooltipTrigger>
-            <TooltipContent
-              side="right"
-              className="bg-card border-border-prominent text-foreground text-xs font-medium"
-            >
-              {isSyncingAll ? "Syncing all pipelines..." : "Sync all pipelines"}
-            </TooltipContent>
-          </Tooltip>
-        )}
-
         <Tooltip>
           <TooltipTrigger
             className="p-1.5 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-all duration-200 cursor-pointer"
@@ -214,8 +129,6 @@ export function Sidebar() {
           </TooltipContent>
         </Tooltip>
 
-        {/* Airflow status indicator removed — system works with manual data */}
-
         {/* User avatar + logout */}
         {user && (
           <div className="flex flex-col items-center gap-2">
@@ -232,6 +145,11 @@ export function Sidebar() {
                   <span className="text-text-secondary">{user.email}</span>
                   <span className="text-[10px] text-indigo-400 uppercase tracking-wider mt-0.5">
                     {user.role}
+                  </span>
+                  <span className="text-[10px] text-emerald-400 mt-0.5">
+                    {user.teams && user.teams.length > 0
+                      ? user.teams.map((t) => t.name).join(", ")
+                      : "No team"}
                   </span>
                 </div>
               </TooltipContent>

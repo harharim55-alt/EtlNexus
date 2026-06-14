@@ -121,12 +121,10 @@ class AIService:
             values = [p for p in values if p.id in visible_pipeline_ids]
 
         lines = []
-        # Include name + category for ALL pipelines (compact, one line each)
+        # Include name for ALL data products (compact, one line each)
         for p in values:
             line = f"- {p.name}"
-            if p.category:
-                line += f" [{p.category}]"
-            # Add descriptions for the first 50 pipelines to stay within token budget
+            # Add descriptions for the first 50 products to stay within token budget
             if len(lines) < 50 and p.description:
                 line += f": {p.description[:120]}"
             lines.append(line)

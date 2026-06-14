@@ -2,10 +2,8 @@ import apiClient from "./client";
 import type {
   AdminTeam,
   TeamDetail,
+  TeamMember,
   UserListResponse,
-  GrantListResponse,
-  VisibilityGrant,
-  VisibilityGrantRequest,
 } from "@/types/admin";
 
 export async function fetchUsers(
@@ -15,39 +13,6 @@ export async function fetchUsers(
   const { data } = await apiClient.get<UserListResponse>("/users", {
     params: { skip, limit },
   });
-  return data;
-}
-
-export async function updateUserRole(
-  userId: string,
-  role: string,
-): Promise<{ ok: boolean }> {
-  const { data } = await apiClient.patch<{ ok: boolean }>(
-    `/users/${userId}/role`,
-    { role },
-  );
-  return data;
-}
-
-export async function updateUserActive(
-  userId: string,
-  isActive: boolean,
-): Promise<{ ok: boolean }> {
-  const { data } = await apiClient.patch<{ ok: boolean }>(
-    `/users/${userId}/active`,
-    { is_active: isActive },
-  );
-  return data;
-}
-
-export async function updateUserBeta(
-  userId: string,
-  isBeta: boolean,
-): Promise<{ ok: boolean }> {
-  const { data } = await apiClient.patch<{ ok: boolean }>(
-    `/users/${userId}/beta`,
-    { is_beta: isBeta },
-  );
   return data;
 }
 
@@ -61,30 +26,23 @@ export async function fetchTeamDetail(teamId: string): Promise<TeamDetail> {
   return data;
 }
 
-export async function fetchGrants(
-  skip = 0,
-  limit = 100,
-): Promise<GrantListResponse> {
-  const { data } = await apiClient.get<GrantListResponse>(
-    "/visibility/grants",
-    { params: { skip, limit } },
+export async function addTeamMember(
+  teamId: string,
+  username: string,
+): Promise<TeamMember> {
+  const { data } = await apiClient.post<TeamMember>(
+    `/teams/${teamId}/members`,
+    { username },
   );
   return data;
 }
 
-export async function createGrant(
-  body: VisibilityGrantRequest,
-): Promise<VisibilityGrant> {
-  const { data } = await apiClient.post<VisibilityGrant>(
-    "/visibility/grants",
-    body,
-  );
-  return data;
-}
-
-export async function deleteGrant(grantId: string): Promise<{ ok: boolean }> {
+export async function removeTeamMember(
+  teamId: string,
+  userId: string,
+): Promise<{ ok: boolean }> {
   const { data } = await apiClient.delete<{ ok: boolean }>(
-    `/visibility/grants/${grantId}`,
+    `/teams/${teamId}/members/${userId}`,
   );
   return data;
 }

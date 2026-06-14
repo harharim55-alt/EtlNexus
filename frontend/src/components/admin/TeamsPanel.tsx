@@ -1,48 +1,20 @@
-import { useMemo, useState } from "react";
-import { ArrowRight, ChevronDown, Users } from "lucide-react";
-import { formatDateAdmin } from "@/lib/format";
-import { useAdminTeams, useAdminGrants, useTeamDetail } from "@/hooks/use-admin";
-import { useQuery } from "@tanstack/react-query";
-import { fetchPipelines } from "@/api/pipelines";
+import { useState } from "react";
+import { ChevronDown, Users } from "lucide-react";
+import { useAdminTeams, useTeamDetail } from "@/hooks/use-admin";
 import { LoadingState } from "@/components/shared/LoadingState";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { EmptyState } from "@/components/shared/EmptyState";
 import { UserInitials } from "@/components/shared/UserInitials";
-import { ROLE_STYLES, GRANT_LEVEL_STYLES } from "@/lib/admin-styles";
+import { ROLE_STYLES } from "@/lib/admin-styles";
 
 const SOURCE_STYLES: Record<string, string> = {
   sso: "text-indigo-400 bg-indigo-500/10 border-indigo-500/20",
-  airflow: "text-teal-400 bg-teal-500/10 border-teal-500/20",
+  seed: "text-teal-400 bg-teal-500/10 border-teal-500/20",
   manual: "text-amber-400 bg-amber-500/10 border-amber-500/20",
 };
 
 function TeamDetailSection({ teamId }: { teamId: string }) {
   const { data: detail, isLoading } = useTeamDetail(teamId);
-  const { data: grantsData } = useAdminGrants();
-  const { data: teams } = useAdminTeams();
-  const { data: pipelinesData } = useQuery({
-    queryKey: ["pipelines-lookup"],
-    queryFn: () => fetchPipelines(undefined, 0, 500),
-    staleTime: 2 * 60_000,
-  });
-
-  const teamMap = useMemo(
-    () => new Map((teams ?? []).map((t) => [t.id, t.name])),
-    [teams],
-  );
-  const pipelineMap = useMemo(
-    () => new Map((pipelinesData?.items ?? []).map((p) => [p.id, p.name])),
-    [pipelinesData],
-  );
-
-  const allGrants = useMemo(
-    () => grantsData?.pages.flatMap((p) => p.items) ?? [],
-    [grantsData],
-  );
-  const teamGrants = useMemo(
-    () => allGrants.filter((g) => g.grantee_team_id === teamId),
-    [allGrants, teamId],
-  );
 
   if (isLoading) {
     return (
@@ -55,87 +27,37 @@ function TeamDetailSection({ teamId }: { teamId: string }) {
   }
 
   return (
-    <div className="space-y-4">
-      {/* Members */}
-      <div>
-        <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
-          Members ({detail?.members.length ?? 0})
-        </span>
-        {!detail?.members.length ? (
-          <p className="text-xs text-text-faint mt-2">No members</p>
-        ) : (
-          <div className="mt-2 space-y-1.5">
-            {detail.members.map((m) => (
-              <div
-                key={m.id}
-                className="flex items-center gap-3 py-1.5 px-3 rounded-lg bg-hover-bg"
-              >
-                <UserInitials name={m.display_name} size="sm" />
-                <div className="flex-1 min-w-0">
-                  <span className="text-xs text-foreground font-medium truncate block">
-                    {m.display_name}
-                  </span>
-                  <span className="text-[10px] text-text-faint font-mono truncate block">
-                    {m.email}
-                  </span>
-                </div>
-                <span
-                  className={`text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border ${ROLE_STYLES[m.role] ?? ROLE_STYLES.member}`}
-                >
-                  {m.role}
+    <div>
+      <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
+        Members ({detail?.members.length ?? 0})
+      </span>
+      {!detail?.members.length ? (
+        <p className="text-xs text-text-faint mt-2">No members</p>
+      ) : (
+        <div className="mt-2 space-y-1.5">
+          {detail.members.map((m) => (
+            <div
+              key={m.id}
+              className="flex items-center gap-3 py-1.5 px-3 rounded-lg bg-hover-bg"
+            >
+              <UserInitials name={m.display_name} size="sm" />
+              <div className="flex-1 min-w-0">
+                <span className="text-xs text-foreground font-medium truncate block">
+                  {m.display_name}
+                </span>
+                <span className="text-[10px] text-text-faint font-mono truncate block">
+                  {m.email}
                 </span>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
-
-      {/* Grants */}
-      <div>
-        <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
-          Team Grants ({teamGrants.length})
-        </span>
-        {teamGrants.length === 0 ? (
-          <p className="text-xs text-text-faint mt-2">No grants for this team</p>
-        ) : (
-          <div className="mt-2 space-y-1.5">
-            {teamGrants.map((g) => {
-              const target = g.pipeline_id
-                ? pipelineMap.get(g.pipeline_id) ?? g.pipeline_id
-                : g.source_team_id
-                  ? `All of ${g.source_team_name ?? teamMap.get(g.source_team_id) ?? "Unknown"}`
-                  : "Unknown";
-              return (
-                <div
-                  key={g.id}
-                  className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-hover-bg"
-                >
-                  <ArrowRight className="size-3 text-text-faint shrink-0" />
-                  <span
-                    className={`text-xs ${
-                      g.pipeline_id
-                        ? "text-indigo-400 font-mono"
-                        : "text-teal-400"
-                    }`}
-                  >
-                    {target}
-                  </span>
-                  <span
-                    className={`text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border shrink-0 ${
-                      GRANT_LEVEL_STYLES[g.grant_level] ?? GRANT_LEVEL_STYLES.viewer
-                    }`}
-                  >
-                    {g.grant_level}
-                  </span>
-                  <span className="text-[10px] font-mono text-text-faint ml-auto">
-                    {formatDateAdmin(g.created_at)}
-                  </span>
-                </div>
-              );
-            })}
-          </div>
-        )}
-      </div>
+              <span
+                className={`text-[9px] font-mono uppercase tracking-wider px-1.5 py-0.5 rounded border ${ROLE_STYLES[m.role] ?? ROLE_STYLES.member}`}
+              >
+                {m.role}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

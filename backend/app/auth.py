@@ -19,14 +19,12 @@ from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import settings
+from app.config import is_master_admin, settings
 from app.database import get_db_session
 from app.enums import UserRole
 from app.integrations.oidc_client import oidc_client
 from app.models.user import User
-from app.repositories.feature_flag_repo import FeatureFlagRepository
 from app.repositories.pipeline_repo import PipelineRepository
-from app.repositories.visibility_grant_repo import VisibilityGrantRepository
 from app.services.user_auth_service import UserAuthService
 
 logger = logging.getLogger(__name__)
@@ -159,8 +157,9 @@ async def _resolve_pipeline_team(
 def require_team_membership(pipeline_id_param: str = "pipeline_id"):
     """Return a dependency that checks the caller belongs to the pipeline's team.
 
-    Admins bypass the check.  Pipelines without an assigned team are
-    accessible to everyone.
+    Editing is scoped to the owning team for everyone, admins included: an admin
+    is a team leader of their own team(s), not a global super-editor. Viewers are
+    read-only. Pipelines without an assigned team are editable by any non-viewer.
 
     Args:
         pipeline_id_param: Name of the path parameter that carries the
@@ -176,15 +175,19 @@ def require_team_membership(pipeline_id_param: str = "pipeline_id"):
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        # Admins can always proceed
-        if user.role == UserRole.ADMIN:
+        # Master admins (superusers) may edit any product across all teams
+        if is_master_admin(user.display_name):
             return user
+
+        # Viewers are read-only — they never edit, regardless of team membership
+        if user.role == UserRole.VIEWER:
+            raise HTTPException(status_code=403, detail="Viewers cannot edit")
 
         pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
         if pipeline_uuid is None:
             return user
 
-        # Unassigned pipeline — everyone may edit
+        # Unassigned pipeline — any team member may edit
         if not pipeline or not pipeline.team_id:
             return user
 
@@ -196,49 +199,6 @@ def require_team_membership(pipeline_id_param: str = "pipeline_id"):
             )
 
         return user
-
-    return _check
-
-
-def require_team_membership_or_editor_grant(pipeline_id_param: str = "pipeline_id"):
-    """Like ``require_team_membership``, but also allows users with an editor-level grant."""
-
-    async def _check(
-        request: Request,
-        user: User = Depends(get_current_user),
-        session: AsyncSession = Depends(get_db_session),
-    ) -> User:
-        if user.role == UserRole.ADMIN:
-            return user
-
-        pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
-
-        # Store loaded pipeline to avoid re-fetching in downstream handler
-        request.state.pipeline = pipeline
-
-        if pipeline_uuid is None or not pipeline or not pipeline.team_id:
-            return user
-
-        user_team_ids = {ut.team_id for ut in user.team_memberships}
-
-        # Team member — allowed
-        if pipeline.team_id in user_team_ids:
-            return user
-
-        # Check for editor-level grant
-        has_editor = await VisibilityGrantRepository(session).has_editor_grant(
-            pipeline_id=pipeline_uuid,
-            user_id=user.id,
-            user_team_ids=user_team_ids,
-            pipeline_team_id=pipeline.team_id,
-        )
-        if has_editor:
-            return user
-
-        raise HTTPException(
-            status_code=403,
-            detail="Not a member of this pipeline's team and no editor grant",
-        )
 
     return _check
 
@@ -269,9 +229,7 @@ def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
         user: User = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        if user.role == UserRole.ADMIN:
-            return user
-
+        # Every authenticated user may view any product; only verify it exists.
         pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
 
         if pipeline_uuid is None:
@@ -282,102 +240,43 @@ def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
 
         # Store for downstream reuse
         request.state.pipeline = pipeline
-
-        # Unassigned pipeline — visible to everyone
-        if not pipeline.team_id:
-            return user
-
-        user_team_ids = {ut.team_id for ut in user.team_memberships}
-        can_see = await VisibilityGrantRepository(session).user_can_see_pipeline(
-            pipeline_id=pipeline_uuid,
-            pipeline_team_id=pipeline.team_id,
-            user_id=user.id,
-            user_team_ids=user_team_ids,
-        )
-        if not can_see:
-            raise HTTPException(status_code=404, detail="Pipeline not found")
-
         return user
 
     return _check
 
 
-def require_pipeline_visibility_by_name(param_name: str = "etl_name"):
-    """Return a dependency that checks pipeline visibility for name-keyed endpoints.
+def require_team_admin(team_id_param: str = "team_id"):
+    """Dependency: the caller may manage this team's membership.
 
-    Looks up the pipeline by ``task_id`` matching the path parameter, then
-    performs the same visibility check as ``require_pipeline_visibility``.
-
-    If no pipeline is found for the given name the check is skipped and the
-    endpoint is allowed to handle "not found" gracefully.
-
-    Args:
-        param_name: Name of the path parameter carrying the ETL task name
-            (default ``"etl_name"``).
-
-    Returns:
-        Async dependency function.
+    A team-leader admin may manage only teams they belong to; a master admin
+    (superuser) may manage any team. The resolved team_id is stored on
+    ``request.state.team_id``.
     """
 
     async def _check(
         request: Request,
         user: User = Depends(get_current_user),
-        session: AsyncSession = Depends(get_db_session),
     ) -> User:
-        if user.role == UserRole.ADMIN:
-            return user
+        master = is_master_admin(user.display_name)
+        if not master and user.role != UserRole.ADMIN:
+            raise HTTPException(status_code=403, detail="Admin role required")
 
-        etl_name: str | None = request.path_params.get(param_name)
-        if not etl_name:
-            return user
+        raw = request.path_params.get(team_id_param)
+        try:
+            team_id = uuid.UUID(str(raw))
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=404, detail="Team not found") from None
 
-        pipeline = await PipelineRepository(session).get_by_task_id(etl_name)
-        if not pipeline:
-            # Let the endpoint handle "not found" gracefully
-            return user
+        # Master admins manage any team; team-leader admins only their own.
+        if not master:
+            user_team_ids = {ut.team_id for ut in user.team_memberships}
+            if team_id not in user_team_ids:
+                raise HTTPException(
+                    status_code=403,
+                    detail="You can only manage teams you belong to",
+                )
 
-        request.state.pipeline = pipeline
-
-        # Unassigned pipeline — visible to everyone
-        if not pipeline.team_id:
-            return user
-
-        user_team_ids = {ut.team_id for ut in user.team_memberships}
-        can_see = await VisibilityGrantRepository(session).user_can_see_pipeline(
-            pipeline_id=pipeline.id,
-            pipeline_team_id=pipeline.team_id,
-            user_id=user.id,
-            user_team_ids=user_team_ids,
-        )
-        if not can_see:
-            raise HTTPException(status_code=404, detail="Pipeline not found")
-
-        return user
-
-    return _check
-
-
-def require_feature_flag(flag_name: str):
-    """Return a dependency that checks the given feature flag is accessible to the user.
-
-    The feature must be enabled globally, and if it is beta-only, the user must
-    have ``is_beta=True``.  Admins bypass the check.
-    """
-
-    async def _check(
-        user: User = Depends(get_current_user),
-        session: AsyncSession = Depends(get_db_session),
-    ) -> User:
-        if user.role == UserRole.ADMIN:
-            return user
-
-        flag_repo = FeatureFlagRepository(session)
-        accessible = await flag_repo.is_enabled_for_user(flag_name, is_beta=user.is_beta)
-        if not accessible:
-            raise HTTPException(
-                status_code=403,
-                detail=f"Feature '{flag_name}' is not available",
-            )
+        request.state.team_id = team_id
         return user
 
     return _check

@@ -7,14 +7,12 @@ export function DataProductSearch() {
   const filtersOpen = useDataProductStore((s) => s.filtersOpen);
   const setFiltersOpen = useDataProductStore((s) => s.setFiltersOpen);
   const teamFilters = useDataProductStore((s) => s.teamFilters);
-  const networkFilters = useDataProductStore((s) => s.networkFilters);
-  const tagFilters = useDataProductStore((s) => s.tagFilters);
+  const scheduleFilters = useDataProductStore((s) => s.scheduleFilters);
   const [localQuery, setLocalQuery] = useState("");
 
   const activeFilterCount =
     (teamFilters.size > 0 ? 1 : 0) +
-    (networkFilters.size > 0 ? 1 : 0) +
-    (tagFilters.size > 0 ? 1 : 0);
+    (scheduleFilters.size > 0 ? 1 : 0);
 
   useEffect(() => {
     const timer = setTimeout(() => {

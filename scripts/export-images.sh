@@ -36,12 +36,14 @@ else
     "quay.io/keycloak/keycloak:26.2"
     "alpine:latest"
   )
-  python3 "$SCRIPT_DIR/strip_compose_build.py" docker-compose.yml "$OUT_DIR/docker-compose.yml"
+  # Strip build/develop AND the dev seed jobs — the exported stack ships no
+  # sample data; it starts with an empty Iceberg warehouse.
+  python3 "$SCRIPT_DIR/strip_compose_build.py" --strip build,develop,seed-schema,seed-data \
+    docker-compose.yml "$OUT_DIR/docker-compose.yml"
 
-  # Bundle runtime files needed by volume mounts (seeds, Keycloak realm)
+  # Bundle runtime files needed by volume mounts (Keycloak realm only — no seeds)
   echo "=== Bundling dev runtime files ==="
   mkdir -p "$OUT_DIR/dev"
-  cp -r dev/seeds "$OUT_DIR/dev/seeds"
   cp -r dev/keycloak "$OUT_DIR/dev/keycloak"
 fi
 

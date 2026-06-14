@@ -10,9 +10,7 @@ import type {
 
 export interface PipelineFilterParams {
   team?: string[];
-  dag_id?: string[];
-  status?: string[];
-  tag?: string[];
+  schedule?: string[];
   is_data_product?: boolean;
 }
 
@@ -39,16 +37,6 @@ export async function fetchPipelineDetail(pipelineId: string): Promise<PipelineD
 
 export async function fetchJoinSuggestions(pipelineId: string): Promise<JoinSuggestionsResponse> {
   const { data } = await apiClient.get<JoinSuggestionsResponse>(`/pipelines/${pipelineId}/joins`);
-  return data;
-}
-
-export interface SyncResponse {
-  synced: boolean;
-  pipeline_name: string;
-}
-
-export async function syncPipeline(pipelineId: string): Promise<SyncResponse> {
-  const { data } = await apiClient.post<SyncResponse>(`/pipelines/${pipelineId}/sync`);
   return data;
 }
 

@@ -1,23 +1,22 @@
 import { useState } from "react";
-import { Shield, Users, UsersRound, Eye } from "lucide-react";
-import { useAdminUsers, useAdminTeams, useAdminGrants } from "@/hooks/use-admin";
+import { Shield, Users, UsersRound, UserCog } from "lucide-react";
+import { useAdminUsers, useAdminTeams } from "@/hooks/use-admin";
 import { UsersPanel } from "./UsersPanel";
 import { TeamsPanel } from "./TeamsPanel";
-import { GrantsPanel } from "./GrantsPanel";
+import { MembersPanel } from "./MembersPanel";
 
-type SubTab = "users" | "teams" | "grants";
+type SubTab = "users" | "teams" | "members";
 
 const SUB_TABS: { key: SubTab; label: string; icon: typeof Users }[] = [
   { key: "users", label: "Users", icon: Users },
   { key: "teams", label: "Teams", icon: UsersRound },
-  { key: "grants", label: "Grants", icon: Eye },
+  { key: "members", label: "Members", icon: UserCog },
 ];
 
 export function AdminView() {
   const [activeSubTab, setActiveSubTab] = useState<SubTab>("users");
   const { data: users } = useAdminUsers(activeSubTab === "users");
   const { data: teams } = useAdminTeams(activeSubTab === "teams");
-  const { data: grants } = useAdminGrants(activeSubTab === "grants");
 
   return (
     <div data-section="admin-panel" className="flex-1 flex flex-col min-h-0">
@@ -30,8 +29,7 @@ export function AdminView() {
           <div>
             <h1 className="text-xl font-semibold text-foreground">Access Control</h1>
             <p className="text-xs text-text-muted font-mono mt-0.5">
-              {users?.pages[0]?.total ?? 0} users &middot; {teams?.length ?? 0} teams &middot;{" "}
-              {grants?.pages[0]?.total ?? 0} grants
+              {users?.pages[0]?.total ?? 0} users &middot; {teams?.length ?? 0} teams
             </p>
           </div>
         </div>
@@ -60,7 +58,7 @@ export function AdminView() {
       <div className="flex-1 overflow-y-auto custom-scrollbar px-8 pb-8">
         {activeSubTab === "users" && <UsersPanel />}
         {activeSubTab === "teams" && <TeamsPanel />}
-        {activeSubTab === "grants" && <GrantsPanel />}
+        {activeSubTab === "members" && <MembersPanel />}
       </div>
     </div>
   );

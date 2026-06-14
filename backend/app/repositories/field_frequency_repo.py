@@ -35,14 +35,15 @@ class FieldFrequencyRepository:
                 belonging to these pipelines (non-admin visibility filtering).
                 ``None`` means no restriction (admin path).
         """
-        # Subquery: field names that appear in more than one pipeline
+        # Every distinct field name, with how many products contain it.
+        # (Includes fields that appear in only one product so the matrix shows
+        # the complete field inventory across all products.)
         shared_fields_base = (
             select(
                 PipelineField.name,
                 func.count(PipelineField.pipeline_id.distinct()).label("freq"),
             )
             .group_by(PipelineField.name)
-            .having(func.count(PipelineField.pipeline_id.distinct()) > 1)
         )
 
         if visible_pipeline_ids is not None:

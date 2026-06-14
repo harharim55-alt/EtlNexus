@@ -1,29 +1,32 @@
 import apiClient from "./client";
-import type { Tag } from "@/types/pipeline";
+import type { Tag, PipelineListItem } from "@/types/pipeline";
 
 export interface TagListResponse {
   items: Tag[];
 }
 
-export async function fetchTags(teamId?: string): Promise<TagListResponse> {
-  const { data } = await apiClient.get<TagListResponse>("/tags", {
-    params: teamId ? { team_id: teamId } : undefined,
-  });
+/** All tag-products (for the tag picker). */
+export async function fetchTags(): Promise<TagListResponse> {
+  const { data } = await apiClient.get<TagListResponse>("/tags");
   return data;
 }
 
-export async function createTag(name: string): Promise<Tag> {
-  const { data } = await apiClient.post<Tag>("/tags", { name });
+/** Tags applied to a product. */
+export async function fetchProductTags(productId: string): Promise<TagListResponse> {
+  const { data } = await apiClient.get<TagListResponse>(`/pipelines/${productId}/tags`);
   return data;
 }
 
-export async function deleteTag(tagId: string): Promise<void> {
-  await apiClient.delete(`/tags/${tagId}`);
-}
-
+/** Replace the tags applied to a product. */
 export async function setPipelineTags(pipelineId: string, tagIds: string[]): Promise<TagListResponse> {
   const { data } = await apiClient.put<TagListResponse>(`/pipelines/${pipelineId}/tags`, {
     tag_ids: tagIds,
   });
+  return data;
+}
+
+/** Products tagged with a given tag (the tag detail page's sub-product tabs). */
+export async function fetchTagMembers(tagId: string): Promise<PipelineListItem[]> {
+  const { data } = await apiClient.get<PipelineListItem[]>(`/pipelines/${tagId}/members`);
   return data;
 }

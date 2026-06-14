@@ -163,16 +163,25 @@ class TestRequireRole:
 
 
 class TestRequireTeamMembership:
-    async def test_admin_bypasses(self, mock_session):
+    @patch("app.repositories.pipeline_repo.PipelineRepository.get_by_id")
+    async def test_admin_not_in_team_is_blocked(self, mock_get_by_id, mock_session):
+        """Editing is team-scoped even for admins (team leader != global editor)."""
         from app.auth import require_team_membership
 
-        checker = require_team_membership()
-        user = make_user(role="admin")
-        request = MagicMock()
-        request.path_params = {"pipeline_id": str(uuid.uuid4())}
+        pipeline = make_pipeline(team="Vault", team_id=uuid.uuid4())
+        mock_get_by_id.return_value = pipeline
 
-        result = await checker(request=request, user=user, session=mock_session)
-        assert result.role == "admin"
+        user = make_user(role="admin")
+        user.team_memberships = []  # admin, but not a member of Vault
+
+        checker = require_team_membership()
+        request = MagicMock()
+        request.path_params = {"pipeline_id": str(pipeline.id)}
+        request.state = MagicMock()
+
+        with pytest.raises(HTTPException) as exc_info:
+            await checker(request=request, user=user, session=mock_session)
+        assert exc_info.value.status_code == 403
 
     async def test_no_pipeline_id_passes(self, mock_session):
         from app.auth import require_team_membership
@@ -251,62 +260,3 @@ class TestRequireTeamMembership:
         assert exc_info.value.status_code == 403
 
 
-# ---------------------------------------------------------------------------
-# require_team_membership_or_editor_grant
-# ---------------------------------------------------------------------------
-
-
-class TestRequireTeamMembershipOrEditorGrant:
-    async def test_admin_bypasses(self, mock_session):
-        from app.auth import require_team_membership_or_editor_grant
-
-        checker = require_team_membership_or_editor_grant()
-        user = make_user(role="admin")
-        request = MagicMock()
-        request.path_params = {"pipeline_id": str(uuid.uuid4())}
-
-        result = await checker(request=request, user=user, session=mock_session)
-        assert result.role == "admin"
-
-    @patch("app.repositories.visibility_grant_repo.VisibilityGrantRepository.has_editor_grant")
-    @patch("app.repositories.pipeline_repo.PipelineRepository.get_by_id")
-    async def test_editor_grant_passes(self, mock_get_by_id, mock_has_editor, mock_session):
-        from app.auth import require_team_membership_or_editor_grant
-
-        team = make_team(name="Vault")
-        pipeline = make_pipeline(team="Vault", team_id=team.id)
-        mock_get_by_id.return_value = pipeline
-        mock_has_editor.return_value = True
-
-        user = make_user(role="member")
-        user.team_memberships = []  # Not a member of Vault
-
-        checker = require_team_membership_or_editor_grant()
-        request = MagicMock()
-        request.path_params = {"pipeline_id": str(pipeline.id)}
-        request.state = MagicMock()
-
-        result = await checker(request=request, user=user, session=mock_session)
-        assert result is not None
-
-    @patch("app.repositories.visibility_grant_repo.VisibilityGrantRepository.has_editor_grant")
-    @patch("app.repositories.pipeline_repo.PipelineRepository.get_by_id")
-    async def test_no_grant_no_membership_raises_403(self, mock_get_by_id, mock_has_editor, mock_session):
-        from app.auth import require_team_membership_or_editor_grant
-
-        team = make_team(name="Vault")
-        pipeline = make_pipeline(team="Vault", team_id=team.id)
-        mock_get_by_id.return_value = pipeline
-        mock_has_editor.return_value = False
-
-        user = make_user(role="member")
-        user.team_memberships = []
-
-        checker = require_team_membership_or_editor_grant()
-        request = MagicMock()
-        request.path_params = {"pipeline_id": str(pipeline.id)}
-        request.state = MagicMock()
-
-        with pytest.raises(HTTPException) as exc_info:
-            await checker(request=request, user=user, session=mock_session)
-        assert exc_info.value.status_code == 403

@@ -140,18 +140,13 @@ class UserAuthService:
         # Resolve / create Team rows for all groups in one batch
         sso_teams = await self._team_repo.get_or_create_many(groups, source="sso")
 
-        sso_team_ids: set[uuid.UUID] = {t.id for t in sso_teams}
-
-        # Add memberships that are new in this token
+        # Additive-only: Keycloak groups bootstrap membership, but the app owns
+        # membership thereafter (admins add/remove members in-app). We never prune
+        # memberships absent from the token, so app-managed members survive logins.
         for team in sso_teams:
             if team.id not in current_team_ids:
                 membership = UserTeam(user_id=user.id, team_id=team.id)
                 self.session.add(membership)
-
-        # Remove memberships that are no longer in this token
-        for ut in list(user.team_memberships):
-            if ut.team_id not in sso_team_ids:
-                await self.session.delete(ut)
 
         await self.session.flush()
         await self.session.commit()

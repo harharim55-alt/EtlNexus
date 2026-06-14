@@ -1,68 +1,52 @@
-"""Tag repository — CRUD for tags and pipeline-tag associations."""
+"""Tag repository — tags are data products (Pipeline with is_tag); the
+product_tags table links a product to its tag-products."""
 
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
-from app.models.tag import PipelineTag, Tag
+from app.models.pipeline import Pipeline
+from app.models.product_tag import ProductTag
 
 
 class TagRepository:
     def __init__(self, session: AsyncSession):
         self.session = session
 
-    async def list_all(self, *, team_id: uuid.UUID | None = None) -> list[Tag]:
-        stmt = select(Tag).order_by(Tag.name)
-        if team_id is not None:
-            stmt = stmt.where(Tag.created_by_team_id == team_id)
+    async def list_tags(self) -> list[Pipeline]:
+        """All tag-products, ordered by name."""
+        stmt = select(Pipeline).where(Pipeline.is_tag.is_(True)).order_by(Pipeline.name)
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def get_by_id(self, tag_id: uuid.UUID) -> Tag | None:
-        return await self.session.get(Tag, tag_id)
-
-    async def get_by_name(self, name: str) -> Tag | None:
-        stmt = select(Tag).where(Tag.name == name)
-        result = await self.session.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def create(self, name: str, created_by_team_id: uuid.UUID | None = None) -> Tag:
-        tag = Tag(id=uuid.uuid4(), name=name, created_by_team_id=created_by_team_id)
-        self.session.add(tag)
-        await self.session.flush()
-        return tag
-
-    async def delete(self, tag_id: uuid.UUID) -> bool:
-        tag = await self.get_by_id(tag_id)
-        if not tag:
-            return False
-        await self.session.delete(tag)
-        await self.session.flush()
-        return True
-
-    async def list_for_pipeline(self, pipeline_id: uuid.UUID) -> list[Tag]:
+    async def tags_for_product(self, product_id: uuid.UUID) -> list[Pipeline]:
+        """Tag-products applied to the given product."""
         stmt = (
-            select(Tag)
-            .join(PipelineTag, PipelineTag.tag_id == Tag.id)
-            .where(PipelineTag.pipeline_id == pipeline_id)
-            .order_by(Tag.name)
+            select(Pipeline)
+            .join(ProductTag, ProductTag.tag_id == Pipeline.id)
+            .where(ProductTag.product_id == product_id)
+            .order_by(Pipeline.name)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
-    async def set_pipeline_tags(self, pipeline_id: uuid.UUID, tag_ids: list[uuid.UUID]) -> list[Tag]:
-        # Load and delete existing associations individually so the ORM identity map stays consistent
-        existing_stmt = select(PipelineTag).where(PipelineTag.pipeline_id == pipeline_id)
-        existing = list((await self.session.execute(existing_stmt)).scalars().all())
-        for pt in existing:
-            await self.session.delete(pt)
-        await self.session.flush()
+    async def members_of_tag(self, tag_id: uuid.UUID) -> list[Pipeline]:
+        """Products tagged with the given tag-product."""
+        stmt = (
+            select(Pipeline)
+            .join(ProductTag, ProductTag.product_id == Pipeline.id)
+            .where(ProductTag.tag_id == tag_id)
+            .order_by(Pipeline.name)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
 
-        # Add new associations
-        for tag_id in tag_ids:
-            self.session.add(PipelineTag(id=uuid.uuid4(), pipeline_id=pipeline_id, tag_id=tag_id))
+    async def set_product_tags(self, product_id: uuid.UUID, tag_ids: list[uuid.UUID]) -> None:
+        """Replace the set of tags applied to a product."""
+        await self.session.execute(
+            delete(ProductTag).where(ProductTag.product_id == product_id)
+        )
+        for tid in dict.fromkeys(tag_ids):  # dedupe, preserve order
+            self.session.add(ProductTag(product_id=product_id, tag_id=tid))
         await self.session.flush()
-
-        return await self.list_for_pipeline(pipeline_id)

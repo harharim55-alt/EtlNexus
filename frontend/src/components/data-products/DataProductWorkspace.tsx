@@ -1,34 +1,20 @@
-import { useMemo } from "react";
 import { usePipelineDetail } from "@/hooks/use-pipeline-detail";
 import { useUpdatePipeline } from "@/hooks/use-update-pipeline";
-import { usePipelineLogs } from "@/hooks/use-pipeline-logs";
 import { useDataProductStore } from "@/stores/data-product-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shared/ErrorState";
 import { BentoHeader } from "@/components/bento-workspace/BentoHeader";
 import { DocumentationPreview } from "@/components/bento-workspace/DocumentationPreview";
-import { LineageTopology } from "@/components/bento-workspace/LineageTopology";
+import { ConsumeSnippet } from "@/components/bento-workspace/ConsumeSnippet";
 import { SchemaViewer } from "@/components/bento-workspace/SchemaViewer";
-import { UsageCard } from "@/components/bento-workspace/UsageCard";
-import { DataStructureCard } from "@/components/bento-workspace/DataStructureCard";
+import { ProductTags } from "./ProductTags";
+import { TagWorkspace } from "./TagWorkspace";
 import { stripDummy } from "@/lib/format";
 
 export function DataProductWorkspace() {
   const selectedProductId = useDataProductStore((s) => s.selectedProductId);
   const { data: pipeline, isLoading, error, refetch } = usePipelineDetail(selectedProductId);
   const { mutate: updatePipeline, isPending: isSaving } = useUpdatePipeline(selectedProductId ?? "");
-  const { data: logsData } = usePipelineLogs(selectedProductId);
-
-  const networkNames = useMemo(() => {
-    if (!logsData?.items) return [];
-    const names = new Set<string>();
-    for (const log of logsData.items) {
-      for (const n of log.networks) {
-        if (n.network_name) names.add(n.network_name);
-      }
-    }
-    return Array.from(names);
-  }, [logsData]);
 
   if (!selectedProductId) {
     return (
@@ -45,8 +31,8 @@ export function DataProductWorkspace() {
         <Skeleton className="h-5 w-96 bg-hover-bg mb-8" />
         <div className="grid grid-cols-12 gap-6">
           <Skeleton className="col-span-12 h-24 bg-hover-bg rounded-2xl" />
-          <Skeleton className="col-span-12 h-48 bg-hover-bg rounded-2xl" />
           <Skeleton className="col-span-12 lg:col-span-7 h-64 bg-hover-bg rounded-2xl" />
+          <Skeleton className="col-span-12 lg:col-span-5 h-64 bg-hover-bg rounded-2xl" />
         </div>
       </div>
     );
@@ -60,18 +46,21 @@ export function DataProductWorkspace() {
     );
   }
 
+  if (pipeline.is_tag) {
+    return <TagWorkspace tag={pipeline} onSave={(body) => updatePipeline(body)} isSaving={isSaving} />;
+  }
+
   return (
     <div className="flex-1 overflow-y-auto p-8 custom-scrollbar">
       <BentoHeader
         pipeline={pipeline}
         onSaveDescription={(description) => updatePipeline({ description })}
-        onSaveDocumentation={(documentation) => updatePipeline({ documentation })}
-        onUpdate={(updates) => updatePipeline(updates as Record<string, unknown>)}
         isSaving={isSaving}
         canEdit={pipeline.can_edit}
       />
 
       <div className="grid grid-cols-12 gap-6 mt-6">
+        {/* Documentation */}
         <DocumentationPreview
           pipelineId={pipeline.id}
           pipelineName={stripDummy(pipeline.name)}
@@ -81,29 +70,31 @@ export function DataProductWorkspace() {
           canEdit={pipeline.can_edit}
         />
 
-        {pipeline.topology_enabled && (
-          <LineageTopology pipelineId={pipeline.id} fullWidth />
-        )}
-
+        {/* Data structure (schema — auto-fetched from Spark Connect, manually editable) */}
         <div className="col-span-12 lg:col-span-7">
           <SchemaViewer
             fields={pipeline.fields}
             pipelineId={pipeline.id}
             canEdit={pipeline.can_edit}
             schemaManuallyEdited={pipeline.schema_manually_edited}
-            networkNames={networkNames}
           />
-        </div>
-        <div className="col-span-12 lg:col-span-5">
-          <UsageCard etlName={pipeline.task_id ?? pipeline.name} />
         </div>
 
-        <div className="col-span-12">
-          <DataStructureCard
-            pipelineId={pipeline.id}
-            schedule={pipeline.schedule}
+        {/* Import & consume (auto-generated, manually overridable) */}
+        <div className="col-span-12 lg:col-span-5">
+          <ConsumeSnippet
+            pipelineName={pipeline.name}
+            team={pipeline.team}
+            importSnippet={pipeline.import_snippet}
             canEdit={pipeline.can_edit}
+            isSaving={isSaving}
+            onSave={(snippet) => updatePipeline({ import_snippet: snippet })}
           />
+        </div>
+
+        {/* Tags */}
+        <div className="col-span-12">
+          <ProductTags productId={pipeline.id} tags={pipeline.tags} canEdit={pipeline.can_edit} />
         </div>
       </div>
     </div>

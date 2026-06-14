@@ -71,4 +71,6 @@ C4-Documentation/
 # Claude Code
 .ui-design/reviews/full_frontend_20260327.md
 .ui-design/reviews/review_state.json
-etlnexus-images/images.tar
+# Offline image-export bundle + export tarballs (build artifacts, multi-GB)
+etlnexus-images/
+etlnexus-export-*.tar

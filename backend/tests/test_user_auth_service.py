@@ -216,16 +216,21 @@ class TestFullProvision:
         assert mock_session.add.call_count == 2
 
     @patch("app.services.user_auth_service.oidc_client")
-    async def test_removes_stale_memberships(self, mock_oidc, mock_session):
+    async def test_keeps_app_managed_memberships(self, mock_oidc, mock_session):
+        """JIT is additive-only: a membership absent from the token is NOT pruned.
+
+        The app owns membership after Keycloak bootstraps it, so admins can add
+        members in-app without the next login wiping them.
+        """
         mock_oidc.extract_role.return_value = "member"
-        mock_oidc.extract_groups.return_value = ["Dagger"]  # Only Dagger now
+        mock_oidc.extract_groups.return_value = ["Dagger"]  # token no longer lists Vault
 
         team_dagger = make_team(name="Dagger")
         team_vault = make_team(name="Vault")
 
         user = make_user()
-        stale_membership = make_user_team(user, team_vault)
-        user.team_memberships = [stale_membership]
+        app_membership = make_user_team(user, team_vault)
+        user.team_memberships = [app_membership]
 
         user_repo = AsyncMock()
         user_repo.upsert_from_sso.return_value = user
@@ -241,5 +246,5 @@ class TestFullProvision:
         claims = {"sub": "test", "email": "t@t.com"}
         await service._full_provision(claims)
 
-        # Stale membership (Vault) should be deleted
-        mock_session.delete.assert_awaited_once_with(stale_membership)
+        # The Vault membership must survive (not deleted) — additive-only.
+        mock_session.delete.assert_not_awaited()

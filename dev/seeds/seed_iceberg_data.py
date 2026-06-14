@@ -148,9 +148,23 @@ def create_spark_session():
 
 
 def seed_table(spark, namespace, table_name, schema, rows):
-    df = spark.createDataFrame(rows, schema)
+    # Append a synthetic `ts` column whose time-of-day resolution encodes the
+    # pipeline's cadence: ~half the tables get midnight timestamps (daily), the
+    # rest a random hour (hourly). The backend infers the schedule from this via
+    # Spark Connect (see TS_COLUMN_NAME / SparkConnectClient._detect_schedule).
+    schema = StructType(list(schema.fields) + [StructField("ts", TimestampType())])
+    hourly = sum(ord(c) for c in table_name) % 2 == 0
+    augmented = []
+    for row in rows:
+        d = random.choice(DATES)
+        if hourly:
+            ts = datetime(d.year, d.month, d.day, random.randint(0, 23), random.randint(0, 59), 0)
+        else:
+            ts = datetime(d.year, d.month, d.day)
+        augmented.append((*tuple(row), ts))
+    df = spark.createDataFrame(augmented, schema)
     df.writeTo(f"iceberg.{namespace}.{table_name}").using("iceberg").createOrReplace()
-    print(f"  Seeded {namespace}.{table_name}: {len(rows)} rows")
+    print(f"  Seeded {namespace}.{table_name}: {len(augmented)} rows ({'hourly' if hourly else 'daily'})")
 
 
 # ---------------------------------------------------------------------------

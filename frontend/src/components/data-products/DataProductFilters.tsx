@@ -6,15 +6,13 @@ const INACTIVE_PILL =
 
 interface DataProductFiltersProps {
   availableTeams: string[];
-  availableNetworks: string[];
-  availableTags: string[];
+  availableSchedules: string[];
 }
 
-export function DataProductFilters({ availableTeams, availableNetworks, availableTags }: DataProductFiltersProps) {
-  const { teamFilters, networkFilters, tagFilters, toggleFilter, clearAllFilters } =
-    useDataProductStore();
+export function DataProductFilters({ availableTeams, availableSchedules }: DataProductFiltersProps) {
+  const { teamFilters, scheduleFilters, toggleFilter, clearAllFilters } = useDataProductStore();
 
-  const hasActive = teamFilters.size > 0 || networkFilters.size > 0 || tagFilters.size > 0;
+  const hasActive = teamFilters.size > 0 || scheduleFilters.size > 0;
 
   return (
     <div className="px-5 pb-4 pt-1 space-y-3">
@@ -53,39 +51,20 @@ export function DataProductFilters({ availableTeams, availableNetworks, availabl
         </FilterSection>
       )}
 
-      {availableNetworks.length > 0 && (
-        <FilterSection label="Network">
-          {availableNetworks.map((network) => (
+      {availableSchedules.length > 0 && (
+        <FilterSection label="Schedule">
+          {availableSchedules.map((schedule) => (
             <button
-              key={network}
+              key={schedule}
               type="button"
-              onClick={() => toggleFilter("network", network)}
+              onClick={() => toggleFilter("schedule", schedule)}
               className={`text-[10px] font-mono px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
-                networkFilters.has(network)
+                scheduleFilters.has(schedule)
                   ? "text-teal-300 bg-teal-500/15 border-teal-500/30"
                   : INACTIVE_PILL
               }`}
             >
-              {network}
-            </button>
-          ))}
-        </FilterSection>
-      )}
-
-      {availableTags.length > 0 && (
-        <FilterSection label="Tag">
-          {availableTags.map((tag) => (
-            <button
-              key={tag}
-              type="button"
-              onClick={() => toggleFilter("tag", tag)}
-              className={`text-[10px] font-mono px-2.5 py-1 rounded-full border transition-all cursor-pointer ${
-                tagFilters.has(tag)
-                  ? "text-amber-300 bg-amber-500/15 border-amber-500/30"
-                  : INACTIVE_PILL
-              }`}
-            >
-              {tag}
+              {schedule}
             </button>
           ))}
         </FilterSection>

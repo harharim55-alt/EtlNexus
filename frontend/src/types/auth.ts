@@ -3,7 +3,6 @@ export interface AuthConfig {
   issuer_url: string;
   client_id: string;
   audience: string;
-  activate_airflow: boolean;
 }
 
 export interface TeamMembership {
@@ -18,6 +17,6 @@ export interface UserInfo {
   display_name: string;
   role: string;
   is_active: boolean;
-  is_beta: boolean;
+  is_master: boolean;
   teams: TeamMembership[];
 }

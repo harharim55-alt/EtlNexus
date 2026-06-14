@@ -7,7 +7,7 @@ import { DataProductFilters } from "./DataProductFilters";
 import { DataProductListItem } from "./DataProductListItem";
 import { CreateDataProductModal } from "./CreateDataProductModal";
 
-import { Plus, X } from "lucide-react";
+import { Plus, Tag, X } from "lucide-react";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import type { PipelineListItem as PipelineListItemType } from "@/types/pipeline";
 import type { PipelineFilterParams } from "@/api/pipelines";
@@ -25,19 +25,19 @@ export function DataProductRegistry() {
     setSelectedProductId,
     filtersOpen,
     teamFilters,
-    networkFilters,
-    tagFilters,
+    scheduleFilters,
     clearAllFilters,
   } = useDataProductStore();
 
   const [createOpen, setCreateOpen] = useState(false);
+  const [createTagOpen, setCreateTagOpen] = useState(false);
 
   const serverFilters = useMemo<PipelineFilterParams | undefined>(() => {
     const f: PipelineFilterParams = {};
     if (teamFilters.size > 0) f.team = Array.from(teamFilters);
-    if (tagFilters.size > 0) f.tag = Array.from(tagFilters);
+    if (scheduleFilters.size > 0) f.schedule = Array.from(scheduleFilters);
     return Object.keys(f).length > 0 ? f : undefined;
-  }, [teamFilters, tagFilters]);
+  }, [teamFilters, scheduleFilters]);
 
   const {
     data,
@@ -55,7 +55,7 @@ export function DataProductRegistry() {
   );
 
   const hasActiveFilters =
-    teamFilters.size > 0 || networkFilters.size > 0 || tagFilters.size > 0;
+    teamFilters.size > 0 || scheduleFilters.size > 0;
 
   const availableTeams = useMemo(() => {
     const teams = new Set<string>();
@@ -65,48 +65,25 @@ export function DataProductRegistry() {
     return Array.from(teams).sort();
   }, [products]);
 
-  const availableTags = useMemo(() => {
-    const tags = new Set<string>();
+  const availableSchedules = useMemo(() => {
+    const schedules = new Set<string>();
     for (const p of products) {
-      for (const t of (p.tags ?? [])) tags.add(t.name);
+      if (p.schedule_type) schedules.add(p.schedule_type);
     }
-    return Array.from(tags).sort();
+    return Array.from(schedules).sort();
   }, [products]);
 
-  const availableNetworks = useMemo(() => {
-    const nets = new Set<string>();
-    for (const p of products) {
-      for (const n of (p.network_names ?? [])) nets.add(n);
-    }
-    return Array.from(nets).sort();
-  }, [products]);
-
-  // Client-side tag/network filtering
+  // Client-side team/schedule filtering
   const filteredProducts = useMemo(() => {
     if (!products.length) return [];
     if (!hasActiveFilters) return products;
 
     return products.filter((p) => {
       if (teamFilters.size > 0 && (!p.team || !teamFilters.has(p.team))) return false;
-      if (networkFilters.size > 0) {
-        const pNets = new Set(p.network_names ?? []);
-        let hasAny = false;
-        for (const net of networkFilters) {
-          if (pNets.has(net)) { hasAny = true; break; }
-        }
-        if (!hasAny) return false;
-      }
-      if (tagFilters.size > 0) {
-        const pTags = new Set((p.tags ?? []).map((t) => t.name));
-        let hasAny = false;
-        for (const tag of tagFilters) {
-          if (pTags.has(tag)) { hasAny = true; break; }
-        }
-        if (!hasAny) return false;
-      }
+      if (scheduleFilters.size > 0 && (!p.schedule_type || !scheduleFilters.has(p.schedule_type))) return false;
       return true;
     });
-  }, [products, teamFilters, networkFilters, tagFilters, hasActiveFilters]);
+  }, [products, teamFilters, scheduleFilters, hasActiveFilters]);
 
   const favoriteIds = useFavoritesStore((s) => s.favoriteIds);
 
@@ -158,10 +135,9 @@ export function DataProductRegistry() {
     if (!hasActiveFilters) return null;
     const parts: string[] = [];
     if (teamFilters.size > 0) parts.push(Array.from(teamFilters).join(", "));
-    if (networkFilters.size > 0) parts.push(Array.from(networkFilters).join(", "));
-    if (tagFilters.size > 0) parts.push(Array.from(tagFilters).join(", "));
+    if (scheduleFilters.size > 0) parts.push(Array.from(scheduleFilters).join(", "));
     return parts.join(" \u00b7 ");
-  }, [hasActiveFilters, teamFilters, networkFilters, tagFilters]);
+  }, [hasActiveFilters, teamFilters, scheduleFilters]);
 
   const isFiltered = hasActiveFilters && products.length > 0 && filteredProducts.length !== products.length;
 
@@ -179,6 +155,15 @@ export function DataProductRegistry() {
               Data Products
             </h2>
             <div className="flex items-center gap-1">
+              <Tooltip>
+                <TooltipTrigger
+                  className="p-1.5 text-text-muted hover:text-foreground rounded-lg transition-colors cursor-pointer"
+                  onClick={() => setCreateTagOpen(true)}
+                >
+                  <Tag className="size-4" />
+                </TooltipTrigger>
+                <TooltipContent>New Tag</TooltipContent>
+              </Tooltip>
               <Tooltip>
                 <TooltipTrigger
                   className="p-1.5 text-text-muted hover:text-foreground rounded-lg transition-colors cursor-pointer"
@@ -205,8 +190,7 @@ export function DataProductRegistry() {
           <div className="overflow-hidden">
             <DataProductFilters
               availableTeams={availableTeams}
-              availableNetworks={availableNetworks}
-              availableTags={availableTags}
+              availableSchedules={availableSchedules}
             />
           </div>
         </div>
@@ -300,6 +284,16 @@ export function DataProductRegistry() {
         onClose={() => setCreateOpen(false)}
         onCreated={(product) => {
           setCreateOpen(false);
+          setSelectedProductId(product.id);
+        }}
+      />
+
+      <CreateDataProductModal
+        isTag
+        open={createTagOpen}
+        onClose={() => setCreateTagOpen(false)}
+        onCreated={(product) => {
+          setCreateTagOpen(false);
           setSelectedProductId(product.id);
         }}
       />

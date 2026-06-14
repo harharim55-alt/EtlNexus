@@ -1,18 +1,15 @@
 import uuid
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from sqlalchemy import case, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.cache import task_id_map_cache
 from app.models.pipeline import Pipeline, PipelineField
-from app.models.run_history import PipelineRunHistory
-from app.models.tag import PipelineTag, Tag
 from app.repositories.base import apply_updates
-from app.repositories.visibility_filter import VisibilityFilter
 
 _UNSET = object()
 
@@ -29,7 +26,6 @@ class PipelineRepository:
     async def get_all(self, *, skip: int = 0, limit: int = 200) -> list[Pipeline]:
         stmt = (
             select(Pipeline)
-            .options(selectinload(Pipeline.airflow_status))
             .order_by(Pipeline.name)
             .offset(skip)
             .limit(limit)
@@ -40,9 +36,8 @@ class PipelineRepository:
     async def get_task_id_map(self) -> dict[str, SimpleNamespace]:
         """Return a lightweight {task_id: summary} map without eager-loading relationships.
 
-        Each value is a SimpleNamespace with .id, .name, .task_id, .status,
-        .execution_date, .category, .description, .team — sufficient for topology,
-        consumer, usage, bouncer, and AI catalog context lookups.
+        Each value is a SimpleNamespace with .id, .name, .task_id, .description,
+        .team — sufficient for AI catalog context lookups.
 
         Results are cached via task_id_map_cache (short TTL, cleared on sync).
         """
@@ -51,20 +46,14 @@ class PipelineRepository:
         if cached is not None:
             return cached
 
-        from app.models.airflow_status import AirflowRunStatus
-
         stmt = (
             select(
                 Pipeline.id,
                 Pipeline.name,
                 Pipeline.task_id,
-                Pipeline.category,
                 Pipeline.description,
                 Pipeline.team,
-                AirflowRunStatus.status,
-                AirflowRunStatus.execution_date,
             )
-            .outerjoin(AirflowRunStatus, Pipeline.id == AirflowRunStatus.pipeline_id)
             .where(Pipeline.task_id.isnot(None))
         )
         result = await self.session.execute(stmt)
@@ -73,9 +62,6 @@ class PipelineRepository:
                 id=row.id,
                 name=row.name,
                 task_id=row.task_id,
-                status=row.status or "unknown",
-                execution_date=row.execution_date,
-                category=row.category,
                 description=row.description,
                 team=row.team,
             )
@@ -84,13 +70,24 @@ class PipelineRepository:
         task_id_map_cache.set(cache_key, pipeline_map)
         return pipeline_map
 
+    async def tags_for_product(self, product_id: uuid.UUID) -> list[Pipeline]:
+        """Tag-products (is_tag) applied to the given product, via product_tags."""
+        from app.models.product_tag import ProductTag
+
+        stmt = (
+            select(Pipeline)
+            .join(ProductTag, ProductTag.tag_id == Pipeline.id)
+            .where(ProductTag.product_id == product_id)
+            .order_by(Pipeline.name)
+        )
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
+
     async def get_by_id(self, pipeline_id: uuid.UUID) -> Pipeline | None:
         stmt = (
             select(Pipeline)
             .options(
                 selectinload(Pipeline.fields),
-                selectinload(Pipeline.airflow_status),
-                selectinload(Pipeline.tags).selectinload(PipelineTag.tag),
             )
             .where(Pipeline.id == pipeline_id)
         )
@@ -108,7 +105,6 @@ class PipelineRepository:
         )
         stmt = (
             select(Pipeline)
-            .options(selectinload(Pipeline.airflow_status))
             .where(
                 or_(
                     Pipeline.name.ilike(pattern, escape="\\"),
@@ -262,63 +258,6 @@ class PipelineRepository:
 
         await self.session.flush()
 
-    async def get_success_rates(
-        self,
-        pipeline_ids: list[uuid.UUID],
-        date_from: datetime | None = None,
-        date_to: datetime | None = None,
-    ) -> dict[uuid.UUID, float]:
-        """Compute success rate for a batch of pipelines (date range or default 30d)."""
-        if not pipeline_ids:
-            return {}
-        cutoff = date_from or (datetime.now(UTC) - timedelta(days=30))
-        conditions = [
-            PipelineRunHistory.pipeline_id.in_(pipeline_ids),
-            PipelineRunHistory.duration_seconds.isnot(None),
-            PipelineRunHistory.start_date >= cutoff,
-        ]
-        if date_to:
-            conditions.append(PipelineRunHistory.start_date <= date_to)
-        stmt = (
-            select(
-                PipelineRunHistory.pipeline_id,
-                func.count().label("total"),
-                func.sum(
-                    case((PipelineRunHistory.status == "success", 1), else_=0)
-                ).label("successes"),
-            )
-            .where(*conditions)
-            .group_by(PipelineRunHistory.pipeline_id)
-        )
-        result = await self.session.execute(stmt)
-        rates: dict[uuid.UUID, float] = {}
-        for row in result.all():
-            if row.total > 0:
-                rates[row.pipeline_id] = round(
-                    (row.successes / row.total) * 100, 1
-                )
-        return rates
-
-    async def get_last_run_dates(
-        self, pipeline_ids: list[uuid.UUID],
-    ) -> dict[uuid.UUID, datetime]:
-        """Get the most recent start_date for a batch of pipelines."""
-        if not pipeline_ids:
-            return {}
-        stmt = (
-            select(
-                PipelineRunHistory.pipeline_id,
-                func.max(PipelineRunHistory.start_date).label("last_run"),
-            )
-            .where(
-                PipelineRunHistory.pipeline_id.in_(pipeline_ids),
-                PipelineRunHistory.start_date.isnot(None),
-            )
-            .group_by(PipelineRunHistory.pipeline_id)
-        )
-        result = await self.session.execute(stmt)
-        return {row.pipeline_id: row.last_run for row in result.all()}
-
     async def get_by_task_id(self, task_id: str) -> Pipeline | None:
         stmt = select(Pipeline).where(Pipeline.task_id == task_id)
         result = await self.session.execute(stmt)
@@ -330,13 +269,8 @@ class PipelineRepository:
         *,
         description=_UNSET,
         documentation=_UNSET,
-        how_to_read=_UNSET,
         import_snippet=_UNSET,
         schedule_type=_UNSET,
-        topology_enabled=_UNSET,
-        writes_to_manual=_UNSET,
-        reads_from_manual=_UNSET,
-        feeds_into_manual=_UNSET,
         updated_by: str = "System",
         pipeline: "Pipeline | None" = None,
         set_description_edited: bool = False,
@@ -351,20 +285,10 @@ class PipelineRepository:
                 pipeline.description_edited_by_user = True
         if documentation is not _UNSET:
             pipeline.documentation = documentation
-        if how_to_read is not _UNSET:
-            pipeline.how_to_read = how_to_read
         if import_snippet is not _UNSET:
             pipeline.import_snippet = import_snippet
         if schedule_type is not _UNSET:
             pipeline.schedule_type = schedule_type
-        if topology_enabled is not _UNSET:
-            pipeline.topology_enabled = topology_enabled
-        if writes_to_manual is not _UNSET:
-            pipeline.writes_to_manual = writes_to_manual
-        if reads_from_manual is not _UNSET:
-            pipeline.reads_from_manual = reads_from_manual
-        if feeds_into_manual is not _UNSET:
-            pipeline.feeds_into_manual = feeds_into_manual
         pipeline.last_updated_by = updated_by
         pipeline.last_updated_at = datetime.now(UTC)
         await self.session.flush()
@@ -379,13 +303,10 @@ class PipelineRepository:
         query: str | None = None,
         skip: int = 0,
         limit: int = 200,
-        last_run_after: datetime | None = None,
-        last_run_before: datetime | None = None,
         team_names: list[str] | None = None,
-        dag_ids: list[str] | None = None,
-        statuses: list[str] | None = None,
-        tag_names: list[str] | None = None,
+        schedule_types: list[str] | None = None,
         is_data_product: bool | None = None,
+        is_tag: bool | None = None,
     ) -> tuple[list[Pipeline], int]:
         """Return pipelines filtered by team visibility + optional text search.
 
@@ -393,21 +314,6 @@ class PipelineRepository:
         count before offset/limit pagination.
         """
         conditions = []
-
-        # Filter by last run start_date range
-        if last_run_after or last_run_before:
-            run_conditions = [PipelineRunHistory.start_date.isnot(None)]
-            if last_run_after:
-                run_conditions.append(PipelineRunHistory.start_date >= last_run_after)
-            if last_run_before:
-                run_conditions.append(PipelineRunHistory.start_date <= last_run_before)
-            run_subq = (
-                select(PipelineRunHistory.pipeline_id)
-                .where(*run_conditions)
-                .distinct()
-                .scalar_subquery()
-            )
-            conditions.append(Pipeline.id.in_(run_subq))
 
         if query:
             pattern = f"%{_escape_like(query)}%"
@@ -425,52 +331,21 @@ class PipelineRepository:
                 )
             )
 
-        # Server-side filters: team, status, dag_id
+        # Server-side filters: team, schedule
         if team_names:
             conditions.append(Pipeline.team.in_(team_names))
 
-        if statuses:
-            from app.models.airflow_status import AirflowRunStatus
-
-            status_subq = (
-                select(AirflowRunStatus.pipeline_id)
-                .where(AirflowRunStatus.status.in_(statuses))
-                .scalar_subquery()
-            )
-            conditions.append(Pipeline.id.in_(status_subq))
-
-        if dag_ids:
-            from app.models.dag_task import DagTask
-
-            dag_subq = (
-                select(DagTask.pipeline_id)
-                .where(
-                    DagTask.dag_id.in_(dag_ids),
-                    DagTask.pipeline_id.isnot(None),
-                )
-                .distinct()
-                .scalar_subquery()
-            )
-            conditions.append(Pipeline.id.in_(dag_subq))
-
-        if tag_names:
-            tag_subq = (
-                select(PipelineTag.pipeline_id)
-                .join(Tag, PipelineTag.tag_id == Tag.id)
-                .where(Tag.name.in_(tag_names))
-                .distinct()
-                .scalar_subquery()
-            )
-            conditions.append(Pipeline.id.in_(tag_subq))
+        if schedule_types:
+            conditions.append(Pipeline.schedule_type.in_(schedule_types))
 
         if is_data_product is not None:
             conditions.append(Pipeline.is_data_product == is_data_product)
 
-        if not is_admin:
-            visibility_conditions = await VisibilityFilter.build_batch_visibility_conditions(
-                self.session, user_id, user_team_ids,
-            )
-            conditions.append(or_(*visibility_conditions))
+        if is_tag is not None:
+            conditions.append(Pipeline.is_tag == is_tag)
+
+        # All products are visible to every authenticated user (edit is gated
+        # separately by team membership). No view-time team scoping.
 
         # Count total matching rows (without offset/limit)
         count_stmt = select(func.count()).select_from(Pipeline)
@@ -482,10 +357,6 @@ class PipelineRepository:
         # Fetch paginated data
         data_stmt = (
             select(Pipeline)
-            .options(
-                selectinload(Pipeline.airflow_status),
-                selectinload(Pipeline.tags).selectinload(PipelineTag.tag),
-            )
             .order_by(Pipeline.name)
             .offset(skip)
             .limit(limit)
@@ -512,7 +383,6 @@ class PipelineRepository:
         """Return pipelines owned by a specific team (uses ix_pipelines_team_id index)."""
         stmt = (
             select(Pipeline)
-            .options(selectinload(Pipeline.airflow_status))
             .where(Pipeline.team_id == team_id)
             .order_by(Pipeline.name)
         )

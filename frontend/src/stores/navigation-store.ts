@@ -1,51 +1,31 @@
 import { create } from "zustand";
 import type { TabType } from "@/lib/constants";
 
-const VALID_TABS: TabType[] = ["catalog", "data-products", "matrix", "dags", "bouncers", "ai", "admin"];
+const VALID_TABS: TabType[] = ["data-products", "matrix", "ai", "admin"];
+const DEFAULT_TAB: TabType = "data-products";
 
 export interface ParsedHash {
   tab: TabType;
-  pipelineId?: string;
-  dagRunId?: string;
 }
 
-/** Parse hash like #catalog/{pipelineId}/run/{dagRunId} */
+/** Parse hash like #matrix */
 export function parseHash(): ParsedHash {
   const raw = window.location.hash.slice(1); // remove #
   const segments = raw.split("/").filter(Boolean);
   const tab = VALID_TABS.includes(segments[0] as TabType)
     ? (segments[0] as TabType)
-    : "catalog";
-
-  const result: ParsedHash = { tab };
-
-  if (tab === "catalog" && segments.length >= 2) {
-    result.pipelineId = segments[1];
-    if (segments[2] === "run" && segments[3]) {
-      result.dagRunId = segments[3];
-    }
-  }
-
-  return result;
+    : DEFAULT_TAB;
+  return { tab };
 }
 
-/** Build a hash string from parts */
-export function buildHash(
-  tab: TabType,
-  pipelineId?: string | null,
-  dagRunId?: string | null,
-): string {
-  if (tab === "catalog" && pipelineId) {
-    if (dagRunId) return `catalog/${pipelineId}/run/${dagRunId}`;
-    return `catalog/${pipelineId}`;
-  }
+/** Build a hash string from a tab */
+export function buildHash(tab: TabType): string {
   return tab;
 }
 
 export interface Breadcrumb {
   tab: TabType;
   label: string;
-  pipelineId?: string;
 }
 
 interface NavigationState {
@@ -57,17 +37,11 @@ interface NavigationState {
   clearBreadcrumbs: () => void;
 }
 
-// NOTE: This store intentionally writes to window.location.hash as part of a
-// bidirectional sync pattern. App.tsx listens for "hashchange" events and
-// propagates the parsed hash back into the relevant stores, enabling browser
-// back/forward navigation. Stores are the "source of truth" for programmatic
-// navigation; the URL hash is kept in sync as a side effect.
 export const useNavigationStore = create<NavigationState>((set, get) => ({
   activeTab: parseHash().tab,
   breadcrumbs: [],
   setActiveTab: (tab) => {
     set({ activeTab: tab, breadcrumbs: [] });
-    // Sync hash so the URL reflects the active tab (bidirectional sync with App.tsx)
     window.location.hash = tab;
   },
   pushBreadcrumb: (crumb) => {
@@ -81,9 +55,7 @@ export const useNavigationStore = create<NavigationState>((set, get) => ({
     set({ breadcrumbs: remaining });
     if (target) {
       set({ activeTab: target.tab });
-      window.location.hash = target.pipelineId
-        ? buildHash(target.tab, target.pipelineId)
-        : target.tab;
+      window.location.hash = target.tab;
     }
   },
   clearBreadcrumbs: () => {
