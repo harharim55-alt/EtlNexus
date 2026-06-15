@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import IntegrityError
 
 from app.cache import join_suggestions_cache, pipeline_list_cache
+from app.config import render_consume_snippet
 from app.models.pipeline import Pipeline
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.revision_repo import RevisionRepository
@@ -232,6 +233,9 @@ class PipelineService:
             team_id=pipeline.team_id,
             tags=tags,
             import_snippet=pipeline.import_snippet,
+            default_import_snippet=render_consume_snippet(
+                pipeline.name, pipeline.team, pipeline.is_tag
+            ),
             schedule_type=pipeline.schedule_type,
             schema_manually_edited=pipeline.schema_manually_edited,
             is_data_product=pipeline.is_data_product,

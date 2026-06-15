@@ -83,8 +83,7 @@ export function DataProductWorkspace() {
         {/* Import & consume (auto-generated, manually overridable) */}
         <div className="col-span-12 lg:col-span-5">
           <ConsumeSnippet
-            pipelineName={pipeline.name}
-            team={pipeline.team}
+            defaultSnippet={pipeline.default_import_snippet}
             importSnippet={pipeline.import_snippet}
             canEdit={pipeline.can_edit}
             isSaving={isSaving}

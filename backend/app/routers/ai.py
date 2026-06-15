@@ -5,6 +5,7 @@ import uuid
 from fastapi import APIRouter, Depends, Request
 
 from app.auth import get_current_user, require_pipeline_visibility
+from app.config import settings
 from app.dependencies import get_ai_service
 from app.models.user import User
 from app.rate_limit import limiter
@@ -15,7 +16,7 @@ router = APIRouter(prefix="/api", tags=["ai"])
 
 
 @router.post("/ai/chat", response_model=AIChatResponse)
-@limiter.limit("60/minute")
+@limiter.limit(settings.rate_limit_ai)
 async def ai_chat(
     request: Request,
     body: AIChatRequest,

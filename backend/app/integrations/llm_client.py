@@ -15,7 +15,7 @@ class LLMClient:
         self.api_key = settings.llm_api_key
         self.model = settings.llm_model
         self.max_tokens = settings.llm_max_tokens
-        self.timeout = httpx.Timeout(30.0)
+        self.timeout = httpx.Timeout(settings.llm_timeout_seconds)
         self._client: httpx.AsyncClient | None = None
 
     @property

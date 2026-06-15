@@ -10,6 +10,7 @@ from collections import OrderedDict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import team_is_allowed
 from app.integrations.oidc_client import oidc_client
 from app.models.user import User
 from app.models.user_team import UserTeam
@@ -127,7 +128,8 @@ class UserAuthService:
             claims.get("preferred_username") or claims.get("name") or email
         )
         role: str = oidc_client.extract_role(claims)
-        groups: list[str] = oidc_client.extract_groups(claims)
+        # Only Keycloak groups permitted by SYSTEM_TEAMS become teams (["*"] = all).
+        groups: list[str] = [g for g in oidc_client.extract_groups(claims) if team_is_allowed(g)]
 
         # Upsert user row and refresh last_login
         user = await self._user_repo.upsert_from_sso(sub, email, display_name, role)

@@ -121,7 +121,7 @@ app.add_middleware(
 )
 
 # Pure ASGI middleware (added innermost-first; last = outermost)
-app.add_middleware(BodySizeLimitMiddleware, max_size=1_048_576)
+app.add_middleware(BodySizeLimitMiddleware, max_size=settings.max_request_body_bytes)
 app.add_middleware(RequestIdMiddleware)
 app.add_middleware(RequestLoggingMiddleware)
 

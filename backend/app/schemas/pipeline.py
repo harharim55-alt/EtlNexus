@@ -48,6 +48,8 @@ class PipelineDetail(BaseModel):
     can_edit: bool = False
     tags: list[TagResponse] = []
     import_snippet: str | None = None
+    # Env-templated default snippet shown when no manual import_snippet override is set.
+    default_import_snippet: str = ""
     schedule_type: str | None = None
     schema_manually_edited: bool = False
     is_data_product: bool = False

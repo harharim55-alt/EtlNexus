@@ -41,6 +41,7 @@ export interface PipelineDetail {
   can_edit: boolean;
   tags: Tag[];
   import_snippet: string | null;
+  default_import_snippet: string;
   schedule_type: string | null;
   schema_manually_edited: boolean;
   is_data_product: boolean;

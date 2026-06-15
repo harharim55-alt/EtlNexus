@@ -54,10 +54,8 @@ function MemberPanel({ memberId }: { memberId: string }) {
         </div>
         <div className="col-span-12 lg:col-span-5">
           <ConsumeSnippet
-            pipelineName={member.name}
-            team={member.team}
+            defaultSnippet={member.default_import_snippet}
             importSnippet={member.import_snippet}
-            isTag={member.is_tag}
             canEdit={false}
           />
         </div>
@@ -99,10 +97,8 @@ export function TagWorkspace({ tag, onSave, isSaving }: TagWorkspaceProps) {
         />
         <div className="col-span-12">
           <ConsumeSnippet
-            pipelineName={tag.name}
-            team={tag.team}
+            defaultSnippet={tag.default_import_snippet}
             importSnippet={tag.import_snippet}
-            isTag
             canEdit={tag.can_edit}
             isSaving={isSaving}
             onSave={(snippet) => onSave({ import_snippet: snippet })}

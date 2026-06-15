@@ -1,42 +1,26 @@
 import { useState } from "react";
 import { Code, Pencil, RotateCcw } from "lucide-react";
 import { CopyButton } from "@/components/shared/CopyButton";
-import { stripDummy } from "@/lib/format";
 
 interface ConsumeSnippetProps {
-  pipelineName: string;
-  team?: string | null;
+  /** Env-templated default snippet (rendered by the backend). */
+  defaultSnippet: string;
   importSnippet?: string | null;
-  /** A tag uses the read_by_tag consume syntax instead of the iceberg namespace path. */
-  isTag?: boolean;
   canEdit?: boolean;
   isSaving?: boolean;
   /** Persist a manual override (string) or clear it to fall back to auto (null). */
   onSave?: (snippet: string | null) => void;
 }
 
-/** Build the auto-generated catalog consume snippet from the product name + team. */
-function buildAutoSnippet(pipelineName: string, team: string | null | undefined, isTag: boolean): string {
-  const importName = stripDummy(pipelineName).toLowerCase().replace(/ /g, "_");
-  if (isTag) {
-    return `from etls import Catalog, Engine\n\nCatalog(Engine.Spark).read_by_tag.${importName}("date").consume().as_pyspark()`;
-  }
-  const ns = team?.toLowerCase() ?? "dagger";
-  return `from etls import Catalog, Engine\n\nCatalog(Engine.Spark).iceberg.${ns}.${importName}("date").consume().as_pyspark()`;
-}
-
 export function ConsumeSnippet({
-  pipelineName,
-  team,
+  defaultSnippet,
   importSnippet,
-  isTag = false,
   canEdit = false,
   isSaving = false,
   onSave,
 }: ConsumeSnippetProps) {
   const isManual = !!importSnippet;
-  const autoSnippet = buildAutoSnippet(pipelineName, team, isTag);
-  const snippet = importSnippet || autoSnippet;
+  const snippet = importSnippet || defaultSnippet;
 
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(snippet);

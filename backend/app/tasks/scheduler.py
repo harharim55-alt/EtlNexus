@@ -41,7 +41,12 @@ async def _guarded_mirror() -> None:
 
 async def run_startup_sync() -> None:
     """Initial startup work: seed example data products, then refresh the mirror."""
-    from app.tasks.seed_data_products import seed_data_products
+    from app.tasks.seed_data_products import seed_data_products, seed_teams
+
+    try:
+        await seed_teams()
+    except Exception:
+        logger.exception("Startup seed teams failed")
 
     try:
         await seed_data_products()

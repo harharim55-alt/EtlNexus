@@ -21,8 +21,8 @@ from app.config import settings
 
 logger = logging.getLogger(__name__)
 
-# JWKS cache TTL in seconds (6 hours)
-_JWKS_TTL: float = 6 * 3600
+# JWKS cache TTL in seconds (default 6 hours; override via JWKS_CACHE_TTL_SECONDS)
+_JWKS_TTL: float = settings.jwks_cache_ttl_seconds
 
 # Minimum interval between on-demand JWKS refreshes triggered by unknown kid
 _ON_DEMAND_REFRESH_COOLDOWN: float = 30.0
@@ -62,7 +62,7 @@ class OIDCClient:
             return
 
         self._client = httpx.AsyncClient(
-            timeout=httpx.Timeout(10.0),
+            timeout=httpx.Timeout(settings.oidc_http_timeout_seconds),
             limits=httpx.Limits(
                 max_connections=5,
                 max_keepalive_connections=2,
