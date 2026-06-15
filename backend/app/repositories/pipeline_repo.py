@@ -2,12 +2,13 @@ import uuid
 from datetime import UTC, datetime
 from types import SimpleNamespace
 
-from sqlalchemy import func, or_, select
+from sqlalchemy import delete, func, or_, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.cache import task_id_map_cache
+from app.models.data_product_table import DataProductTable
 from app.models.pipeline import Pipeline, PipelineField
 from app.repositories.base import apply_updates
 
@@ -70,18 +71,33 @@ class PipelineRepository:
         task_id_map_cache.set(cache_key, pipeline_map)
         return pipeline_map
 
-    async def tags_for_product(self, product_id: uuid.UUID) -> list[Pipeline]:
-        """Tag-products (is_tag) applied to the given product, via product_tags."""
-        from app.models.product_tag import ProductTag
-
+    async def get_product_tables(self, product_id: uuid.UUID) -> list[DataProductTable]:
+        """Tables (namespace, table_name) a data product references, ordered."""
         stmt = (
-            select(Pipeline)
-            .join(ProductTag, ProductTag.tag_id == Pipeline.id)
-            .where(ProductTag.product_id == product_id)
-            .order_by(Pipeline.name)
+            select(DataProductTable)
+            .where(DataProductTable.product_id == product_id)
+            .order_by(DataProductTable.namespace, DataProductTable.table_name)
         )
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
+
+    async def set_product_tables(
+        self, product_id: uuid.UUID, tables: list[tuple[str, str]]
+    ) -> None:
+        """Replace a data product's referenced tables (delete-all then re-add, deduped)."""
+        await self.session.execute(
+            delete(DataProductTable).where(DataProductTable.product_id == product_id)
+        )
+        seen: set[tuple[str, str]] = set()
+        for namespace, table_name in tables:
+            key = (namespace, table_name)
+            if key in seen:
+                continue
+            seen.add(key)
+            self.session.add(
+                DataProductTable(product_id=product_id, namespace=namespace, table_name=table_name)
+            )
+        await self.session.flush()
 
     async def get_by_id(self, pipeline_id: uuid.UUID) -> Pipeline | None:
         stmt = (
@@ -306,7 +322,6 @@ class PipelineRepository:
         team_names: list[str] | None = None,
         schedule_types: list[str] | None = None,
         is_data_product: bool | None = None,
-        is_tag: bool | None = None,
     ) -> tuple[list[Pipeline], int]:
         """Return pipelines filtered by team visibility + optional text search.
 
@@ -340,9 +355,6 @@ class PipelineRepository:
 
         if is_data_product is not None:
             conditions.append(Pipeline.is_data_product == is_data_product)
-
-        if is_tag is not None:
-            conditions.append(Pipeline.is_tag == is_tag)
 
         # All products are visible to every authenticated user (edit is gated
         # separately by team membership). No view-time team scoping.

@@ -20,10 +20,7 @@ from app.routers import (
     health,
     metrics,
     pipelines,
-    schema_matrix,
-    tags,
-    teams,
-    users,
+    tables,
 )
 
 # Structured logging
@@ -157,12 +154,8 @@ async def authorization_error_handler(request: Request, exc: AuthorizationError)
 # Routers
 app.include_router(health.router, prefix="/api")
 app.include_router(pipelines.router)
-app.include_router(schema_matrix.router)
+app.include_router(tables.router)
 app.include_router(ai.router)
 app.include_router(auth.router)
-app.include_router(teams.router)
-app.include_router(users.router)
 app.include_router(metrics.router)
-app.include_router(tags.router)
-app.include_router(tags.pipeline_tag_router)
 app.include_router(pipelines.data_product_router)

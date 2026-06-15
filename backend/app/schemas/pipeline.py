@@ -3,7 +3,7 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.schemas.tag import TagResponse
+from app.schemas.table import TableSchema
 
 
 class PipelineFieldSchema(BaseModel):
@@ -22,7 +22,6 @@ class PipelineListItem(BaseModel):
     schedule_type: str | None = None
     team: str | None = None
     is_data_product: bool = False
-    is_tag: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -37,7 +36,8 @@ class PipelineDetail(BaseModel):
     name: str
     task_id: str | None = None
     description: str | None = None
-    fields: list[PipelineFieldSchema] = []
+    # The catalog tables that make up this data product (each with schema + snippet).
+    tables: list[TableSchema] = []
     documentation: str | None = None
     last_updated_by: str | None = None
     last_updated_at: datetime | None = None
@@ -46,14 +46,11 @@ class PipelineDetail(BaseModel):
     team: str | None = None
     team_id: uuid.UUID | None = None
     can_edit: bool = False
-    tags: list[TagResponse] = []
     import_snippet: str | None = None
-    # Env-templated default snippet shown when no manual import_snippet override is set.
+    # Env-templated product-level (read_by_tag) snippet shown when no manual override is set.
     default_import_snippet: str = ""
     schedule_type: str | None = None
-    schema_manually_edited: bool = False
     is_data_product: bool = False
-    is_tag: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

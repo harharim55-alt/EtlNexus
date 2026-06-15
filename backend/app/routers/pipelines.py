@@ -26,7 +26,11 @@ from app.schemas.pipeline import (
     PipelineUpdateResponse,
     RevisionListResponse,
 )
-from app.services.pipeline_service import DuplicateProductNameError, PipelineService
+from app.services.pipeline_service import (
+    DuplicateProductNameError,
+    PipelineService,
+    TableNotAllowedError,
+)
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
 
@@ -39,7 +43,6 @@ async def list_pipelines(
     team: list[str] | None = Query(None),
     schedule: list[str] | None = Query(None),
     is_data_product: bool | None = Query(None),
-    is_tag: bool | None = Query(None),
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
@@ -59,7 +62,6 @@ async def list_pipelines(
         team_names=team,
         schedule_types=schedule,
         is_data_product=is_data_product,
-        is_tag=is_tag,
     )
 
 
@@ -198,12 +200,21 @@ async def set_pipeline_fields(
 # ---------- Data product creation ----------
 
 
+class DataProductTableRef(BaseModel):
+    namespace: str
+    table_name: str
+
+
 class DataProductCreateRequest(BaseModel):
     name: str
     description: str | None = None
     documentation: str | None = None
     schedule_type: str | None = None
-    is_tag: bool = False
+    tables: list[DataProductTableRef] = []
+
+
+class DataProductTablesRequest(BaseModel):
+    tables: list[DataProductTableRef] = []
 
 
 data_product_router = APIRouter(prefix="/api/data-products", tags=["data-products"])
@@ -215,11 +226,10 @@ async def create_data_product(
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
-    """Create a data product (or a tag, when is_tag=true) owned by the creator's team.
+    """Create a data product owned by the creator's team from selected catalog tables.
 
-    Only team members (and admins/master admins) may create; viewers cannot. The
-    product belongs to the creator's first team. A regular product's schema +
-    consume auto-fill from Spark Connect by name; a tag has no schema.
+    Only team members (and master admins) may create; viewers cannot. The product
+    belongs to the creator's first team and may only reference that team's tables.
     """
     is_privileged = user.role == "admin" or is_master_admin(user.display_name)
     if not is_privileged and user.role == "viewer":
@@ -237,10 +247,37 @@ async def create_data_product(
             team_id=team_id,
             schedule_type=body.schedule_type,
             created_by=user.display_name,
-            is_tag=body.is_tag,
+            tables=[(t.namespace, t.table_name) for t in body.tables],
         )
     except DuplicateProductNameError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except TableNotAllowedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@data_product_router.put(
+    "/{pipeline_id}/tables",
+    response_model=PipelineDetail,
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
+)
+async def set_data_product_tables(
+    pipeline_id: uuid.UUID,
+    body: DataProductTablesRequest,
+    user: User = Depends(get_current_user),
+    service: PipelineService = Depends(get_pipeline_service),
+):
+    """Replace the set of tables a data product references (owning-team tables only)."""
+    try:
+        result = await service.set_data_product_tables(
+            pipeline_id,
+            [(t.namespace, t.table_name) for t in body.tables],
+            updated_by=user.display_name,
+        )
+    except TableNotAllowedError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    if not result:
+        raise HTTPException(status_code=404, detail="Data product not found")
+    return result
 
 
 @data_product_router.post(

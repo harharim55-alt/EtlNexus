@@ -57,7 +57,6 @@ class TTLCache[T]:
 
 # ── Module-level singletons ──────────────────────────────────────────
 pipeline_list_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)     # list_pipelines (no query)
-schema_matrix_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium)    # schema matrix response
 join_suggestions_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium) # join suggestions per pipeline
 task_id_map_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)       # lightweight {task_id: summary} lookup
 
@@ -69,7 +68,6 @@ def clear_all() -> None:
     so this clears only the calling process's caches.
     """
     pipeline_list_cache.clear()
-    schema_matrix_cache.clear()
     join_suggestions_cache.clear()
     task_id_map_cache.clear()
     logger.debug("All application caches cleared")

@@ -1,7 +1,4 @@
-export interface Tag {
-  id: string;
-  name: string;
-}
+import type { TableSchema } from "./table";
 
 export interface PipelineField {
   id: string;
@@ -17,7 +14,6 @@ export interface PipelineListItem {
   schedule_type: string | null;
   team: string | null;
   is_data_product: boolean;
-  is_tag: boolean;
 }
 
 export interface PipelineListResponse {
@@ -30,7 +26,8 @@ export interface PipelineDetail {
   name: string;
   task_id: string | null;
   description: string | null;
-  fields: PipelineField[];
+  // The catalog tables that make up this data product (each with schema + snippet).
+  tables: TableSchema[];
   documentation: string | null;
   last_updated_by: string | null;
   last_updated_at: string | null;
@@ -39,13 +36,10 @@ export interface PipelineDetail {
   team: string | null;
   team_id: string | null;
   can_edit: boolean;
-  tags: Tag[];
   import_snippet: string | null;
   default_import_snippet: string;
   schedule_type: string | null;
-  schema_manually_edited: boolean;
   is_data_product: boolean;
-  is_tag: boolean;
 }
 
 export interface PipelineUpdateRequest {

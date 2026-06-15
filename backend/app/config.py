@@ -15,20 +15,17 @@ class Settings(BaseSettings):
     spark_catalog_name: str = "iceberg"  # Spark catalog alias holding the Iceberg tables
     spark_namespace_prefix: str = "dagger,prism,vault,oasis"
 
-    # Consume-snippet templates. The default "Import & Consume" snippet shown for a
-    # product / tag is rendered from these. Placeholders (Python str.format fields):
-    #   {namespace} = team name lowercased (catalog namespace)
-    #   {name}      = product name normalised (lowercase, spaces→_)
-    #   {team}      = raw team name lowercased
-    #   {tag}       = tag name normalised (tags only)
-    # Use a literal "\n" for newlines when overriding via .env (it is unescaped).
-    consume_snippet_template: str = (
+    # Consume-snippet templates (Python str.format fields; use literal "\n" for
+    # newlines when overriding via .env — it is unescaped).
+    #   table   placeholders: {namespace} (catalog namespace), {table} (table name)
+    #   product placeholder:  {product} (data product name, normalised)
+    consume_snippet_table_template: str = (
         'from etls import Catalog, Engine\n\n'
-        'Catalog(Engine.Spark).iceberg.{namespace}.{name}("date").consume().as_pyspark()'
+        'Catalog(Engine.Spark).iceberg.{namespace}.{table}("date").consume().as_pyspark()'
     )
-    consume_snippet_tag_template: str = (
+    consume_snippet_product_template: str = (
         'from etls import Catalog, Engine\n\n'
-        'Catalog(Engine.Spark).read_by_tag.{tag}("date").consume().as_pyspark()'
+        'Catalog(Engine.Spark).read_by_tag.{product}("date").consume().as_pyspark()'
     )
     # How often the backend polls Spark Connect and refreshes the Postgres catalog
     # mirror (catalog_columns). End-user reads hit Postgres, never Spark live.
@@ -119,17 +116,27 @@ def configured_team_names() -> list[str]:
     return [t.strip() for t in allowed if t.strip()]
 
 
-def render_consume_snippet(name: str, team: str | None, is_tag: bool) -> str:
-    """Render the default consume snippet for a product/tag from the env template."""
-    norm = name.replace(" ", "_").lower()
+def _normalize_ident(value: str) -> str:
+    """Normalise a name into a catalog identifier (lowercase, spaces->_, strip Dummy)."""
+    norm = value.replace(" ", "_").lower()
     if norm.endswith("dummy"):
         norm = norm[: -len("dummy")]
-    team_l = (team or "").lower()
-    namespace = team_l or "dagger"
-    template = settings.consume_snippet_tag_template if is_tag else settings.consume_snippet_template
-    template = template.replace("\\n", "\n")
+    return norm
+
+
+def render_table_consume_snippet(namespace: str, table_name: str) -> str:
+    """Render the per-table consume snippet (iceberg.<namespace>.<table>) from the env template."""
+    template = settings.consume_snippet_table_template.replace("\\n", "\n")
     try:
-        return template.format(namespace=namespace, name=norm, team=team_l, tag=norm)
+        return template.format(namespace=namespace.lower(), table=_normalize_ident(table_name))
     except (KeyError, IndexError, ValueError):
-        # Malformed template (unknown placeholder / stray brace) — return as-is.
+        return template
+
+
+def render_product_consume_snippet(name: str) -> str:
+    """Render the product-level consume snippet (read_by_tag.<product>) from the env template."""
+    template = settings.consume_snippet_product_template.replace("\\n", "\n")
+    try:
+        return template.format(product=_normalize_ident(name))
+    except (KeyError, IndexError, ValueError):
         return template

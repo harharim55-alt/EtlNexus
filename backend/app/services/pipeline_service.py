@@ -4,8 +4,9 @@ from datetime import UTC, datetime
 from sqlalchemy.exc import IntegrityError
 
 from app.cache import join_suggestions_cache, pipeline_list_cache
-from app.config import render_consume_snippet
+from app.config import render_product_consume_snippet
 from app.models.pipeline import Pipeline
+from app.repositories.catalog_mirror_repo import CatalogMirrorRepository
 from app.repositories.pipeline_repo import PipelineRepository
 from app.repositories.revision_repo import RevisionRepository
 from app.schemas.pipeline import (
@@ -17,16 +18,30 @@ from app.schemas.pipeline import (
     PipelineUpdateRequest,
     PipelineUpdateResponse,
 )
+from app.services.table_service import build_table_schema, group_columns
 
 RESTORABLE_FIELDS = frozenset({"description", "documentation"})
 
 
 class DuplicateProductNameError(Exception):
-    """Raised when a data product / tag name collides with an existing one."""
+    """Raised when a data product name collides with an existing one."""
 
     def __init__(self, name: str):
         self.name = name
         super().__init__(f"A data product named '{name}' already exists.")
+
+
+class TableNotAllowedError(Exception):
+    """Raised when a data product references a table outside its owning team's namespace."""
+
+    def __init__(self, namespace: str, team: str | None):
+        self.namespace = namespace
+        self.team = team
+        super().__init__(
+            f"Table namespace '{namespace}' is not in your team's namespace"
+            + (f" ('{team}')" if team else "")
+            + ". A data product can only include its own team's tables."
+        )
 
 
 class PipelineService:
@@ -49,13 +64,12 @@ class PipelineService:
         team_names: list[str] | None = None,
         schedule_types: list[str] | None = None,
         is_data_product: bool | None = None,
-        is_tag: bool | None = None,
     ) -> PipelineListResponse:
         # Cache only unfiltered requests
         cache_key: str | None = None
         has_filters = (
             query or team_names or schedule_types
-            or is_data_product is not None or is_tag is not None
+            or is_data_product is not None
         )
         if not has_filters:
             if is_admin:
@@ -81,7 +95,6 @@ class PipelineService:
             team_names=team_names,
             schedule_types=schedule_types,
             is_data_product=is_data_product,
-            is_tag=is_tag,
         )
 
         items = [self._to_list_item(p) for p in pipelines]
@@ -200,30 +213,30 @@ class PipelineService:
             last_updated_at=pipeline.last_updated_at,
         )
 
-    async def get_pipeline_detail(self, pipeline_id: uuid.UUID) -> PipelineDetail | None:
-        from app.schemas.tag import TagResponse
+    async def _tables_for_product(self, product_id: uuid.UUID) -> list:
+        """Build the TableSchema list (columns + per-table snippet) for a product's
+        referenced tables, sourcing columns from the catalog mirror."""
+        refs = await self.pipeline_repo.get_product_tables(product_id)
+        if not refs:
+            return []
+        mirror_repo = CatalogMirrorRepository(self.pipeline_repo.session)
+        grouped = group_columns(await mirror_repo.list_all())
+        return [
+            build_table_schema(r.namespace, r.table_name, grouped.get((r.namespace, r.table_name), []))
+            for r in refs
+        ]
 
+    async def get_pipeline_detail(self, pipeline_id: uuid.UUID) -> PipelineDetail | None:
         pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
         if not pipeline:
             return None
-
-        tag_pipelines = await self.pipeline_repo.tags_for_product(pipeline.id)
-        tags = [TagResponse.model_validate(t) for t in tag_pipelines]
 
         return PipelineDetail(
             id=pipeline.id,
             name=pipeline.name,
             task_id=pipeline.task_id,
             description=pipeline.description,
-            fields=[
-                {
-                    "id": f.id,
-                    "name": f.name,
-                    "data_type": f.data_type,
-                    "ordinal_position": f.ordinal_position,
-                }
-                for f in pipeline.fields
-            ],
+            tables=await self._tables_for_product(pipeline.id),
             documentation=pipeline.documentation,
             last_updated_by=pipeline.last_updated_by,
             last_updated_at=pipeline.last_updated_at,
@@ -231,15 +244,10 @@ class PipelineService:
             updated_at=pipeline.updated_at,
             team=pipeline.team,
             team_id=pipeline.team_id,
-            tags=tags,
             import_snippet=pipeline.import_snippet,
-            default_import_snippet=render_consume_snippet(
-                pipeline.name, pipeline.team, pipeline.is_tag
-            ),
+            default_import_snippet=render_product_consume_snippet(pipeline.name),
             schedule_type=pipeline.schedule_type,
-            schema_manually_edited=pipeline.schema_manually_edited,
             is_data_product=pipeline.is_data_product,
-            is_tag=pipeline.is_tag,
         )
 
     async def get_pipeline_detail_for_user(
@@ -332,6 +340,14 @@ class PipelineService:
         pipeline_list_cache.clear()
         return True
 
+    @staticmethod
+    def _validate_table_namespaces(team_name: str | None, tables: list[tuple[str, str]]) -> None:
+        """A data product may only reference tables in its owning team's namespace."""
+        allowed = (team_name or "").lower()
+        for namespace, _table in tables:
+            if not allowed or namespace.lower() != allowed:
+                raise TableNotAllowedError(namespace, team_name)
+
     async def create_data_product(
         self,
         name: str,
@@ -340,15 +356,15 @@ class PipelineService:
         team_id: uuid.UUID | None = None,
         schedule_type: str | None = None,
         created_by: str = "System",
-        is_tag: bool = False,
+        tables: list[tuple[str, str]] | None = None,
     ) -> PipelineDetail:
-        """Create a new data product, or a tag (is_tag=True).
+        """Create a data product = name + metadata + a set of referenced catalog tables.
 
-        For a product, ``task_id`` is set to the name so the Spark Connect catalog
-        mirror auto-fills its schema. A tag has no schema: ``task_id`` stays None
-        (no catalog match), it gets a read_by_tag consume snippet, and a detail
-        page of its tagged sub-products.
+        The product itself has no schema (``task_id=None``); each referenced table's
+        schema is read from the catalog mirror. Referenced tables must belong to the
+        owning team's namespace.
         """
+        tables = tables or []
         team_name = None
         if team_id:
             from app.models.team import Team
@@ -356,28 +372,48 @@ class PipelineService:
             if team:
                 team_name = team.name
 
+        self._validate_table_namespaces(team_name, tables)
+
         pipeline = Pipeline(
             name=name,
-            task_id=None if is_tag else name,
+            task_id=None,
             description=description,
             documentation=documentation,
             team=team_name,
             team_id=team_id,
-            schedule_type=None if is_tag else schedule_type,
+            schedule_type=schedule_type,
             is_data_product=True,
-            is_tag=is_tag,
             last_updated_by=created_by,
             last_updated_at=datetime.now(UTC),
         )
         self.pipeline_repo.session.add(pipeline)
         try:
             await self.pipeline_repo.session.flush()
+            await self.pipeline_repo.set_product_tables(pipeline.id, tables)
             await self.pipeline_repo.session.commit()
         except IntegrityError as exc:
             await self.pipeline_repo.session.rollback()
             raise DuplicateProductNameError(name) from exc
         pipeline_list_cache.clear()
         return await self.get_pipeline_detail(pipeline.id)
+
+    async def set_data_product_tables(
+        self,
+        pipeline_id: uuid.UUID,
+        tables: list[tuple[str, str]],
+        updated_by: str = "System",
+    ) -> PipelineDetail | None:
+        """Replace the set of tables a data product references (owning-team tables only)."""
+        pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
+        if not pipeline:
+            return None
+        self._validate_table_namespaces(pipeline.team, tables)
+        await self.pipeline_repo.set_product_tables(pipeline_id, tables)
+        pipeline.last_updated_by = updated_by
+        pipeline.last_updated_at = datetime.now(UTC)
+        await self.pipeline_repo.session.commit()
+        pipeline_list_cache.clear()
+        return await self.get_pipeline_detail(pipeline_id)
 
     async def promote_to_data_product(
         self,
@@ -405,5 +441,4 @@ class PipelineService:
             schedule_type=pipeline.schedule_type,
             team=pipeline.team,
             is_data_product=pipeline.is_data_product,
-            is_tag=pipeline.is_tag,
         )

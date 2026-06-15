@@ -1,8 +1,7 @@
-import { HelpCircle, LogOut, Moon, Network, Package, Palette, Shield, Sparkles, Sun } from "lucide-react";
+import { HelpCircle, LogOut, Moon, Package, Palette, Sparkles, Sun, Table2 } from "lucide-react";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
-import { canManageAccess } from "@/lib/permissions";
 import { useThemeStore } from "@/stores/theme-store";
 import { useAuth } from "react-oidc-context";
 import { NavIcon } from "./NavIcon";
@@ -69,12 +68,12 @@ export function Sidebar() {
             tooltip="Data Products"
           />
         </div>
-        <div data-nav-id="matrix">
+        <div data-nav-id="tables">
           <NavIcon
-            active={activeTab === "matrix"}
-            onClick={() => setActiveTab("matrix")}
-            icon={<Network className="w-5 h-5" />}
-            tooltip="Field Matrix"
+            active={activeTab === "tables"}
+            onClick={() => setActiveTab("tables")}
+            icon={<Table2 className="w-5 h-5" />}
+            tooltip="Tables"
           />
         </div>
         <div data-nav-id="ai">
@@ -85,16 +84,6 @@ export function Sidebar() {
             tooltip="AI Architect"
           />
         </div>
-        {canManageAccess(user) && (
-          <div data-nav-id="admin">
-            <NavIcon
-              active={activeTab === "admin"}
-              onClick={() => setActiveTab("admin")}
-              icon={<Shield className="w-5 h-5" />}
-              tooltip="Access Control"
-            />
-          </div>
-        )}
       </div>
 
       {/* User + theme */}

@@ -1,14 +1,14 @@
 import { create } from "zustand";
 import type { TabType } from "@/lib/constants";
 
-const VALID_TABS: TabType[] = ["data-products", "matrix", "ai", "admin"];
+const VALID_TABS: TabType[] = ["data-products", "tables", "ai"];
 const DEFAULT_TAB: TabType = "data-products";
 
 export interface ParsedHash {
   tab: TabType;
 }
 
-/** Parse hash like #matrix */
+/** Parse hash like #tables */
 export function parseHash(): ParsedHash {
   const raw = window.location.hash.slice(1); // remove #
   const segments = raw.split("/").filter(Boolean);
