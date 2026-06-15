@@ -87,15 +87,9 @@ export function DataProductWorkspace() {
           canEdit={pipeline.can_edit}
         />
 
-        {/* Product-level consume snippet (read_by_tag, editable override) */}
+        {/* Product-level consume snippet (read_by_tag, read-only) */}
         <div className="col-span-12">
-          <ConsumeSnippet
-            defaultSnippet={pipeline.default_import_snippet}
-            importSnippet={pipeline.import_snippet}
-            canEdit={pipeline.can_edit}
-            isSaving={isSaving}
-            onSave={(snippet) => updatePipeline({ import_snippet: snippet })}
-          />
+          <ConsumeSnippet snippet={pipeline.import_snippet || pipeline.default_import_snippet} />
         </div>
       </div>
 
@@ -145,7 +139,7 @@ export function DataProductWorkspace() {
                   <SchemaViewer fields={columnsToFields(activeTable)} canEdit={false} />
                 </div>
                 <div className="col-span-12 lg:col-span-5">
-                  <ConsumeSnippet defaultSnippet={activeTable.consume_snippet} />
+                  <ConsumeSnippet snippet={activeTable.consume_snippet} />
                 </div>
               </div>
             )}

@@ -45,7 +45,6 @@ export interface PipelineDetail {
 export interface PipelineUpdateRequest {
   description?: string | null;
   documentation?: string | null;
-  import_snippet?: string | null;
   schedule_type?: string | null;
 }
 

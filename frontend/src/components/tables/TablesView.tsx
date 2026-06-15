@@ -176,7 +176,7 @@ export function TablesView() {
                 <SchemaViewer fields={columnsToFields(selected)} canEdit={false} />
               </div>
               <div className="col-span-12 lg:col-span-5">
-                <ConsumeSnippet defaultSnippet={selected.consume_snippet} />
+                <ConsumeSnippet snippet={selected.consume_snippet} />
               </div>
             </div>
           </>

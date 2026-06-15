@@ -138,7 +138,7 @@ class PipelineService:
 
         # Only forward fields the client explicitly included in the request
         repo_kwargs: dict = {}
-        for field_name in ("description", "documentation", "import_snippet", "schedule_type"):
+        for field_name in ("description", "documentation", "schedule_type"):
             if field_name in update.model_fields_set:
                 repo_kwargs[field_name] = getattr(update, field_name)
 
