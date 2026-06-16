@@ -104,6 +104,34 @@ services:
         max-size: "${LOG_MAX_SIZE:-50m}"
         max-file: "${LOG_MAX_FILES:-5}"
 
+  # Postgres MCP server — read-only catalog access for the AI Architect.
+  # Connects as the mcp_readonly role (created by migration 048, run by
+  # backend-scheduler at startup) which can only read the `mcp` schema views.
+  # Internal-only (no published port). Requires MCP_ENABLED=true +
+  # MCP_DB_PASSWORD set in .env.prod for the backend to use it.
+  db-mcp:
+    container_name: db-mcp
+    image: ${MCP_IMAGE:-crystaldba/postgres-mcp:latest}
+    command: ["--access-mode=restricted", "--transport=sse", "--sse-host=0.0.0.0", "--sse-port=8000"]
+    environment:
+      DATABASE_URI: postgresql://mcp_readonly:${MCP_DB_PASSWORD:?Set MCP_DB_PASSWORD in .env.prod}@db:5432/${POSTGRES_DB:-etlnexus}
+    networks:
+      - backend
+      - database
+    depends_on:
+      backend-scheduler:
+        condition: service_healthy
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${MCP_MEMORY_LIMIT:-256M}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${LOG_MAX_SIZE_SMALL:-10m}"
+        max-file: "${LOG_MAX_FILES_SMALL:-3}"
+
   frontend:
     container_name: frontend
     image: etlnexus-frontend
