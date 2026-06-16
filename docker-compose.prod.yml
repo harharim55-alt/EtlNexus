@@ -38,40 +38,10 @@ services:
         max-size: "${LOG_MAX_SIZE:-50m}"
         max-file: "${LOG_MAX_FILES:-5}"
 
-  backend-api:
-    image: etlnexus-backend
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
-    env_file: .env.prod
-    environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-etlnexus}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}@db:5432/${POSTGRES_DB:-etlnexus}
-      SCHEDULER_ENABLED: "false"
-    networks:
-      - backend
-      - database
-    depends_on:
-      db:
-        condition: service_healthy
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 30s
-    restart: unless-stopped
-    deploy:
-      replicas: ${BACKEND_API_REPLICAS:-2}
-      resources:
-        limits:
-          memory: ${BACKEND_MEMORY_LIMIT:-2G}
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "${LOG_MAX_SIZE:-50m}"
-        max-file: "${LOG_MAX_FILES:-5}"
-
-  backend-scheduler:
+  # Single backend: serves the API, runs migrations on startup, and runs the
+  # background scheduler (catalog mirror). One instance only.
+  backend:
+    container_name: backend
     image: etlnexus-backend
     build:
       context: ./backend
@@ -94,7 +64,6 @@ services:
       start_period: 30s
     restart: unless-stopped
     deploy:
-      replicas: 1
       resources:
         limits:
           memory: ${BACKEND_MEMORY_LIMIT:-2G}
@@ -105,10 +74,9 @@ services:
         max-file: "${LOG_MAX_FILES:-5}"
 
   # Postgres MCP server — read-only catalog access for the AI Architect.
-  # Connects as the mcp_readonly role (created by migration 048, run by
-  # backend-scheduler at startup) which can only read the `mcp` schema views.
-  # Internal-only (no published port). Requires MCP_ENABLED=true +
-  # MCP_DB_PASSWORD set in .env.prod for the backend to use it.
+  # Connects as the mcp_readonly role (created by migration 048, run by the
+  # backend at startup) which can only read the `mcp` schema views. Internal-only
+  # (no published port). Requires MCP_ENABLED=true + MCP_DB_PASSWORD in .env.prod.
   db-mcp:
     container_name: db-mcp
     image: ${MCP_IMAGE:-crystaldba/postgres-mcp:latest}
@@ -119,7 +87,7 @@ services:
       - backend
       - database
     depends_on:
-      backend-scheduler:
+      backend:
         condition: service_healthy
     restart: unless-stopped
     deploy:
@@ -140,14 +108,14 @@ services:
       dockerfile: Dockerfile
       target: production
     environment:
-      BACKEND_HOST: backend-api
+      BACKEND_HOST: backend
     networks:
       - frontend
       - backend
     ports:
       - "${FRONTEND_PORT:-80}:80"
     depends_on:
-      - backend-api
+      - backend
     restart: unless-stopped
     deploy:
       resources:
@@ -159,40 +127,8 @@ services:
         max-size: "${LOG_MAX_SIZE_SMALL:-10m}"
         max-file: "${LOG_MAX_FILES_SMALL:-3}"
 
-  db-backup:
-    container_name: db-backup
-    image: postgres:16-alpine
-    networks:
-      - database
-    depends_on:
-      db:
-        condition: service_healthy
-    volumes:
-      - ./scripts/backup-db.sh:/scripts/backup-db.sh:ro
-      - ./scripts/backup-cron-entry.sh:/scripts/backup-cron-entry.sh:ro
-      - db-backups:/backups
-    environment:
-      PGHOST: db
-      PGUSER: ${POSTGRES_USER:-etlnexus}
-      PGPASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env.prod}
-      PGDATABASE: ${POSTGRES_DB:-etlnexus}
-      BACKUP_SCHEDULE: ${BACKUP_SCHEDULE:-0 2 * * *}
-      RETENTION_DAYS: ${RETENTION_DAYS:-30}
-    entrypoint: /scripts/backup-cron-entry.sh
-    restart: unless-stopped
-    deploy:
-      resources:
-        limits:
-          memory: ${BACKUP_MEMORY_LIMIT:-256M}
-    logging:
-      driver: "json-file"
-      options:
-        max-size: "${LOG_MAX_SIZE_SMALL:-10m}"
-        max-file: "${LOG_MAX_FILES_SMALL:-3}"
-
 volumes:
   pgdata:
-  db-backups:
 
 networks:
   frontend:
