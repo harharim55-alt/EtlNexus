@@ -30,26 +30,30 @@ class LLMClient:
             )
         return self._client
 
-    async def chat(
+    async def chat_raw(
         self,
-        messages: list[dict[str, str]],
+        messages: list[dict],
         system_prompt: str | None = None,
-    ) -> str:
-        """Send a chat completion request. Returns the assistant message content."""
+        tools: list[dict] | None = None,
+    ) -> dict:
+        """Send a chat completion and return the raw assistant message object.
+
+        The returned dict preserves ``content`` and any ``tool_calls`` so callers
+        can drive an agentic tool-calling loop. On any error a synthetic assistant
+        message (``content`` = error text, no ``tool_calls``) is returned so callers
+        can treat it as a terminal answer.
+        """
         if not self.is_configured:
-            return "LLM endpoint is not configured. Set LLM_API_BASE_URL in your environment."
+            return {"role": "assistant", "content": "LLM endpoint is not configured. Set LLM_API_BASE_URL in your environment."}
 
         payload: dict = {
             "model": self.model,
-            "messages": messages,
+            "messages": [{"role": "system", "content": system_prompt}, *messages] if system_prompt else messages,
             "max_tokens": self.max_tokens,
         }
-
-        if system_prompt:
-            payload["messages"] = [
-                {"role": "system", "content": system_prompt},
-                *messages,
-            ]
+        if tools:
+            payload["tools"] = tools
+            payload["tool_choice"] = "auto"
 
         headers = {"Content-Type": "application/json"}
         if self.api_key:
@@ -57,23 +61,27 @@ class LLMClient:
 
         try:
             client = self._get_client()
-            resp = await client.post(
-                f"{self.base_url}/chat/completions",
-                json=payload,
-                headers=headers,
-            )
+            resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
             resp.raise_for_status()
-            data = resp.json()
-            return data["choices"][0]["message"]["content"]
+            return resp.json()["choices"][0]["message"]
         except httpx.HTTPStatusError as e:
             logger.error("LLM API error: %s %s", e.response.status_code, e.response.text[:200])
-            return f"LLM API error: {e.response.status_code}"
+            return {"role": "assistant", "content": f"LLM API error: {e.response.status_code}"}
         except httpx.RequestError as e:
             logger.error("LLM connection error: %s", e)
-            return "Unable to reach the LLM endpoint. Please check your configuration."
+            return {"role": "assistant", "content": "Unable to reach the LLM endpoint. Please check your configuration."}
         except (KeyError, IndexError):
             logger.error("Unexpected LLM response format")
-            return "Unexpected response from the LLM endpoint."
+            return {"role": "assistant", "content": "Unexpected response from the LLM endpoint."}
+
+    async def chat(
+        self,
+        messages: list[dict[str, str]],
+        system_prompt: str | None = None,
+    ) -> str:
+        """Send a chat completion request. Returns the assistant message content."""
+        message = await self.chat_raw(messages, system_prompt=system_prompt)
+        return message.get("content") or ""
 
     async def close(self):
         """Close the persistent HTTP client."""

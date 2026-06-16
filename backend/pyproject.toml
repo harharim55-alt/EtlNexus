@@ -17,6 +17,7 @@ dependencies = [
     "PyJWT[crypto]>=2.8.0",
     "slowapi>=0.1.9",
     "python-json-logger>=3.0",
+    "mcp>=1.0",  # MCP client for the AI Architect's Postgres tool access
 ]
 
 [project.optional-dependencies]

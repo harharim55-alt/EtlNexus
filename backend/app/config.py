@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 1024
     llm_timeout_seconds: float = 30.0
 
+    # MCP — the AI Architect queries the catalog DB through a Postgres MCP server.
+    # The server connects as a read-only role limited to the `mcp` schema views.
+    mcp_enabled: bool = False
+    mcp_server_url: str = "http://db-mcp:8000/sse"
+    mcp_max_tool_iterations: int = 5  # cap agentic tool-call rounds per chat turn
+    mcp_tool_timeout_seconds: float = 20.0
+
     # App
     cors_origins: list[str] = ["http://localhost:5173"]
     debug: bool = False

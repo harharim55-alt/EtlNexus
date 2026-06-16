@@ -1,10 +1,16 @@
 """AI service — chat with catalog context and join insights."""
 
+import json
+import logging
 import uuid
 
 from app.cache import task_id_map_cache
+from app.config import settings
 from app.integrations.llm_client import llm_client
+from app.integrations.mcp_client import mcp_session
 from app.repositories.pipeline_repo import PipelineRepository
+
+logger = logging.getLogger(__name__)
 
 SYSTEM_PROMPT = """You are an expert data architect assistant for ETL Explorer Hub.
 You have access to the organization's data catalog. Help users understand data pipelines,
@@ -19,6 +25,15 @@ Available pipelines in the catalog:
 
 Always be specific and reference actual pipeline names and fields when applicable.
 Keep responses concise and actionable."""
+
+# Appended when MCP tools are available so the model knows it can query the DB.
+MCP_PROMPT_SUFFIX = """
+
+You can also answer questions using live data by calling the provided database
+tools. The catalog is exposed as READ-ONLY views in the `mcp` schema:
+mcp.pipelines, mcp.pipeline_fields, mcp.catalog_columns, mcp.data_product_tables,
+mcp.teams, mcp.pipeline_revisions. Write SELECT-only SQL against these views.
+Prefer querying when a question needs exact counts, columns, or relationships."""
 
 
 class AIService:
@@ -47,7 +62,39 @@ class AIService:
             {"role": "user", "content": message},
         ]
 
-        return await llm_client.chat(messages, system_prompt=system_prompt)
+        if not settings.mcp_enabled:
+            return await llm_client.chat(messages, system_prompt=system_prompt)
+        return await self._chat_with_tools(messages, system_prompt)
+
+    async def _chat_with_tools(self, messages: list[dict], system_prompt: str) -> str:
+        """Agentic loop: let the model query the catalog DB via MCP tools.
+
+        Falls back to a plain (no-tool) completion if the MCP server is unreachable.
+        """
+        sys_prompt = system_prompt + MCP_PROMPT_SUFFIX
+        try:
+            async with mcp_session() as mcp:
+                tools = await mcp.list_tools_openai()
+                for _ in range(settings.mcp_max_tool_iterations):
+                    msg = await llm_client.chat_raw(messages, system_prompt=sys_prompt, tools=tools)
+                    tool_calls = msg.get("tool_calls")
+                    if not tool_calls:
+                        return msg.get("content") or ""
+                    messages.append(msg)  # assistant turn carrying the tool calls
+                    for tc in tool_calls:
+                        fn = tc.get("function", {})
+                        try:
+                            args = json.loads(fn.get("arguments") or "{}")
+                        except json.JSONDecodeError:
+                            args = {}
+                        result = await mcp.call_tool(fn.get("name", ""), args)
+                        messages.append({"role": "tool", "tool_call_id": tc.get("id"), "content": result})
+                # Iteration cap hit — force a final answer without more tool calls.
+                final = await llm_client.chat_raw(messages, system_prompt=sys_prompt)
+                return final.get("content") or "I couldn't complete the lookup in time."
+        except Exception:
+            logger.exception("MCP-backed chat failed; falling back to plain completion")
+            return await llm_client.chat(messages, system_prompt=system_prompt)
 
     async def get_join_insight(self, pipeline_id: uuid.UUID) -> str:
         """Get AI-powered insight about potential joins for a pipeline."""
