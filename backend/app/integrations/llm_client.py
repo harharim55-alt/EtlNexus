@@ -1,8 +1,15 @@
-"""OpenAPI-compatible LLM client for AI-powered features."""
+"""LLM client — talks to an OpenAI-compatible endpoint via the openai SDK.
+
+Uses streaming (the target endpoint expects ``stream=True``) and accumulates both
+text content and tool-call deltas so the AI Architect's agentic MCP loop gets a
+full assistant message back. TLS verification is configurable (LLM_VERIFY_SSL,
+default off) for internal endpoints with self-signed certs.
+"""
 
 import logging
 
 import httpx
+import openai
 
 from app.config import settings
 
@@ -15,18 +22,24 @@ class LLMClient:
         self.api_key = settings.llm_api_key
         self.model = settings.llm_model
         self.max_tokens = settings.llm_max_tokens
-        self.timeout = httpx.Timeout(settings.llm_timeout_seconds)
-        self._client: httpx.AsyncClient | None = None
+        self._client: openai.AsyncOpenAI | None = None
 
     @property
     def is_configured(self) -> bool:
         return bool(self.base_url)
 
-    def _get_client(self) -> httpx.AsyncClient:
-        if self._client is None or self._client.is_closed:
-            self._client = httpx.AsyncClient(
-                timeout=self.timeout,
+    def _get_client(self) -> openai.AsyncOpenAI:
+        if self._client is None:
+            http_client = httpx.AsyncClient(
+                verify=settings.llm_verify_ssl,
+                timeout=httpx.Timeout(settings.llm_timeout_seconds),
                 limits=httpx.Limits(max_connections=5, max_keepalive_connections=2),
+            )
+            # api_key must be non-empty for the SDK; use a placeholder when unset.
+            self._client = openai.AsyncOpenAI(
+                api_key=self.api_key or "not-set",
+                base_url=self.base_url,
+                http_client=http_client,
             )
         return self._client
 
@@ -36,7 +49,7 @@ class LLMClient:
         system_prompt: str | None = None,
         tools: list[dict] | None = None,
     ) -> dict:
-        """Send a chat completion and return the raw assistant message object.
+        """Stream a chat completion; return the assembled assistant message.
 
         The returned dict preserves ``content`` and any ``tool_calls`` so callers
         can drive an agentic tool-calling loop. On any error a synthetic assistant
@@ -46,33 +59,54 @@ class LLMClient:
         if not self.is_configured:
             return {"role": "assistant", "content": "LLM endpoint is not configured. Set LLM_API_BASE_URL in your environment."}
 
-        payload: dict = {
+        full_messages = [{"role": "system", "content": system_prompt}, *messages] if system_prompt else messages
+        kwargs: dict = {
             "model": self.model,
-            "messages": [{"role": "system", "content": system_prompt}, *messages] if system_prompt else messages,
+            "messages": full_messages,
             "max_tokens": self.max_tokens,
+            "stream": True,
         }
         if tools:
-            payload["tools"] = tools
-            payload["tool_choice"] = "auto"
-
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+            kwargs["tools"] = tools
+            kwargs["tool_choice"] = "auto"
 
         try:
-            client = self._get_client()
-            resp = await client.post(f"{self.base_url}/chat/completions", json=payload, headers=headers)
-            resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]
-        except httpx.HTTPStatusError as e:
-            logger.error("LLM API error: %s %s", e.response.status_code, e.response.text[:200])
-            return {"role": "assistant", "content": f"LLM API error: {e.response.status_code}"}
-        except httpx.RequestError as e:
-            logger.error("LLM connection error: %s", e)
-            return {"role": "assistant", "content": "Unable to reach the LLM endpoint. Please check your configuration."}
-        except (KeyError, IndexError):
-            logger.error("Unexpected LLM response format")
-            return {"role": "assistant", "content": "Unexpected response from the LLM endpoint."}
+            stream = await self._get_client().chat.completions.create(**kwargs)
+            content = ""
+            # Accumulate tool-call fragments by their stream index.
+            tool_acc: dict[int, dict] = {}
+            async for chunk in stream:
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if getattr(delta, "content", None):
+                    content += delta.content
+                for tcd in getattr(delta, "tool_calls", None) or []:
+                    slot = tool_acc.setdefault(tcd.index, {"id": None, "name": "", "arguments": ""})
+                    if tcd.id:
+                        slot["id"] = tcd.id
+                    if tcd.function and tcd.function.name:
+                        slot["name"] = tcd.function.name
+                    if tcd.function and tcd.function.arguments:
+                        slot["arguments"] += tcd.function.arguments
+        except openai.OpenAIError as e:
+            logger.error("LLM API error: %s", e)
+            return {"role": "assistant", "content": "LLM request failed. Please check the endpoint configuration."}
+        except Exception:
+            logger.exception("Unexpected LLM error")
+            return {"role": "assistant", "content": "Unexpected error talking to the LLM endpoint."}
+
+        message: dict = {"role": "assistant", "content": content or None}
+        if tool_acc:
+            message["tool_calls"] = [
+                {
+                    "id": slot["id"],
+                    "type": "function",
+                    "function": {"name": slot["name"], "arguments": slot["arguments"]},
+                }
+                for _, slot in sorted(tool_acc.items())
+            ]
+        return message
 
     async def chat(
         self,
@@ -84,9 +118,9 @@ class LLMClient:
         return message.get("content") or ""
 
     async def close(self):
-        """Close the persistent HTTP client."""
-        if self._client and not self._client.is_closed:
-            await self._client.aclose()
+        """Close the persistent client."""
+        if self._client is not None:
+            await self._client.close()
             self._client = None
 
 

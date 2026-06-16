@@ -40,6 +40,7 @@ class Settings(BaseSettings):
     llm_model: str = "default"
     llm_max_tokens: int = 1024
     llm_timeout_seconds: float = 30.0
+    llm_verify_ssl: bool = False  # verify the LLM endpoint's TLS cert (off for internal/self-signed)
 
     # MCP — the AI Architect queries the catalog DB through a Postgres MCP server.
     # The server connects as a read-only role limited to the `mcp` schema views.

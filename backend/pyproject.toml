@@ -18,6 +18,7 @@ dependencies = [
     "slowapi>=0.1.9",
     "python-json-logger>=3.0",
     "mcp>=1.0",  # MCP client for the AI Architect's Postgres tool access
+    "openai>=1.0",  # OpenAI-compatible client for the LLM endpoint (streaming + tools)
 ]
 
 [project.optional-dependencies]
