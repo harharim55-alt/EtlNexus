@@ -35,6 +35,7 @@ else
     "etlnexus-spark-connect"
     "quay.io/keycloak/keycloak:26.2"
     "alpine:latest"
+    "crystaldba/postgres-mcp:latest"  # db-mcp — AI Architect's read-only Postgres MCP server
   )
   # Strip build/develop AND the dev seed jobs — the exported stack ships no
   # sample data; it starts with an empty Iceberg warehouse.
