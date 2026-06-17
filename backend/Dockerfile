@@ -36,4 +36,4 @@ RUN chown -R appuser:appuser /app
 USER appuser
 EXPOSE 8000
 
-CMD ["sh", "-c", "uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
+CMD ["sh", "-c", "uv run python -m app.db_bootstrap && uv run alembic upgrade head && exec uv run uvicorn app.main:app --host 0.0.0.0 --port 8000"]
