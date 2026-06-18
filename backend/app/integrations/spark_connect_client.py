@@ -8,6 +8,7 @@ or catalog credentials of its own — the server owns the Iceberg catalog config
 
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from app.config import settings
@@ -156,20 +157,28 @@ class SparkConnectClient:
         # Empty or "*" -> discover every namespace under the catalog; else use the list.
         namespaces = self.list_namespaces() if not configured or configured == ["*"] else configured
 
-        schemas: list[SparkTableSchema] = []
+        # Collect every (namespace, table) pair first.
+        pairs: list[tuple[str, str]] = []
         for namespace in namespaces:
             try:
                 _validate_identifier(namespace, "namespace")
-                tables = self.list_tables_in_namespace(namespace)
-                for table_name in tables:
-                    schema = self.get_table_schema(namespace, table_name)
+                pairs.extend((namespace, t) for t in self.list_tables_in_namespace(namespace))
+            except Exception as e:
+                logger.warning("Failed to list tables in namespace '%s': %s", namespace, e)
+
+        # Read schemas concurrently — sequential reads don't scale to thousands of
+        # tables. Spark Connect handles concurrent requests over its gRPC channel.
+        schemas: list[SparkTableSchema] = []
+        if pairs:
+            workers = max(1, min(settings.spark_discovery_concurrency, len(pairs)))
+            with ThreadPoolExecutor(max_workers=workers) as pool:
+                for schema in pool.map(lambda p: self.get_table_schema(p[0], p[1]), pairs):
                     if schema:
                         schemas.append(schema)
-            except Exception as e:
-                logger.warning("Failed to discover schemas for namespace '%s': %s", namespace, e)
 
         logger.info(
-            "Discovered %d table schemas across %d namespaces", len(schemas), len(namespaces)
+            "Discovered %d table schemas across %d namespaces (concurrency=%d)",
+            len(schemas), len(namespaces), max(1, min(settings.spark_discovery_concurrency, len(pairs) or 1)),
         )
         return schemas
 

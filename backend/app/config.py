@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     # Namespaces (= teams) to mirror. Empty or "*" discovers ALL namespaces under
     # the catalog; a comma list restricts to those namespaces.
     spark_namespace_prefix: str = ""
+    # How many table-schema reads to run concurrently during catalog discovery
+    # (sequential reads don't scale to thousands of tables).
+    spark_discovery_concurrency: int = 16
 
     # Consume-snippet templates (Python str.format fields; use literal "\n" for
     # newlines when overriding via .env — it is unescaped).
@@ -31,10 +34,10 @@ class Settings(BaseSettings):
     )
     # How often the backend polls Spark Connect and refreshes the Postgres catalog
     # mirror (catalog_columns). End-user reads hit Postgres, never Spark live.
-    catalog_mirror_interval_seconds: int = 30
+    catalog_mirror_interval_seconds: int = 180
     # Max time to wait for a Spark Connect catalog read before abandoning the
     # refresh. Must be < interval so a hung Spark server can't stall all refreshes.
-    catalog_mirror_spark_timeout_seconds: int = 25
+    catalog_mirror_spark_timeout_seconds: int = 120
 
     # AI / LLM
     llm_api_base_url: str = ""
