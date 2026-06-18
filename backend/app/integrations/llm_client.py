@@ -30,9 +30,11 @@ class LLMClient:
 
     def _get_client(self) -> openai.AsyncOpenAI:
         if self._client is None:
+            # LLM_TIMEOUT_SECONDS <= 0 means no timeout (wait indefinitely).
+            timeout = httpx.Timeout(None) if settings.llm_timeout_seconds <= 0 else httpx.Timeout(settings.llm_timeout_seconds)
             http_client = httpx.AsyncClient(
                 verify=settings.llm_verify_ssl,
-                timeout=httpx.Timeout(settings.llm_timeout_seconds),
+                timeout=timeout,
                 limits=httpx.Limits(max_connections=5, max_keepalive_connections=2),
             )
             # api_key must be non-empty for the SDK; use a placeholder when unset.
@@ -63,9 +65,11 @@ class LLMClient:
         kwargs: dict = {
             "model": self.model,
             "messages": full_messages,
-            "max_tokens": self.max_tokens,
             "stream": True,
         }
+        # LLM_MAX_TOKENS <= 0 means unlimited — omit the cap so the model uses its max.
+        if self.max_tokens and self.max_tokens > 0:
+            kwargs["max_tokens"] = self.max_tokens
         if tools:
             kwargs["tools"] = tools
             kwargs["tool_choice"] = "auto"
