@@ -80,6 +80,19 @@ class SparkConnectClient:
             self._connected = False
             return False
 
+    def list_namespaces(self) -> list[str]:
+        """List all namespaces (teams) under the configured Spark catalog."""
+        spark = self._get_spark()
+        if not spark:
+            return []
+        try:
+            rows = spark.sql(f"SHOW NAMESPACES IN {self.catalog_name}").collect()
+            # SHOW NAMESPACES returns a single 'namespace' column per row.
+            return [row[0] for row in rows]
+        except Exception as e:
+            logger.warning("Failed to list namespaces in %s: %s", self.catalog_name, e)
+            return []
+
     def list_tables_in_namespace(self, namespace: str) -> list[str]:
         """List all tables in a given namespace of the configured Spark catalog."""
         _validate_identifier(namespace, "namespace")
@@ -129,25 +142,35 @@ class SparkConnectClient:
             return None
 
     def get_all_schemas(self) -> list[SparkTableSchema]:
-        """Discover all tables under the configured team namespace prefixes and read their schemas."""
+        """Discover tables + schemas under the catalog's namespaces (each namespace = a team).
+
+        Namespaces are discovered dynamically from the Spark catalog. If
+        ``SPARK_NAMESPACE_PREFIX`` is set to an explicit comma list, only those
+        namespaces are mirrored; empty or ``*`` mirrors every namespace.
+        """
         spark = self._get_spark()
         if not spark:
             return []
 
+        configured = [p.strip() for p in self.namespace_prefix.split(",") if p.strip()]
+        # Empty or "*" -> discover every namespace under the catalog; else use the list.
+        namespaces = self.list_namespaces() if not configured or configured == ["*"] else configured
+
         schemas: list[SparkTableSchema] = []
-        prefixes = [p.strip() for p in self.namespace_prefix.split(",")]
-        for prefix in prefixes:
+        for namespace in namespaces:
             try:
-                _validate_identifier(prefix, "namespace_prefix")
-                tables = self.list_tables_in_namespace(prefix)
+                _validate_identifier(namespace, "namespace")
+                tables = self.list_tables_in_namespace(namespace)
                 for table_name in tables:
-                    schema = self.get_table_schema(prefix, table_name)
+                    schema = self.get_table_schema(namespace, table_name)
                     if schema:
                         schemas.append(schema)
             except Exception as e:
-                logger.warning("Failed to discover schemas for namespace '%s': %s", prefix, e)
+                logger.warning("Failed to discover schemas for namespace '%s': %s", namespace, e)
 
-        logger.info("Discovered %d table schemas from configured team namespaces", len(schemas))
+        logger.info(
+            "Discovered %d table schemas across %d namespaces", len(schemas), len(namespaces)
+        )
         return schemas
 
     def stop(self):

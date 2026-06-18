@@ -13,7 +13,9 @@ class Settings(BaseSettings):
     # Spark Connect (Iceberg catalog access)
     spark_connect_url: str = "sc://spark-connect:15002"
     spark_catalog_name: str = "spark_catalog"  # Spark catalog holding the tables (fqn: <catalog>.<ns>.<table>)
-    spark_namespace_prefix: str = "dagger,prism,vault,oasis"
+    # Namespaces (= teams) to mirror. Empty or "*" discovers ALL namespaces under
+    # the catalog; a comma list restricts to those namespaces.
+    spark_namespace_prefix: str = ""
 
     # Consume-snippet templates (Python str.format fields; use literal "\n" for
     # newlines when overriding via .env — it is unescaped).
