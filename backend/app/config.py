@@ -12,7 +12,7 @@ class Settings(BaseSettings):
 
     # Spark Connect (Iceberg catalog access)
     spark_connect_url: str = "sc://spark-connect:15002"
-    spark_catalog_name: str = "iceberg"  # Spark catalog alias holding the Iceberg tables
+    spark_catalog_name: str = "spark_catalog"  # Spark catalog holding the tables (fqn: <catalog>.<ns>.<table>)
     spark_namespace_prefix: str = "dagger,prism,vault,oasis"
 
     # Consume-snippet templates (Python str.format fields; use literal "\n" for
