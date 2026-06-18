@@ -56,7 +56,7 @@ class PipelineField(Base):
         ForeignKey("pipelines.id", ondelete="CASCADE"), index=True
     )
     name: Mapped[str] = mapped_column(String(255), index=True)
-    data_type: Mapped[str | None] = mapped_column(String(50))
+    data_type: Mapped[str | None] = mapped_column(Text)  # Spark types can be long (struct/array/decimal)
     ordinal_position: Mapped[int] = mapped_column(default=0)
 
     pipeline: Mapped["Pipeline"] = relationship(back_populates="fields")
