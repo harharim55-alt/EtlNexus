@@ -12,8 +12,16 @@ function tableKey(t: TableSchema): string {
 export function TablesView() {
   const { data, isLoading, isError, refetch } = useTables();
   const [search, setSearch] = useState("");
-  const [teamFilter, setTeamFilter] = useState<string | null>(null);
+  const [teamFilters, setTeamFilters] = useState<Set<string>>(new Set());
   const [selectedKey, setSelectedKey] = useState<string | null>(null);
+
+  const toggleTeam = (team: string) =>
+    setTeamFilters((prev) => {
+      const next = new Set(prev);
+      if (next.has(team)) next.delete(team);
+      else next.add(team);
+      return next;
+    });
 
   const tables = useMemo(() => data?.items ?? [], [data]);
 
@@ -26,11 +34,11 @@ export function TablesView() {
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
     return tables.filter((t) => {
-      if (teamFilter && t.namespace !== teamFilter) return false;
+      if (teamFilters.size > 0 && !teamFilters.has(t.namespace)) return false;
       if (q && !t.table_name.toLowerCase().includes(q)) return false;
       return true;
     });
-  }, [tables, teamFilter, search]);
+  }, [tables, teamFilters, search]);
 
   const grouped = useMemo(() => {
     const map = new Map<string, TableSchema[]>();
@@ -73,9 +81,9 @@ export function TablesView() {
           {teams.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-3">
               <button
-                onClick={() => setTeamFilter(null)}
+                onClick={() => setTeamFilters(new Set())}
                 className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                  teamFilter === null
+                  teamFilters.size === 0
                     ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
                     : "bg-hover-bg text-text-muted border-border hover:text-text-secondary"
                 }`}
@@ -85,9 +93,9 @@ export function TablesView() {
               {teams.map((team) => (
                 <button
                   key={team}
-                  onClick={() => setTeamFilter(team)}
+                  onClick={() => toggleTeam(team)}
                   className={`text-[10px] font-mono px-2 py-0.5 rounded border transition-colors cursor-pointer ${
-                    teamFilter === team
+                    teamFilters.has(team)
                       ? "bg-indigo-500/15 text-indigo-300 border-indigo-500/30"
                       : "bg-hover-bg text-text-muted border-border hover:text-text-secondary"
                   }`}
