@@ -144,6 +144,8 @@ class AIService:
             line = f"- {p.name}"
             if p.description:
                 line += f": {p.description[:300]}"
+            if p.schedule_type:
+                line += f" | schedule: {p.schedule_type}"
             tables = tables_map.get(p.id, [])
             if tables:
                 line += " | tables: " + ", ".join(f"{t.namespace}.{t.table_name}" for t in tables)

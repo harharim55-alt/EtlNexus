@@ -35,6 +35,21 @@ export function TableSelect({ value, onChange }: TableSelectProps) {
     }
   };
 
+  // All currently-filtered tables already selected?
+  const allFilteredSelected = tables.length > 0 && tables.every((t) => selectedKeys.has(keyOf(t)));
+
+  const toggleAllFiltered = () => {
+    if (allFilteredSelected) {
+      const filteredKeys = new Set(tables.map(keyOf));
+      onChange(value.filter((v) => !filteredKeys.has(keyOf(v))));
+    } else {
+      const additions = tables
+        .filter((t) => !selectedKeys.has(keyOf(t)))
+        .map((t) => ({ namespace: t.namespace, table_name: t.table_name }));
+      onChange([...value, ...additions]);
+    }
+  };
+
   return (
     <div className="border border-border-prominent rounded-lg overflow-hidden">
       <div className="relative border-b border-border">
@@ -46,6 +61,15 @@ export function TableSelect({ value, onChange }: TableSelectProps) {
           className="w-full bg-background pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-text-faint focus:outline-none"
         />
       </div>
+      {tables.length > 0 && (
+        <button
+          type="button"
+          onClick={toggleAllFiltered}
+          className="w-full text-left px-3 py-1.5 border-b border-border text-[10px] font-mono text-indigo-400 hover:bg-hover-bg transition-colors cursor-pointer"
+        >
+          {allFilteredSelected ? "Deselect" : "Select all"} {tables.length} filtered
+        </button>
+      )}
       <div className="max-h-48 overflow-y-auto custom-scrollbar">
         {isLoading ? (
           <div className="flex items-center justify-center py-6">

@@ -16,6 +16,7 @@ class AuthConfigResponse(BaseModel):
     issuer_url: str = Field(description="OIDC issuer URL for the frontend OIDC client")
     client_id: str = Field(description="OIDC client ID for the SPA")
     audience: str = Field(description="Expected OIDC audience claim")
+    ai_greeting: str = Field(default="", description="Opening message for the AI Architect chat")
 
 
 class TeamMembershipResponse(BaseModel):

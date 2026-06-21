@@ -22,6 +22,7 @@ async def get_auth_config() -> AuthConfigResponse:
         issuer_url=settings.sso_public_issuer_url,
         client_id=settings.sso_client_id,
         audience=settings.sso_audience,
+        ai_greeting=settings.ai_greeting,
     )
 
 

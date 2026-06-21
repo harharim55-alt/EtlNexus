@@ -2,6 +2,7 @@ import { useState, useEffect, type ReactNode } from "react";
 import { AuthProvider as OidcAuthProvider } from "react-oidc-context";
 import { fetchAuthConfig } from "@/api/auth";
 import { useAuthStore } from "@/stores/auth-store";
+import { useAIStore } from "@/stores/ai-store";
 import type { AuthConfig } from "@/types/auth";
 import { Skeleton } from "@/components/ui/skeleton";
 import { AuthGuard } from "./AuthGuard";
@@ -49,6 +50,7 @@ export function AuthBootstrap({ children }: Props) {
 
         setAuthConfig(config);
         setSsoEnabled(config.sso_enabled);
+        if (config.ai_greeting) useAIStore.getState().setGreeting(config.ai_greeting);
 
         if (!config.sso_enabled) {
           // No SSO: set a default admin user so everything works

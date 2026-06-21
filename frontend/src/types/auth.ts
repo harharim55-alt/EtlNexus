@@ -3,6 +3,7 @@ export interface AuthConfig {
   issuer_url: string;
   client_id: string;
   audience: string;
+  ai_greeting?: string;
 }
 
 export interface TeamMembership {

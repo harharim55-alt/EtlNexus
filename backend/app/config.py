@@ -49,6 +49,12 @@ class Settings(BaseSettings):
     llm_max_tokens: int = 1024
     llm_timeout_seconds: float = 30.0
     llm_verify_ssl: bool = False  # verify the LLM endpoint's TLS cert (off for internal/self-signed)
+    # First message the AI Architect chat shows before the user types anything.
+    ai_greeting: str = (
+        "Hello! I am your AI Data Architect. You can ask me about the existing data "
+        "products or look for a data product that matches your needs. Where would you "
+        "like to start?"
+    )
 
     # MCP — the AI Architect queries the catalog DB through a Postgres MCP server.
     # The server connects as a read-only role limited to the `mcp` schema views.
