@@ -81,6 +81,23 @@ class PipelineRepository:
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 
+    async def get_tables_for_products(
+        self, product_ids: list[uuid.UUID]
+    ) -> dict[uuid.UUID, list[DataProductTable]]:
+        """Batch-fetch referenced tables for many products: {product_id: [tables]}."""
+        if not product_ids:
+            return {}
+        stmt = (
+            select(DataProductTable)
+            .where(DataProductTable.product_id.in_(product_ids))
+            .order_by(DataProductTable.namespace, DataProductTable.table_name)
+        )
+        result = await self.session.execute(stmt)
+        out: dict[uuid.UUID, list[DataProductTable]] = {}
+        for row in result.scalars().all():
+            out.setdefault(row.product_id, []).append(row)
+        return out
+
     async def set_product_tables(
         self, product_id: uuid.UUID, tables: list[tuple[str, str]]
     ) -> None:

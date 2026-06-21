@@ -40,7 +40,9 @@ def clear_cache():
 
 @pytest.fixture
 def pipeline_repo():
-    return AsyncMock()
+    repo = AsyncMock()
+    repo.get_tables_for_products.return_value = {}
+    return repo
 
 
 @pytest.fixture
@@ -264,11 +266,14 @@ class TestBuildCatalogContext:
         pipeline = make_pipeline(name="Route Table Sync")
         pipeline.description = "Syncs routing tables."
         pipeline_repo.list_visible.return_value = ([pipeline], 1)
+        table = MagicMock(namespace="prism", table_name="RouteTable")
+        pipeline_repo.get_tables_for_products.return_value = {pipeline.id: [table]}
 
         context = await service._build_catalog_context()
 
         assert "Route Table Sync" in context
         assert "Syncs routing tables." in context
+        assert "prism.RouteTable" in context
 
     async def test_includes_all_products_with_descriptions(
         self, service, pipeline_repo

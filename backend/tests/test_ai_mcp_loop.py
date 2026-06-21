@@ -11,6 +11,7 @@ from app.services.ai_service import AIService
 def _make_service():
     repo = AsyncMock()
     repo.list_visible = AsyncMock(return_value=([], 0))  # empty data-product catalog
+    repo.get_tables_for_products = AsyncMock(return_value={})
     return AIService(repo)
 
 

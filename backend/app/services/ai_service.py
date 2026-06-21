@@ -137,11 +137,16 @@ class AIService:
         if not products:
             return "No data products currently in the catalog."
 
+        tables_map = await self.pipeline_repo.get_tables_for_products([p.id for p in products])
+
         lines = []
         for p in products:
             line = f"- {p.name}"
             if p.description:
                 line += f": {p.description[:300]}"
+            tables = tables_map.get(p.id, [])
+            if tables:
+                line += " | tables: " + ", ".join(f"{t.namespace}.{t.table_name}" for t in tables)
             lines.append(line)
 
         result = "\n".join(lines)
