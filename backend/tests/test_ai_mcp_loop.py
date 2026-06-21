@@ -10,7 +10,7 @@ from app.services.ai_service import AIService
 
 def _make_service():
     repo = AsyncMock()
-    repo.get_task_id_map = AsyncMock(return_value={})  # -> "No pipelines..." context
+    repo.list_visible = AsyncMock(return_value=([], 0))  # empty data-product catalog
     return AIService(repo)
 
 

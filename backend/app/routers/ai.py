@@ -23,9 +23,9 @@ async def ai_chat(
     user: User = Depends(get_current_user),
     service: AIService = Depends(get_ai_service),
 ):
-    # All products are visible to every user, so the AI sees the full catalog.
+    # All data products are visible to every user, so the AI sees the full catalog.
     history = [{"role": m.role, "content": m.content} for m in body.history]
-    content = await service.chat(body.message, history, visible_pipeline_ids=None)
+    content = await service.chat(body.message, history)
     return AIChatResponse(content=content)
 
 

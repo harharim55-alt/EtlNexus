@@ -57,7 +57,7 @@ class TestChat:
     async def test_calls_llm_client_with_message_and_history(
         self, service, pipeline_repo
     ):
-        pipeline_repo.get_task_id_map.return_value = {}
+        pipeline_repo.list_visible.return_value = ([], 0)
 
         with patch(
             "app.services.ai_service.llm_client.chat",
@@ -80,7 +80,7 @@ class TestChat:
     async def test_history_prepended_before_new_message(
         self, service, pipeline_repo
     ):
-        pipeline_repo.get_task_id_map.return_value = {}
+        pipeline_repo.list_visible.return_value = ([], 0)
 
         with patch(
             "app.services.ai_service.llm_client.chat",
@@ -106,7 +106,7 @@ class TestChat:
         pipeline = make_pipeline_with_fields(name="Port Scan Collector", task_id="PortScanCollector")
         pipeline.category = "Network Infrastructure"
         pipeline.description = "Collects port scan data."
-        pipeline_repo.get_task_id_map.return_value = {"PortScanCollector": pipeline}
+        pipeline_repo.list_visible.return_value = ([pipeline], 1)
 
         with patch(
             "app.services.ai_service.llm_client.chat",
@@ -122,7 +122,7 @@ class TestChat:
     async def test_empty_history_is_allowed(
         self, service, pipeline_repo
     ):
-        pipeline_repo.get_task_id_map.return_value = {}
+        pipeline_repo.list_visible.return_value = ([], 0)
 
         with patch(
             "app.services.ai_service.llm_client.chat",
@@ -137,7 +137,7 @@ class TestChat:
     async def test_catalog_context_shows_no_pipelines_when_empty(
         self, service, pipeline_repo
     ):
-        pipeline_repo.get_task_id_map.return_value = {}
+        pipeline_repo.list_visible.return_value = ([], 0)
 
         with patch(
             "app.services.ai_service.llm_client.chat",
@@ -148,7 +148,7 @@ class TestChat:
 
         call_kwargs = mock_chat.call_args.kwargs
         system_prompt = call_kwargs.get("system_prompt", "")
-        assert "No pipelines currently in the catalog" in system_prompt
+        assert "No data products currently in the catalog" in system_prompt
 
 
 # ---------------------------------------------------------------------------
@@ -249,45 +249,41 @@ class TestGetJoinInsight:
 
 
 class TestBuildCatalogContext:
-    async def test_empty_map_returns_no_pipelines_message(
+    async def test_empty_returns_no_data_products_message(
         self, service, pipeline_repo
     ):
-        pipeline_repo.get_task_id_map.return_value = {}
+        pipeline_repo.list_visible.return_value = ([], 0)
 
         context = await service._build_catalog_context()
 
-        assert "No pipelines" in context
+        assert "No data products" in context
 
-    async def test_single_pipeline_included_in_context(
+    async def test_single_data_product_included_in_context(
         self, service, pipeline_repo
     ):
         pipeline = make_pipeline(name="Route Table Sync")
-        pipeline.category = "Network Infrastructure"
         pipeline.description = "Syncs routing tables."
-        pipeline_repo.get_task_id_map.return_value = {"RouteTableSync": pipeline}
+        pipeline_repo.list_visible.return_value = ([pipeline], 1)
 
         context = await service._build_catalog_context()
 
         assert "Route Table Sync" in context
+        assert "Syncs routing tables." in context
 
-    async def test_includes_all_pipeline_names_in_context(
+    async def test_includes_all_products_with_descriptions(
         self, service, pipeline_repo
     ):
-        # Create 60 pipelines — all should appear (names always included)
-        pipeline_map = {}
+        products = []
         for i in range(60):
-            p = make_pipeline(name=f"Pipeline {i}", task_id=f"Pipeline{i}")
-            p.category = "Test"
-            p.description = f"Description for pipeline {i}"
-            pipeline_map[f"Pipeline{i}"] = p
-
-        pipeline_repo.get_task_id_map.return_value = pipeline_map
+            p = make_pipeline(name=f"Product {i}", task_id=None)
+            p.description = f"Description for product {i}"
+            products.append(p)
+        pipeline_repo.list_visible.return_value = (products, 60)
 
         context = await service._build_catalog_context()
 
-        # All 60 pipeline names should appear
-        lines = [line for line in context.split("\n") if line.startswith("- Pipeline")]
+        lines = [line for line in context.split("\n") if line.startswith("- Product")]
         assert len(lines) == 60
-        # But descriptions are only included for the first 50
+        # Every product now carries its description.
         desc_lines = [line for line in lines if "Description for" in line]
-        assert len(desc_lines) == 50
+        assert len(desc_lines) == 60
