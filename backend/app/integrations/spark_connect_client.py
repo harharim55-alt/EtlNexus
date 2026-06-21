@@ -110,8 +110,9 @@ class SparkConnectClient:
     def is_iceberg_table(self, namespace: str, table_name: str) -> bool:
         """Return whether the object is a real Iceberg table (not a view / other format).
 
-        Runs ``DESCRIBE FORMATTED`` and looks for a ``Provider`` row whose value is
-        ``iceberg``. Views (Type = VIEW) and non-Iceberg tables don't report that,
+        Runs ``DESCRIBE FORMATTED`` and looks for a ``Provider`` row whose value
+        contains ``iceberg`` (case-insensitive). Views (Type = VIEW) and non-Iceberg
+        tables don't report that,
         so they're excluded. DESCRIBE FORMATTED rows are (col_name, data_type, comment).
         """
         spark = self._get_spark()
@@ -124,7 +125,7 @@ class SparkConnectClient:
                 f"DESCRIBE FORMATTED {self.catalog_name}.{namespace}.{table_name}"
             ).collect()
             return any(
-                str(row[0]).strip().lower() == "provider" and str(row[1]).strip().lower() == "iceberg"
+                str(row[0]).strip().lower() == "provider" and "iceberg" in str(row[1]).lower()
                 for row in rows
             )
         except Exception as e:
