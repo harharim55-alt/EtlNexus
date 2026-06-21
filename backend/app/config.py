@@ -19,6 +19,9 @@ class Settings(BaseSettings):
     # How many table-schema reads to run concurrently during catalog discovery
     # (sequential reads don't scale to thousands of tables).
     spark_discovery_concurrency: int = 16
+    # Namespaces to skip during discovery (comma list, case-insensitive) — e.g.
+    # system schemas like information_schema,default,global_temp.
+    spark_excluded_namespaces: str = ""
 
     # Consume-snippet templates (Python str.format fields; use literal "\n" for
     # newlines when overriding via .env — it is unescaped).

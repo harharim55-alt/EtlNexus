@@ -31,19 +31,6 @@ class DuplicateProductNameError(Exception):
         super().__init__(f"A data product named '{name}' already exists.")
 
 
-class TableNotAllowedError(Exception):
-    """Raised when a data product references a table outside its owning team's namespace."""
-
-    def __init__(self, namespace: str, team: str | None):
-        self.namespace = namespace
-        self.team = team
-        super().__init__(
-            f"Table namespace '{namespace}' is not in your team's namespace"
-            + (f" ('{team}')" if team else "")
-            + ". A data product can only include its own team's tables."
-        )
-
-
 class PipelineService:
     def __init__(
         self,
@@ -340,14 +327,6 @@ class PipelineService:
         pipeline_list_cache.clear()
         return True
 
-    @staticmethod
-    def _validate_table_namespaces(team_name: str | None, tables: list[tuple[str, str]]) -> None:
-        """A data product may only reference tables in its owning team's namespace."""
-        allowed = (team_name or "").lower()
-        for namespace, _table in tables:
-            if not allowed or namespace.lower() != allowed:
-                raise TableNotAllowedError(namespace, team_name)
-
     async def create_data_product(
         self,
         name: str,
@@ -361,8 +340,8 @@ class PipelineService:
         """Create a data product = name + metadata + a set of referenced catalog tables.
 
         The product itself has no schema (``task_id=None``); each referenced table's
-        schema is read from the catalog mirror. Referenced tables must belong to the
-        owning team's namespace.
+        schema is read from the catalog mirror. Tables from any team may be included;
+        the product is still owned (and editable) by the creator's team.
         """
         tables = tables or []
         team_name = None
@@ -371,8 +350,6 @@ class PipelineService:
             team = await self.pipeline_repo.session.get(Team, team_id)
             if team:
                 team_name = team.name
-
-        self._validate_table_namespaces(team_name, tables)
 
         pipeline = Pipeline(
             name=name,
@@ -403,11 +380,10 @@ class PipelineService:
         tables: list[tuple[str, str]],
         updated_by: str = "System",
     ) -> PipelineDetail | None:
-        """Replace the set of tables a data product references (owning-team tables only)."""
+        """Replace the set of tables a data product references (any team's tables)."""
         pipeline = await self.pipeline_repo.get_by_id(pipeline_id)
         if not pipeline:
             return None
-        self._validate_table_namespaces(pipeline.team, tables)
         await self.pipeline_repo.set_product_tables(pipeline_id, tables)
         pipeline.last_updated_by = updated_by
         pipeline.last_updated_at = datetime.now(UTC)

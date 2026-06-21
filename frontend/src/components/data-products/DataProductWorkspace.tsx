@@ -192,7 +192,7 @@ function EditTablesModal({ pipeline, onClose }: { pipeline: PipelineDetail; onCl
           </button>
         </div>
         <div className="p-5">
-          <TableSelect team={pipeline.team} value={tables} onChange={setTables} />
+          <TableSelect value={tables} onChange={setTables} />
         </div>
         <div className="flex justify-end gap-2 p-5 border-t border-border">
           <button onClick={onClose} className="px-4 py-2 text-sm text-text-secondary hover:text-foreground rounded-lg">

@@ -4,7 +4,6 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/api/client";
 import { toast } from "sonner";
 import type { PipelineDetail } from "@/types/pipeline";
-import { useAuthStore } from "@/stores/auth-store";
 import { TableSelect, type TableRef } from "./TableSelect";
 
 interface CreateDataProductModalProps {
@@ -14,7 +13,6 @@ interface CreateDataProductModalProps {
 }
 
 export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataProductModalProps) {
-  const team = useAuthStore((s) => s.user?.teams?.[0]?.name ?? null);
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [documentation, setDocumentation] = useState("");
@@ -129,7 +127,7 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
             <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
               Tables
             </label>
-            <TableSelect team={team} value={tables} onChange={setTables} />
+            <TableSelect value={tables} onChange={setTables} />
           </div>
         </div>
 

@@ -26,11 +26,7 @@ from app.schemas.pipeline import (
     PipelineUpdateResponse,
     RevisionListResponse,
 )
-from app.services.pipeline_service import (
-    DuplicateProductNameError,
-    PipelineService,
-    TableNotAllowedError,
-)
+from app.services.pipeline_service import DuplicateProductNameError, PipelineService
 
 router = APIRouter(prefix="/api/pipelines", tags=["pipelines"])
 
@@ -251,8 +247,6 @@ async def create_data_product(
         )
     except DuplicateProductNameError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except TableNotAllowedError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @data_product_router.put(
@@ -266,15 +260,12 @@ async def set_data_product_tables(
     user: User = Depends(get_current_user),
     service: PipelineService = Depends(get_pipeline_service),
 ):
-    """Replace the set of tables a data product references (owning-team tables only)."""
-    try:
-        result = await service.set_data_product_tables(
-            pipeline_id,
-            [(t.namespace, t.table_name) for t in body.tables],
-            updated_by=user.display_name,
-        )
-    except TableNotAllowedError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    """Replace the set of tables a data product references (any team's tables)."""
+    result = await service.set_data_product_tables(
+        pipeline_id,
+        [(t.namespace, t.table_name) for t in body.tables],
+        updated_by=user.display_name,
+    )
     if not result:
         raise HTTPException(status_code=404, detail="Data product not found")
     return result

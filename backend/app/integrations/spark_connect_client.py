@@ -107,6 +107,29 @@ class SparkConnectClient:
             logger.warning("Failed to list tables in %s: %s", namespace, e)
             return []
 
+    def is_iceberg_table(self, namespace: str, table_name: str) -> bool:
+        """Return whether the object is an Iceberg table (not a view / other format).
+
+        Checks SHOW TBLPROPERTIES for a ``format`` key whose value is an Iceberg
+        format (e.g. ``iceberg/parquet``). Views and non-Iceberg tables lack it.
+        """
+        spark = self._get_spark()
+        if not spark:
+            return False
+        try:
+            _validate_identifier(namespace, "namespace")
+            _validate_identifier(table_name, "table_name")
+            rows = spark.sql(
+                f"SHOW TBLPROPERTIES {self.catalog_name}.{namespace}.{table_name}"
+            ).collect()
+            return any(
+                str(row["key"]).lower() == "format" and "iceberg" in str(row["value"]).lower()
+                for row in rows
+            )
+        except Exception as e:
+            logger.debug("TBLPROPERTIES check failed for %s.%s: %s", namespace, table_name, e)
+            return False
+
     def get_table_schema(self, namespace: str, table_name: str) -> SparkTableSchema | None:
         """Read schema from an Iceberg table via Spark Connect.
 
@@ -157,6 +180,11 @@ class SparkConnectClient:
         # Empty or "*" -> discover every namespace under the catalog; else use the list.
         namespaces = self.list_namespaces() if not configured or configured == ["*"] else configured
 
+        # Drop excluded namespaces (system schemas etc.).
+        excluded = {n.strip().lower() for n in settings.spark_excluded_namespaces.split(",") if n.strip()}
+        if excluded:
+            namespaces = [n for n in namespaces if n.lower() not in excluded]
+
         # Collect every (namespace, table) pair first.
         pairs: list[tuple[str, str]] = []
         for namespace in namespaces:
@@ -166,13 +194,19 @@ class SparkConnectClient:
             except Exception as e:
                 logger.warning("Failed to list tables in namespace '%s': %s", namespace, e)
 
-        # Read schemas concurrently — sequential reads don't scale to thousands of
-        # tables. Spark Connect handles concurrent requests over its gRPC channel.
+        # Read schemas concurrently — but only for real Iceberg tables (skip views /
+        # other formats). Spark Connect handles concurrent requests over its channel.
+        def _read(pair: tuple[str, str]) -> SparkTableSchema | None:
+            ns, table = pair
+            if not self.is_iceberg_table(ns, table):
+                return None
+            return self.get_table_schema(ns, table)
+
         schemas: list[SparkTableSchema] = []
         if pairs:
             workers = max(1, min(settings.spark_discovery_concurrency, len(pairs)))
             with ThreadPoolExecutor(max_workers=workers) as pool:
-                for schema in pool.map(lambda p: self.get_table_schema(p[0], p[1]), pairs):
+                for schema in pool.map(_read, pairs):
                     if schema:
                         schemas.append(schema)
 

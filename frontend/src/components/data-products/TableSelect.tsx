@@ -8,23 +8,23 @@ export interface TableRef {
 }
 
 interface TableSelectProps {
-  /** Team whose tables can be selected (a product may only reference its own team's tables). */
-  team: string | null | undefined;
   value: TableRef[];
   onChange: (next: TableRef[]) => void;
 }
 
 const keyOf = (t: TableRef) => `${t.namespace}.${t.table_name}`;
 
-/** Searchable multi-select of the owning team's catalog tables. */
-export function TableSelect({ team, value, onChange }: TableSelectProps) {
-  const { data, isLoading } = useTables(team ?? undefined);
+/** Searchable multi-select of all catalog tables (any team/namespace). */
+export function TableSelect({ value, onChange }: TableSelectProps) {
+  const { data, isLoading } = useTables();
   const [search, setSearch] = useState("");
   const selectedKeys = useMemo(() => new Set(value.map(keyOf)), [value]);
 
   const tables = useMemo(() => {
     const q = search.trim().toLowerCase();
-    return (data?.items ?? []).filter((t) => !q || t.table_name.toLowerCase().includes(q));
+    return (data?.items ?? []).filter(
+      (t) => !q || t.table_name.toLowerCase().includes(q) || t.namespace.toLowerCase().includes(q),
+    );
   }, [data, search]);
 
   const toggle = (t: TableRef) => {
@@ -35,14 +35,6 @@ export function TableSelect({ team, value, onChange }: TableSelectProps) {
     }
   };
 
-  if (!team) {
-    return (
-      <p className="text-[11px] text-text-faint font-mono">
-        You must belong to a team to select tables.
-      </p>
-    );
-  }
-
   return (
     <div className="border border-border-prominent rounded-lg overflow-hidden">
       <div className="relative border-b border-border">
@@ -50,7 +42,7 @@ export function TableSelect({ team, value, onChange }: TableSelectProps) {
         <input
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          placeholder={`Search ${team} tables...`}
+          placeholder="Search tables by name or team..."
           className="w-full bg-background pl-9 pr-3 py-2 text-sm text-foreground placeholder:text-text-faint focus:outline-none"
         />
       </div>
@@ -79,9 +71,8 @@ export function TableSelect({ team, value, onChange }: TableSelectProps) {
                   {selected && <Check className="size-3 text-white" />}
                 </span>
                 <span className="font-mono text-sm text-text-primary truncate">{t.table_name}</span>
-                <span className="ml-auto text-[10px] text-text-faint font-mono shrink-0">
-                  {t.columns.length} cols
-                </span>
+                <span className="ml-auto text-[10px] font-mono text-emerald-400/70 shrink-0">{t.namespace}</span>
+                <span className="text-[10px] text-text-faint font-mono shrink-0">{t.columns.length}c</span>
               </button>
             );
           })
