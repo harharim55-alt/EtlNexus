@@ -108,10 +108,11 @@ class SparkConnectClient:
             return []
 
     def is_iceberg_table(self, namespace: str, table_name: str) -> bool:
-        """Return whether the object is an Iceberg table (not a view / other format).
+        """Return whether the object is a real Iceberg table (not a view / other format).
 
-        Checks SHOW TBLPROPERTIES for a ``format`` key whose value is an Iceberg
-        format (e.g. ``iceberg/parquet``). Views and non-Iceberg tables lack it.
+        Runs ``DESCRIBE FORMATTED`` and looks for a ``Provider`` row whose value is
+        ``iceberg``. Views (Type = VIEW) and non-Iceberg tables don't report that,
+        so they're excluded. DESCRIBE FORMATTED rows are (col_name, data_type, comment).
         """
         spark = self._get_spark()
         if not spark:
@@ -120,14 +121,14 @@ class SparkConnectClient:
             _validate_identifier(namespace, "namespace")
             _validate_identifier(table_name, "table_name")
             rows = spark.sql(
-                f"SHOW TBLPROPERTIES {self.catalog_name}.{namespace}.{table_name}"
+                f"DESCRIBE FORMATTED {self.catalog_name}.{namespace}.{table_name}"
             ).collect()
             return any(
-                str(row["key"]).lower() == "format" and "iceberg" in str(row["value"]).lower()
+                str(row[0]).strip().lower() == "provider" and str(row[1]).strip().lower() == "iceberg"
                 for row in rows
             )
         except Exception as e:
-            logger.debug("TBLPROPERTIES check failed for %s.%s: %s", namespace, table_name, e)
+            logger.debug("DESCRIBE FORMATTED check failed for %s.%s: %s", namespace, table_name, e)
             return False
 
     def get_table_schema(self, namespace: str, table_name: str) -> SparkTableSchema | None:
