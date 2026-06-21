@@ -56,6 +56,7 @@ class PipelineDetail(BaseModel):
 
 
 class PipelineUpdateRequest(BaseModel):
+    name: str | None = Field(None, min_length=1, max_length=255)
     description: str | None = Field(None, max_length=270)
     documentation: str | None = Field(None, max_length=100_000)
     schedule_type: str | None = Field(None, pattern="^(daily|hourly|stream)$")

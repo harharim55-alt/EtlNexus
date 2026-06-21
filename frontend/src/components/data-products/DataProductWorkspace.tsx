@@ -104,14 +104,14 @@ export function DataProductWorkspace() {
               onClick={() => setEditOpen(true)}
               className="flex items-center gap-1.5 text-[11px] font-mono text-text-muted hover:text-indigo-400 border border-border hover:border-indigo-500/40 px-2.5 py-1 rounded-lg transition-colors cursor-pointer"
             >
-              <Pencil className="size-3" /> Edit tables
+              <Pencil className="size-3" /> Edit
             </button>
           )}
         </div>
 
         {tables.length === 0 ? (
           <p className="text-sm text-text-faint font-mono">
-            No tables yet.{pipeline.can_edit ? " Use “Edit tables” to add some." : ""}
+            No tables yet.{pipeline.can_edit ? " Use “Edit” to add some." : ""}
           </p>
         ) : (
           <>
@@ -148,63 +148,131 @@ export function DataProductWorkspace() {
       </div>
 
       {editOpen && (
-        <EditTablesModal pipeline={pipeline} onClose={() => setEditOpen(false)} />
+        <EditProductModal pipeline={pipeline} onClose={() => setEditOpen(false)} />
       )}
     </div>
   );
 }
 
-/* ── Edit-tables modal ──────────────────────────────────────────────── */
+/* ── Edit data product modal (name, schedule, documentation, tables, delete) ── */
 
-function EditTablesModal({ pipeline, onClose }: { pipeline: PipelineDetail; onClose: () => void }) {
+function EditProductModal({ pipeline, onClose }: { pipeline: PipelineDetail; onClose: () => void }) {
   const queryClient = useQueryClient();
+  const setSelectedProductId = useDataProductStore((s) => s.setSelectedProductId);
+  const [name, setName] = useState(pipeline.name);
+  const [scheduleType, setScheduleType] = useState(pipeline.schedule_type ?? "");
+  const [documentation, setDocumentation] = useState(pipeline.documentation ?? "");
   const [tables, setTables] = useState<TableRef[]>(
-    pipeline.tables.map((t) => ({ namespace: t.namespace, table_name: t.table_name }))
+    pipeline.tables.map((t) => ({ namespace: t.namespace, table_name: t.table_name })),
   );
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const mutation = useMutation({
+  const errToast = (err: unknown, fallback: string) => {
+    const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
+    toast.error(detail || fallback);
+  };
+
+  const save = useMutation({
     mutationFn: async () => {
-      const { data } = await apiClient.put<PipelineDetail>(
-        `/data-products/${pipeline.id}/tables`,
-        { tables }
-      );
-      return data;
+      await apiClient.patch(`/pipelines/${pipeline.id}`, {
+        name: name.trim(),
+        schedule_type: scheduleType || null,
+        documentation: documentation || null,
+      });
+      await apiClient.put(`/data-products/${pipeline.id}/tables`, { tables });
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["pipeline", pipeline.id] });
       queryClient.invalidateQueries({ queryKey: ["data-products"] });
-      toast.success("Tables updated");
+      toast.success("Data product updated");
       onClose();
     },
-    onError: (err) => {
-      const detail = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(detail || "Failed to update tables");
-    },
+    onError: (err) => errToast(err, "Failed to update data product"),
   });
+
+  const remove = useMutation({
+    mutationFn: async () => {
+      await apiClient.delete(`/data-products/${pipeline.id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["data-products"] });
+      queryClient.invalidateQueries({ queryKey: ["pipelines"] });
+      toast.success("Data product deleted");
+      setSelectedProductId(null);
+      onClose();
+    },
+    onError: (err) => errToast(err, "Failed to delete data product"),
+  });
+
+  const busy = save.isPending || remove.isPending;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-in fade-in duration-150">
-      <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-semibold text-foreground">Edit Tables</h2>
+      <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200 max-h-[88vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
+          <h2 className="text-lg font-semibold text-foreground">Edit Data Product</h2>
           <button onClick={onClose} className="p-1 text-text-muted hover:text-foreground cursor-pointer">
             <X className="size-4" />
           </button>
         </div>
-        <div className="p-5">
-          <TableSelect value={tables} onChange={setTables} />
+
+        <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar">
+          <div>
+            <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">Name</label>
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">Schedule</label>
+            <select
+              value={scheduleType}
+              onChange={(e) => setScheduleType(e.target.value)}
+              className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50"
+            >
+              <option value="">No schedule</option>
+              <option value="daily">Daily</option>
+              <option value="hourly">Hourly</option>
+              <option value="stream">Stream</option>
+            </select>
+          </div>
+          <div>
+            <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">Documentation</label>
+            <textarea
+              value={documentation}
+              onChange={(e) => setDocumentation(e.target.value)}
+              rows={4}
+              className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50 resize-none font-mono"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">Tables</label>
+            <TableSelect value={tables} onChange={setTables} />
+          </div>
         </div>
-        <div className="flex justify-end gap-2 p-5 border-t border-border">
-          <button onClick={onClose} className="px-4 py-2 text-sm text-text-secondary hover:text-foreground rounded-lg">
-            Cancel
-          </button>
+
+        <div className="flex items-center justify-between gap-2 p-5 border-t border-border shrink-0">
           <button
-            onClick={() => mutation.mutate()}
-            disabled={mutation.isPending}
-            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+            onClick={() => (confirmDelete ? remove.mutate() : setConfirmDelete(true))}
+            disabled={busy}
+            className="px-3 py-2 text-sm font-medium rounded-lg border border-rose-500/30 text-rose-400 hover:bg-rose-500/10 disabled:opacity-50 transition-colors cursor-pointer"
           >
-            {mutation.isPending ? "Saving..." : "Save"}
+            {remove.isPending ? "Deleting..." : confirmDelete ? "Click to confirm delete" : "Delete"}
           </button>
+          <div className="flex gap-2">
+            <button onClick={onClose} className="px-4 py-2 text-sm text-text-secondary hover:text-foreground rounded-lg">
+              Cancel
+            </button>
+            <button
+              onClick={() => save.mutate()}
+              disabled={busy || !name.trim()}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              {save.isPending ? "Saving..." : "Save"}
+            </button>
+          </div>
         </div>
       </div>
     </div>

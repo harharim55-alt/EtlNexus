@@ -96,13 +96,16 @@ async def update_pipeline(
 ):
     # Reuse pipeline loaded by require_team_membership
     preloaded = getattr(request.state, "pipeline", None)
-    result = await service.update_pipeline_metadata(
-        pipeline_id,
-        body,
-        updated_by=user.display_name,
-        preloaded_pipeline=preloaded,
-        revision_repo=revision_repo,
-    )
+    try:
+        result = await service.update_pipeline_metadata(
+            pipeline_id,
+            body,
+            updated_by=user.display_name,
+            preloaded_pipeline=preloaded,
+            revision_repo=revision_repo,
+        )
+    except DuplicateProductNameError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     if not result:
         raise HTTPException(status_code=404, detail="Pipeline not found")
     return result
@@ -269,6 +272,23 @@ async def set_data_product_tables(
     if not result:
         raise HTTPException(status_code=404, detail="Data product not found")
     return result
+
+
+@data_product_router.delete(
+    "/{pipeline_id}",
+    response_model=SuccessResponse,
+    dependencies=[Depends(require_team_membership("pipeline_id"))],
+)
+async def delete_data_product(
+    pipeline_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    service: PipelineService = Depends(get_pipeline_service),
+):
+    """Delete a data product (owning-team members / master only)."""
+    deleted = await service.delete_data_product(pipeline_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Data product not found")
+    return SuccessResponse()
 
 
 @data_product_router.post(

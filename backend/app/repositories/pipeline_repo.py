@@ -300,6 +300,7 @@ class PipelineRepository:
         self,
         pipeline_id: uuid.UUID,
         *,
+        name=_UNSET,
         description=_UNSET,
         documentation=_UNSET,
         import_snippet=_UNSET,
@@ -312,6 +313,8 @@ class PipelineRepository:
             pipeline = await self.get_by_id(pipeline_id)
         if not pipeline:
             return None
+        if name is not _UNSET and name:
+            pipeline.name = name
         if description is not _UNSET:
             pipeline.description = description
             if set_description_edited:
@@ -326,6 +329,15 @@ class PipelineRepository:
         pipeline.last_updated_at = datetime.now(UTC)
         await self.session.flush()
         return pipeline
+
+    async def delete(self, pipeline_id: uuid.UUID) -> bool:
+        """Delete a pipeline (cascades to its fields, tables, revisions)."""
+        pipeline = await self.get_by_id(pipeline_id)
+        if not pipeline:
+            return False
+        await self.session.delete(pipeline)
+        await self.session.flush()
+        return True
 
     async def list_visible(
         self,

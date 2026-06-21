@@ -125,7 +125,7 @@ class PipelineService:
 
         # Only forward fields the client explicitly included in the request
         repo_kwargs: dict = {}
-        for field_name in ("description", "documentation", "schedule_type"):
+        for field_name in ("name", "description", "documentation", "schedule_type"):
             if field_name in update.model_fields_set:
                 repo_kwargs[field_name] = getattr(update, field_name)
 
@@ -138,7 +138,11 @@ class PipelineService:
         )
         if not pipeline:
             return None
-        await self.pipeline_repo.session.commit()
+        try:
+            await self.pipeline_repo.session.commit()
+        except IntegrityError as exc:
+            await self.pipeline_repo.session.rollback()
+            raise DuplicateProductNameError(update.name or "") from exc
         pipeline_list_cache.clear()
         return PipelineUpdateResponse(
             id=pipeline.id,
@@ -373,6 +377,14 @@ class PipelineService:
             raise DuplicateProductNameError(name) from exc
         pipeline_list_cache.clear()
         return await self.get_pipeline_detail(pipeline.id)
+
+    async def delete_data_product(self, pipeline_id: uuid.UUID) -> bool:
+        """Delete a data product (and its table links / revisions via cascade)."""
+        deleted = await self.pipeline_repo.delete(pipeline_id)
+        if deleted:
+            await self.pipeline_repo.session.commit()
+            pipeline_list_cache.clear()
+        return deleted
 
     async def set_data_product_tables(
         self,
