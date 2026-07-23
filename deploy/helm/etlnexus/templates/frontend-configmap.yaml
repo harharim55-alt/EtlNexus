@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "etlnexus.fullname" . }}-frontend-config
+  labels: {{- include "etlnexus.labels" . | nindent 4 }}
+data:
+  # Auto-wired to the backend Service name so /api proxies correctly in-cluster.
+  BACKEND_HOST: {{ include "etlnexus.fullname" . }}-backend
+  {{- range $k, $v := .Values.frontend.env }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

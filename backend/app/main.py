@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import logging.config
 from contextlib import asynccontextmanager
@@ -17,17 +16,19 @@ from app.rate_limit import limiter
 from app.routers import (
     ai,
     auth,
+    data_products,
     health,
     metrics,
-    pipelines,
     tables,
 )
 
 # Structured logging
-logging.config.dictConfig(build_log_config(
-    debug=settings.debug,
-    log_format=settings.log_format,
-))
+logging.config.dictConfig(
+    build_log_config(
+        debug=settings.debug,
+        log_format=settings.log_format,
+    )
+)
 
 logger = logging.getLogger(__name__)
 
@@ -40,58 +41,35 @@ async def lifespan(app: FastAPI):
     # Refuse to start without SSO in non-development environments
     if settings.deployment_env != "development" and not settings.sso_enabled:
         logger.critical(
-            "FATAL: SSO_ENABLED=false in %s environment. "
-            "Set SSO_ENABLED=true or DEPLOYMENT_ENV=development.",
+            "FATAL: SSO_ENABLED=false in %s environment. Set SSO_ENABLED=true or DEPLOYMENT_ENV=development.",
             settings.deployment_env,
         )
         raise SystemExit(1)
     if not settings.sso_enabled:
-        logger.warning(
-            "SSO disabled — all requests get admin access (development only)"
-        )
+        logger.warning("SSO disabled — all requests get admin access (development only)")
+
+    # Ensure the database + the app's own tables exist (idempotent). The external
+    # read-only iceberg_table_metrics table is never created here.
+    from app.db_bootstrap import bootstrap
+
+    await bootstrap()
 
     # Initialize OIDC client (no-op if SSO_ENABLED=false)
     from app.integrations.oidc_client import oidc_client
+
     await oidc_client.initialize()
-
-    startup_task = None
-    sched = None
-
-    if settings.scheduler_enabled:
-        from app.tasks.scheduler import run_startup_sync, setup_scheduler
-
-        # Run initial seed + catalog-mirror refresh in background — don't block startup.
-        startup_task = asyncio.create_task(run_startup_sync(), name="startup_sync")
-
-        def _on_startup_done(task: asyncio.Task) -> None:
-            if task.cancelled():
-                logger.warning("Startup sync was cancelled")
-            elif exc := task.exception():
-                logger.error("Startup sync failed: %s", exc)
-            else:
-                logger.info("Startup sync completed successfully")
-
-        startup_task.add_done_callback(_on_startup_done)
-
-        # Start background scheduler (APScheduler 4.x — async)
-        sched = await setup_scheduler()
-        logger.info("Background scheduler started")
-    else:
-        logger.info("Scheduler disabled — running in API-only mode")
 
     yield
 
     # Shutdown
-    if startup_task is not None and not startup_task.done():
-        startup_task.cancel()
-        logger.info("Cancelled in-progress startup sync")
-    if sched is not None:
-        await sched.__aexit__(None, None, None)
     from app.integrations.oidc_client import oidc_client as _oidc
+
     await _oidc.close()
     from app.integrations.llm_client import llm_client
+
     await llm_client.close()
     from app.integrations.spark_connect_client import spark_connect_client
+
     spark_connect_client.stop()
     logger.info("ETL Explorer Hub shutting down")
 
@@ -153,9 +131,8 @@ async def authorization_error_handler(request: Request, exc: AuthorizationError)
 
 # Routers
 app.include_router(health.router, prefix="/api")
-app.include_router(pipelines.router)
+app.include_router(data_products.router)
 app.include_router(tables.router)
 app.include_router(ai.router)
 app.include_router(auth.router)
 app.include_router(metrics.router)
-app.include_router(pipelines.data_product_router)

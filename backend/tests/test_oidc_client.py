@@ -1,19 +1,47 @@
 """Tests for OIDCClient — OIDC claims extraction helpers.
 
-Tests extract_groups and extract_role which are pure methods that don't
-need network or JWKS infrastructure.
+Tests extract_groups (a pure method) and the TLS verify resolver, neither of
+which needs network or JWKS infrastructure. SSO roles are not consulted by the
+app (admin status comes from MASTER_ADMIN_USERNAMES).
 """
 
 from unittest.mock import patch
 
 import pytest
 
-from app.integrations.oidc_client import OIDCClient
+from app.integrations.oidc_client import OIDCClient, _resolve_verify
 
 
 @pytest.fixture
 def client():
     return OIDCClient()
+
+
+class TestResolveVerify:
+    def test_verify_off_returns_false(self):
+        with patch("app.integrations.oidc_client.settings") as s:
+            s.oidc_verify_ssl = False
+            s.oidc_ca_bundle = ""
+            assert _resolve_verify() is False
+
+    def test_verify_off_ignores_ca_bundle(self):
+        # The footgun fix: verify=false must win and NOT try to load a CA path.
+        with patch("app.integrations.oidc_client.settings") as s:
+            s.oidc_verify_ssl = False
+            s.oidc_ca_bundle = "/certs/does-not-exist.pem"
+            assert _resolve_verify() is False
+
+    def test_verify_on_with_ca_bundle_returns_path(self):
+        with patch("app.integrations.oidc_client.settings") as s:
+            s.oidc_verify_ssl = True
+            s.oidc_ca_bundle = "/certs/idp-ca.pem"
+            assert _resolve_verify() == "/certs/idp-ca.pem"
+
+    def test_verify_on_without_ca_bundle_returns_true(self):
+        with patch("app.integrations.oidc_client.settings") as s:
+            s.oidc_verify_ssl = True
+            s.oidc_ca_bundle = ""
+            assert _resolve_verify() is True
 
 
 class TestExtractGroups:
@@ -44,58 +72,25 @@ class TestExtractGroups:
         assert result == ["Dagger", "Vault"]
 
 
-class TestExtractRole:
-    def test_admin_role_from_realm_access(self, client):
-        claims = {"realm_access": {"roles": ["admin", "member"]}}
-        result = client.extract_role(claims)
-        assert result == "admin"
+class TestExtractGroupsMapping:
+    def test_renames_and_drops_unmapped_when_map_present(self, client):
+        # Non-empty map is an allow-list: mapped groups are renamed, others dropped.
+        with patch("app.integrations.oidc_client.settings") as s:
+            s.sso_groups_claim = "groups"
+            s.sso_group_map = {"kc-dagger": "Dagger"}
+            result = client.extract_groups({"groups": ["/kc-dagger", "Other"]})
+            assert result == ["Dagger"]
 
-    def test_member_role(self, client):
-        claims = {"realm_access": {"roles": ["member"]}}
-        result = client.extract_role(claims)
-        assert result == "member"
+    def test_map_key_matches_with_leading_slash(self, client):
+        with patch("app.integrations.oidc_client.settings") as s:
+            s.sso_groups_claim = "groups"
+            s.sso_group_map = {"/vault-grp": "Vault"}
+            result = client.extract_groups({"groups": ["/vault-grp"]})
+            assert result == ["Vault"]
 
-    def test_viewer_role(self, client):
-        claims = {"realm_access": {"roles": ["viewer"]}}
-        result = client.extract_role(claims)
-        assert result == "viewer"
-
-    def test_unknown_role_defaults_to_member(self, client):
-        claims = {"realm_access": {"roles": ["custom_role"]}}
-        result = client.extract_role(claims)
-        assert result == "member"
-
-    def test_missing_realm_access_defaults_to_member(self, client):
-        result = client.extract_role({})
-        assert result == "member"
-
-    def test_empty_roles_list_defaults_to_member(self, client):
-        claims = {"realm_access": {"roles": []}}
-        result = client.extract_role(claims)
-        assert result == "member"
-
-    def test_string_role_value(self, client):
-        # If the claim path resolves to a string instead of list
-        with patch("app.integrations.oidc_client.settings") as mock_settings:
-            mock_settings.sso_role_claim = "role"
-            mock_settings.sso_admin_role = "admin"
-            result = client.extract_role({"role": "admin"})
-            assert result == "admin"
-
-    def test_string_invalid_role_defaults(self, client):
-        with patch("app.integrations.oidc_client.settings") as mock_settings:
-            mock_settings.sso_role_claim = "role"
-            mock_settings.sso_admin_role = "admin"
-            result = client.extract_role({"role": "superuser"})
-            assert result == "member"
-
-    def test_nested_path_traversal(self, client):
-        claims = {"realm_access": {"roles": ["viewer", "member"]}}
-        result = client.extract_role(claims)
-        # viewer is a valid role
-        assert result == "viewer"
-
-    def test_admin_prioritized_over_others(self, client):
-        claims = {"realm_access": {"roles": ["viewer", "admin", "member"]}}
-        result = client.extract_role(claims)
-        assert result == "admin"
+    def test_empty_map_passes_through_stripped(self, client):
+        with patch("app.integrations.oidc_client.settings") as s:
+            s.sso_groups_claim = "groups"
+            s.sso_group_map = {}
+            result = client.extract_groups({"groups": ["/Prism"]})
+            assert result == ["Prism"]

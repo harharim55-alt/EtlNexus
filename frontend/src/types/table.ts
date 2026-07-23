@@ -6,16 +6,32 @@ export interface TableColumn {
   ordinal_position: number;
 }
 
+/** A reference to a catalog table (no schema). */
+export interface TableRef {
+  namespace: string;
+  table_name: string;
+}
+
+export interface TableListItem {
+  namespace: string;
+  table_name: string;
+}
+
+export interface TableListResponse {
+  items: TableListItem[];
+  total: number;
+}
+
+export interface NamespaceListResponse {
+  items: string[];
+}
+
+/** A table's live schema (columns) + consume snippet, fetched on demand. */
 export interface TableSchema {
   namespace: string;
   table_name: string;
   columns: TableColumn[];
   consume_snippet: string;
-}
-
-export interface TableListResponse {
-  items: TableSchema[];
-  total: number;
 }
 
 /** Adapt catalog columns to the PipelineField shape SchemaViewer expects. */

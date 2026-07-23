@@ -27,8 +27,24 @@ _JWKS_TTL: float = settings.jwks_cache_ttl_seconds
 # Minimum interval between on-demand JWKS refreshes triggered by unknown kid
 _ON_DEMAND_REFRESH_COOLDOWN: float = 30.0
 
-# Roles accepted by the application — anything else is treated as "member".
-VALID_ROLES: set[str] = {"admin", "member", "viewer"}
+
+def _resolve_verify() -> bool | str:
+    """Resolve the httpx ``verify`` value from the OIDC TLS settings.
+
+    ``OIDC_VERIFY_SSL=false`` disables verification entirely and **ignores**
+    ``OIDC_CA_BUNDLE`` (so a stale/missing bundle path can never raise
+    ``FileNotFoundError`` when the user only meant to skip verification).
+    When verification is on, a non-empty ``OIDC_CA_BUNDLE`` is used as the
+    trust store (private/internal CA); otherwise the system/certifi CAs.
+
+    Returns:
+        ``False`` to skip verification, a CA bundle path string, or ``True``.
+    """
+    if not settings.oidc_verify_ssl:
+        return False
+    if settings.oidc_ca_bundle:
+        return settings.oidc_ca_bundle
+    return True
 
 
 class OIDCClient:
@@ -62,6 +78,7 @@ class OIDCClient:
             return
 
         self._client = httpx.AsyncClient(
+            verify=_resolve_verify(),
             timeout=httpx.Timeout(settings.oidc_http_timeout_seconds),
             limits=httpx.Limits(
                 max_connections=5,
@@ -156,16 +173,15 @@ class OIDCClient:
     async def validate_token(self, token: str) -> dict:
         """Decode and validate a JWT, returning its claims.
 
-        Verification steps:
-        - Signature verified against cached JWKS (RS256).
-        - ``exp``, ``iss``, and ``aud`` claims are checked by the JWT library.
-        - If the ``kid`` is not found in the cache a single JWKS refresh is
-          attempted before raising.
-
-        The issuer is accepted as either the internal Docker URL
-        (``sso_issuer_url``) or the public-facing URL
-        (``sso_public_issuer_url``) to handle tokens minted by Keycloak with
-        the public hostname while the backend resolves via internal DNS.
+        Verification (matching the reference Keycloak + FastAPI pattern):
+        - Signature verified against the cached JWKS (RS256).
+        - ``exp`` is checked. **Audience and issuer are not enforced** — many
+          IdPs mint an ``aud`` of ``account`` and carry the client id only in
+          ``azp``, and the issuer host can differ from what the backend reaches,
+          so enforcing them causes false 401s. Trust comes from the JWKS
+          signature.
+        - If the ``kid`` is not found in the cache, a single rate-limited JWKS
+          refresh is attempted before raising (handles key rotation).
 
         Args:
             token: Raw JWT string from the ``Authorization: Bearer`` header.
@@ -206,43 +222,14 @@ class OIDCClient:
             if signing_key is None:
                 raise JWTError(f"Unknown signing key kid='{kid}'")
 
-        # Accept both internal and public issuer URLs
-        valid_issuers = [settings.sso_issuer_url.rstrip("/")]
-        if settings.sso_public_issuer_url:
-            valid_issuers.append(settings.sso_public_issuer_url.rstrip("/"))
-
-        # Keycloak access tokens carry the client ID in "azp" rather than
-        # "aud" (which only appears in id_tokens).  Decode without strict aud
-        # verification, then validate azp/aud manually.
-        last_exc: Exception = JWTError("Token validation failed")
-        for issuer in valid_issuers:
-            try:
-                claims = pyjwt.decode(
-                    token,
-                    signing_key,
-                    algorithms=["RS256"],
-                    issuer=issuer,
-                    options={"verify_aud": False},
-                )
-                # Validate audience: accept either aud or azp matching the config
-                expected = settings.sso_audience
-                if expected:
-                    aud = claims.get("aud")
-                    azp = claims.get("azp", "")
-                    aud_ok = (
-                        aud == expected
-                        or (isinstance(aud, list) and expected in aud)
-                        or azp == expected
-                    )
-                    if not aud_ok:
-                        raise JWTError(
-                            f"Token audience/azp does not match '{expected}'"
-                        )
-                return claims
-            except JWTError as exc:
-                last_exc = exc
-
-        raise last_exc
+        # Verify signature + expiry only. Audience/issuer are intentionally not
+        # enforced (see docstring) to interoperate with varied Keycloak configs.
+        return pyjwt.decode(
+            token,
+            signing_key,
+            algorithms=["RS256"],
+            options={"verify_aud": False},
+        )
 
     def _get_signing_key(self, kid: str) -> pyjwt.PyJWK | None:
         """Find a JWK by its ``kid`` in the cached JWKS and return a PyJWK key.
@@ -263,62 +250,43 @@ class OIDCClient:
     # ------------------------------------------------------------------
 
     def extract_groups(self, claims: dict) -> list[str]:
-        """Extract group names from JWT claims.
+        """Extract group names from JWT claims, applying the SSO→team rename map.
 
         Reads the claim path defined by ``settings.sso_groups_claim``
         (e.g. ``"groups"``).  Handles both flat string lists and
         Keycloak-style path strings that start with ``"/"``
         (``"/Dagger"`` → ``"Dagger"``).
 
+        Group handling depends on ``settings.sso_group_map``:
+        - **Non-empty** → the map is an **allow-list + rename**: only groups whose
+          raw value or ``"/"``-stripped form is a key are kept (renamed to the
+          value); every other group is dropped and never becomes a team.
+        - **Empty** → all groups pass through as their ``"/"``-stripped name.
+
         Args:
             claims: Decoded JWT claims dict.
 
         Returns:
-            List of normalised group name strings.
+            List of normalised (and renamed) team name strings.
         """
         raw: list[str] = claims.get(settings.sso_groups_claim, [])
         if not isinstance(raw, list):
             raw = [raw] if raw else []
-        return [g.lstrip("/") for g in raw if isinstance(g, str)]
 
-    def extract_role(self, claims: dict) -> str:
-        """Extract the user's primary role from JWT claims.
-
-        Supports both flat claim keys (``"role"``) and nested dot-separated
-        paths (``"realm_access.roles"``).  When the resolved value is a list
-        the first element whose value matches ``settings.sso_admin_role`` is
-        returned first; otherwise the first element is used.  Defaults to
-        ``"member"`` when the claim is absent or empty.
-
-        Args:
-            claims: Decoded JWT claims dict.
-
-        Returns:
-            Role string, e.g. ``"admin"`` or ``"member"``.
-        """
-        path_parts = settings.sso_role_claim.split(".")
-        value: object = claims
-        try:
-            for part in path_parts:
-                if not isinstance(value, dict):
-                    return "member"
-                value = value[part]
-        except (KeyError, TypeError):
-            return "member"
-
-        if isinstance(value, list):
-            roles: list[str] = [r for r in value if isinstance(r, str)]
-            if settings.sso_admin_role in roles and settings.sso_admin_role in VALID_ROLES:
-                return settings.sso_admin_role
-            for r in roles:
-                if r in VALID_ROLES:
-                    return r
-            return "member"
-
-        if isinstance(value, str):
-            return value if value in VALID_ROLES else "member"
-
-        return "member"
+        group_map = settings.sso_group_map or {}
+        result: list[str] = []
+        for g in raw:
+            if not isinstance(g, str):
+                continue
+            stripped = g.lstrip("/")
+            if group_map:
+                mapped = group_map.get(g) or group_map.get(stripped)
+                if mapped is None:
+                    continue  # not in the map → not a recognised team, drop it
+                result.append(mapped)
+            else:
+                result.append(stripped)
+        return result
 
 
 # Module-level singleton — import this in auth.py and lifespan hooks.

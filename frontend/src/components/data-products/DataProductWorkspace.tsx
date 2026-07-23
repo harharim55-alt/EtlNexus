@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { Layers, Pencil, Table2, X } from "lucide-react";
+import { Layers, Loader2, Pencil, Table2, X } from "lucide-react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import apiClient from "@/api/client";
 import { usePipelineDetail } from "@/hooks/use-pipeline-detail";
 import { useUpdatePipeline } from "@/hooks/use-update-pipeline";
+import { useTableSchema } from "@/hooks/use-table-schema";
 import { useDataProductStore } from "@/stores/data-product-store";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ErrorState } from "@/components/shared/ErrorState";
@@ -12,12 +13,13 @@ import { BentoHeader } from "@/components/bento-workspace/BentoHeader";
 import { DocumentationPreview } from "@/components/bento-workspace/DocumentationPreview";
 import { ConsumeSnippet } from "@/components/bento-workspace/ConsumeSnippet";
 import { SchemaViewer } from "@/components/bento-workspace/SchemaViewer";
-import { columnsToFields, type TableSchema } from "@/types/table";
+import { columnsToFields } from "@/types/table";
+import type { TableRef } from "@/types/table";
 import type { PipelineDetail } from "@/types/pipeline";
 import { stripDummy } from "@/lib/format";
-import { TableSelect, type TableRef } from "./TableSelect";
+import { TableSelect } from "./TableSelect";
 
-const tableKey = (t: TableSchema | TableRef) => `${t.namespace}.${t.table_name}`;
+const tableKey = (t: TableRef) => `${t.namespace}.${t.table_name}`;
 
 export function DataProductWorkspace() {
   const selectedProductId = useDataProductStore((s) => s.selectedProductId);
@@ -89,7 +91,7 @@ export function DataProductWorkspace() {
 
         {/* Product-level consume snippet (read_by_tag, read-only) */}
         <div className="col-span-12">
-          <ConsumeSnippet snippet={pipeline.import_snippet || pipeline.default_import_snippet} />
+          <ConsumeSnippet snippet={pipeline.default_import_snippet} />
         </div>
       </div>
 
@@ -134,22 +136,48 @@ export function DataProductWorkspace() {
             </div>
 
             {activeTable && (
-              <div className="grid grid-cols-12 gap-6">
-                <div className="col-span-12 lg:col-span-7">
-                  <SchemaViewer fields={columnsToFields(activeTable)} canEdit={false} />
-                </div>
-                <div className="col-span-12 lg:col-span-5">
-                  <ConsumeSnippet snippet={activeTable.consume_snippet} />
-                </div>
-              </div>
+              <TableSchemaPanel namespace={activeTable.namespace} table={activeTable.table_name} />
             )}
           </>
         )}
       </div>
 
-      {editOpen && (
-        <EditProductModal pipeline={pipeline} onClose={() => setEditOpen(false)} />
-      )}
+      {editOpen && <EditProductModal pipeline={pipeline} onClose={() => setEditOpen(false)} />}
+    </div>
+  );
+}
+
+/* ── A single table's schema + consume snippet (loaded live on demand) ── */
+
+function TableSchemaPanel({ namespace, table }: { namespace: string; table: string }) {
+  const { data, isLoading, isError, refetch } = useTableSchema(namespace, table);
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center py-12 text-text-muted">
+        <Loader2 className="size-5 animate-spin" />
+      </div>
+    );
+  }
+  if (isError || !data) {
+    return (
+      <div className="flex flex-col items-center justify-center py-12 gap-2">
+        <p className="text-sm text-text-muted">Schema unavailable for {namespace}.{table}</p>
+        <button onClick={() => refetch()} className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer">
+          Retry
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-12 gap-6">
+      <div className="col-span-12 lg:col-span-7">
+        <SchemaViewer fields={columnsToFields(data)} canEdit={false} />
+      </div>
+      <div className="col-span-12 lg:col-span-5">
+        <ConsumeSnippet snippet={data.consume_snippet} />
+      </div>
     </div>
   );
 }
@@ -162,8 +190,8 @@ function EditProductModal({ pipeline, onClose }: { pipeline: PipelineDetail; onC
   const [name, setName] = useState(pipeline.name);
   const [scheduleType, setScheduleType] = useState(pipeline.schedule_type ?? "");
   const [documentation, setDocumentation] = useState(pipeline.documentation ?? "");
-  const [tables, setTables] = useState<TableRef[]>(
-    pipeline.tables.map((t) => ({ namespace: t.namespace, table_name: t.table_name })),
+  const [tables, setTables] = useState<string[]>(
+    pipeline.tables.map((t) => `${t.namespace}.${t.table_name}`),
   );
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -174,7 +202,7 @@ function EditProductModal({ pipeline, onClose }: { pipeline: PipelineDetail; onC
 
   const save = useMutation({
     mutationFn: async () => {
-      await apiClient.patch(`/pipelines/${pipeline.id}`, {
+      await apiClient.patch(`/data-products/${pipeline.id}`, {
         name: name.trim(),
         schedule_type: scheduleType || null,
         documentation: documentation || null,
@@ -196,7 +224,6 @@ function EditProductModal({ pipeline, onClose }: { pipeline: PipelineDetail; onC
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["data-products"] });
-      queryClient.invalidateQueries({ queryKey: ["pipelines"] });
       toast.success("Data product deleted");
       setSelectedProductId(null);
       onClose();

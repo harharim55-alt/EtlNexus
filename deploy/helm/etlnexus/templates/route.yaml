@@ -1,0 +1,19 @@
+{{- if .Values.frontend.route.enabled }}
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: {{ include "etlnexus.fullname" . }}
+  labels: {{- include "etlnexus.labels" . | nindent 4 }}
+spec:
+  {{- if .Values.frontend.route.host }}
+  host: {{ .Values.frontend.route.host }}
+  {{- end }}
+  to:
+    kind: Service
+    name: {{ include "etlnexus.fullname" . }}-frontend
+  port:
+    targetPort: http
+  tls:
+    termination: {{ .Values.frontend.route.tls }}
+    insecureEdgeTerminationPolicy: Redirect
+{{- end }}

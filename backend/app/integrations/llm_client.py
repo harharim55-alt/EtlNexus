@@ -1,8 +1,7 @@
 """LLM client — talks to an OpenAI-compatible endpoint via the openai SDK.
 
-Uses streaming (the target endpoint expects ``stream=True``) and accumulates both
-text content and tool-call deltas so the AI Architect's agentic MCP loop gets a
-full assistant message back. TLS verification is configurable (LLM_VERIFY_SSL,
+Uses streaming (the target endpoint expects ``stream=True``) and returns the
+assembled assistant text. TLS verification is configurable (LLM_VERIFY_SSL,
 default off) for internal endpoints with self-signed certs.
 """
 
@@ -31,7 +30,11 @@ class LLMClient:
     def _get_client(self) -> openai.AsyncOpenAI:
         if self._client is None:
             # LLM_TIMEOUT_SECONDS <= 0 means no timeout (wait indefinitely).
-            timeout = httpx.Timeout(None) if settings.llm_timeout_seconds <= 0 else httpx.Timeout(settings.llm_timeout_seconds)
+            timeout = (
+                httpx.Timeout(None)
+                if settings.llm_timeout_seconds <= 0
+                else httpx.Timeout(settings.llm_timeout_seconds)
+            )
             http_client = httpx.AsyncClient(
                 verify=settings.llm_verify_ssl,
                 timeout=timeout,
@@ -45,21 +48,14 @@ class LLMClient:
             )
         return self._client
 
-    async def chat_raw(
+    async def chat(
         self,
         messages: list[dict],
         system_prompt: str | None = None,
-        tools: list[dict] | None = None,
-    ) -> dict:
-        """Stream a chat completion; return the assembled assistant message.
-
-        The returned dict preserves ``content`` and any ``tool_calls`` so callers
-        can drive an agentic tool-calling loop. On any error a synthetic assistant
-        message (``content`` = error text, no ``tool_calls``) is returned so callers
-        can treat it as a terminal answer.
-        """
+    ) -> str:
+        """Stream a chat completion and return the assembled assistant text."""
         if not self.is_configured:
-            return {"role": "assistant", "content": "LLM endpoint is not configured. Set LLM_API_BASE_URL in your environment."}
+            return "LLM endpoint is not configured. Set LLM_API_BASE_URL in your environment."
 
         full_messages = [{"role": "system", "content": system_prompt}, *messages] if system_prompt else messages
         kwargs: dict = {
@@ -70,56 +66,24 @@ class LLMClient:
         # LLM_MAX_TOKENS <= 0 means unlimited — omit the cap so the model uses its max.
         if self.max_tokens and self.max_tokens > 0:
             kwargs["max_tokens"] = self.max_tokens
-        if tools:
-            kwargs["tools"] = tools
-            kwargs["tool_choice"] = "auto"
 
         try:
             stream = await self._get_client().chat.completions.create(**kwargs)
             content = ""
-            # Accumulate tool-call fragments by their stream index.
-            tool_acc: dict[int, dict] = {}
             async for chunk in stream:
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta
                 if getattr(delta, "content", None):
                     content += delta.content
-                for tcd in getattr(delta, "tool_calls", None) or []:
-                    slot = tool_acc.setdefault(tcd.index, {"id": None, "name": "", "arguments": ""})
-                    if tcd.id:
-                        slot["id"] = tcd.id
-                    if tcd.function and tcd.function.name:
-                        slot["name"] = tcd.function.name
-                    if tcd.function and tcd.function.arguments:
-                        slot["arguments"] += tcd.function.arguments
         except openai.OpenAIError as e:
             logger.error("LLM API error: %s", e)
-            return {"role": "assistant", "content": "LLM request failed. Please check the endpoint configuration."}
+            return "LLM request failed. Please check the endpoint configuration."
         except Exception:
             logger.exception("Unexpected LLM error")
-            return {"role": "assistant", "content": "Unexpected error talking to the LLM endpoint."}
+            return "Unexpected error talking to the LLM endpoint."
 
-        message: dict = {"role": "assistant", "content": content or None}
-        if tool_acc:
-            message["tool_calls"] = [
-                {
-                    "id": slot["id"],
-                    "type": "function",
-                    "function": {"name": slot["name"], "arguments": slot["arguments"]},
-                }
-                for _, slot in sorted(tool_acc.items())
-            ]
-        return message
-
-    async def chat(
-        self,
-        messages: list[dict[str, str]],
-        system_prompt: str | None = None,
-    ) -> str:
-        """Send a chat completion request. Returns the assistant message content."""
-        message = await self.chat_raw(messages, system_prompt=system_prompt)
-        return message.get("content") or ""
+        return content
 
     async def close(self):
         """Close the persistent client."""

@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, Search, Table2 } from "lucide-react";
 import { useTables } from "@/hooks/use-tables";
-import { columnsToFields, type TableSchema } from "@/types/table";
+import { useTableSchema } from "@/hooks/use-table-schema";
+import { columnsToFields, type TableListItem } from "@/types/table";
 import { SchemaViewer } from "@/components/bento-workspace/SchemaViewer";
 import { ConsumeSnippet } from "@/components/bento-workspace/ConsumeSnippet";
 
-function tableKey(t: TableSchema): string {
+function tableKey(t: TableListItem): string {
   return `${t.namespace}.${t.table_name}`;
 }
 
@@ -41,7 +42,7 @@ export function TablesView() {
   }, [tables, teamFilters, search]);
 
   const grouped = useMemo(() => {
-    const map = new Map<string, TableSchema[]>();
+    const map = new Map<string, TableListItem[]>();
     for (const t of filtered) {
       if (!map.has(t.namespace)) map.set(t.namespace, []);
       map.get(t.namespace)!.push(t);
@@ -62,6 +63,7 @@ export function TablesView() {
   }, [filtered, selectedKey]);
 
   const selected = filtered.find((t) => tableKey(t) === selectedKey) ?? null;
+  const schema = useTableSchema(selected?.namespace ?? null, selected?.table_name ?? null);
 
   return (
     <>
@@ -149,9 +151,6 @@ export function TablesView() {
                       <span className={`font-mono text-sm truncate ${active ? "text-indigo-400" : "text-text-primary"}`}>
                         {t.table_name}
                       </span>
-                      <span className="ml-auto text-[10px] text-text-faint font-mono shrink-0">
-                        {t.columns.length} cols
-                      </span>
                     </div>
                   </div>
                 );
@@ -179,14 +178,30 @@ export function TablesView() {
                 </span>
               </div>
             </div>
-            <div className="grid grid-cols-12 gap-6">
-              <div className="col-span-12 lg:col-span-7">
-                <SchemaViewer fields={columnsToFields(selected)} canEdit={false} />
+            {schema.isLoading ? (
+              <div className="flex items-center justify-center py-12 text-text-muted">
+                <Loader2 className="size-5 animate-spin" />
               </div>
-              <div className="col-span-12 lg:col-span-5">
-                <ConsumeSnippet snippet={selected.consume_snippet} />
+            ) : schema.isError || !schema.data ? (
+              <div className="flex flex-col items-center justify-center py-12 gap-2">
+                <p className="text-sm text-text-muted">Schema unavailable for this table</p>
+                <button
+                  onClick={() => schema.refetch()}
+                  className="text-xs text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                >
+                  Retry
+                </button>
               </div>
-            </div>
+            ) : (
+              <div className="grid grid-cols-12 gap-6">
+                <div className="col-span-12 lg:col-span-7">
+                  <SchemaViewer fields={columnsToFields(schema.data)} canEdit={false} />
+                </div>
+                <div className="col-span-12 lg:col-span-5">
+                  <ConsumeSnippet snippet={schema.data.consume_snippet} />
+                </div>
+              </div>
+            )}
           </>
         )}
       </div>

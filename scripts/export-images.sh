@@ -1,53 +1,29 @@
 #!/usr/bin/env bash
-# Export all Docker images needed for closed-network deployment.
-# Usage:
-#   ./scripts/export-images.sh prod [output-dir]   # db + backend + frontend only
-#   ./scripts/export-images.sh dev  [output-dir]   # full stack (Keycloak, Spark Connect, etc.)
+# Export the two images (backend + frontend) for offline deployment.
+#
+# The stack connects to EXISTING external services (PostgreSQL, LLM endpoint, Spark
+# Connect, Keycloak/OIDC) configured entirely via .env — only these two images ship.
 set -euo pipefail
 
-MODE=${1:-prod}
-OUT_DIR=${2:-./etlnexus-images}
+OUT_DIR=${1:-./etlnexus-images}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 cd "$PROJECT_DIR"
-
 mkdir -p "$OUT_DIR"
 
 echo "=== Building images ==="
 docker compose build
 
-# Generate offline compose file (strip build/develop sections)
-if [ "$MODE" = "prod" ]; then
-  echo "=== Exporting PROD images ==="
-  IMAGES=(
-    "postgres:16-alpine"
-    "etlnexus-backend"
-    "etlnexus-frontend"
-  )
-  python3 "$SCRIPT_DIR/strip_compose_build.py" docker-compose.prod.yml "$OUT_DIR/docker-compose.yml"
-else
-  echo "=== Exporting DEV images (full stack) ==="
-  IMAGES=(
-    "postgres:16-alpine"
-    "etlnexus-backend"
-    "etlnexus-frontend"
-    "etlnexus-spark-connect"
-    "quay.io/keycloak/keycloak:26.2"
-    "alpine:latest"
-  )
-  # Strip build/develop AND the dev seed jobs — the exported stack ships no
-  # sample data; it starts with an empty Iceberg warehouse.
-  python3 "$SCRIPT_DIR/strip_compose_build.py" --strip build,develop,seed-schema,seed-data \
-    docker-compose.yml "$OUT_DIR/docker-compose.yml"
+IMAGES=(
+  "etlnexus-backend"
+  "etlnexus-frontend"
+)
 
-  # Bundle runtime files needed by volume mounts (Keycloak realm only — no seeds)
-  echo "=== Bundling dev runtime files ==="
-  mkdir -p "$OUT_DIR/dev"
-  cp -r dev/keycloak "$OUT_DIR/dev/keycloak"
-fi
+echo "=== Generating offline compose (strip build/develop) ==="
+python3 "$SCRIPT_DIR/strip_compose_build.py" --strip build,develop \
+  docker-compose.yml "$OUT_DIR/docker-compose.yml"
 
-# Save all images in a single tarball (deduplicates shared layers)
 echo "  Saving ${#IMAGES[@]} images -> images.tar"
 docker save "${IMAGES[@]}" -o "$OUT_DIR/images.tar"
 echo "  Size: $(du -h "$OUT_DIR/images.tar" | cut -f1)"
@@ -56,12 +32,10 @@ cp .env.example "$OUT_DIR/.env.example"
 cp "$SCRIPT_DIR/import-images.sh" "$OUT_DIR/import-images.sh"
 
 echo ""
-echo "=== Export complete ==="
-echo "Output directory: $OUT_DIR"
-echo "Files:"
+echo "=== Export complete -> $OUT_DIR ==="
 ls -lh "$OUT_DIR"
 echo ""
-echo "Transfer the '$OUT_DIR' directory to the closed network and run:"
-echo "  ./import-images.sh"
-echo "  cp .env.example .env && vi .env  # configure for your environment"
+echo "On the target:"
+echo "  ./import-images.sh                   # docker load images.tar"
+echo "  cp .env.example .env  &&  edit .env  # point at your external DB/LLM/Spark/Keycloak"
 echo "  docker compose up -d"

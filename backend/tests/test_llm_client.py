@@ -22,13 +22,9 @@ class _FakeStream:
         return c
 
 
-def _chunk(content=None, tool_calls=None):
-    delta = SimpleNamespace(content=content, tool_calls=tool_calls)
+def _chunk(content=None):
+    delta = SimpleNamespace(content=content)
     return SimpleNamespace(choices=[SimpleNamespace(delta=delta)])
-
-
-def _tcd(index, id=None, name=None, args=None):
-    return SimpleNamespace(index=index, id=id, function=SimpleNamespace(name=name, arguments=args))
 
 
 def _fake_client(chunks):
@@ -43,23 +39,8 @@ async def test_streams_text_content(monkeypatch):
     monkeypatch.setattr(llm_client, "base_url", "http://llm.local")
     chunks = [_chunk(content="Hel"), _chunk(content="lo"), _chunk(content=" world")]
     with patch.object(llm_client, "_get_client", return_value=_fake_client(chunks)):
-        msg = await llm_client.chat_raw([{"role": "user", "content": "hi"}])
-    assert msg["content"] == "Hello world"
-    assert "tool_calls" not in msg
-
-
-async def test_accumulates_tool_call_deltas(monkeypatch):
-    monkeypatch.setattr(llm_client, "base_url", "http://llm.local")
-    chunks = [
-        _chunk(tool_calls=[_tcd(0, id="t1", name="execute_sql", args='{"sql":')]),
-        _chunk(tool_calls=[_tcd(0, args='"select 1"}')]),
-    ]
-    with patch.object(llm_client, "_get_client", return_value=_fake_client(chunks)):
-        msg = await llm_client.chat_raw([{"role": "user", "content": "q"}], tools=[{"type": "function"}])
-    assert msg["content"] is None
-    assert msg["tool_calls"] == [
-        {"id": "t1", "type": "function", "function": {"name": "execute_sql", "arguments": '{"sql":"select 1"}'}}
-    ]
+        out = await llm_client.chat([{"role": "user", "content": "hi"}])
+    assert out == "Hello world"
 
 
 async def test_not_configured_returns_message(monkeypatch):

@@ -3,58 +3,47 @@ from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.auth import get_current_user
+from app.auth import AuthUser, get_current_user
 from app.database import get_db_session
-from app.models.user import User
-from app.repositories.catalog_mirror_repo import CatalogMirrorRepository
-from app.repositories.pipeline_repo import PipelineRepository
+from app.repositories.data_product_repo import DataProductRepository
+from app.repositories.iceberg_metrics_repo import IcebergMetricsRepository
 from app.repositories.revision_repo import RevisionRepository
-from app.repositories.team_repo import TeamRepository
-from app.repositories.user_repo import UserRepository
 from app.services.ai_service import AIService
-from app.services.pipeline_service import PipelineService
+from app.services.data_product_service import DataProductService
 from app.services.table_service import TableService
 
 
 # Repositories
-def get_pipeline_repo(session: AsyncSession = Depends(get_db_session)) -> PipelineRepository:
-    return PipelineRepository(session)
+def get_data_product_repo(session: AsyncSession = Depends(get_db_session)) -> DataProductRepository:
+    return DataProductRepository(session)
 
 
 def get_revision_repo(session: AsyncSession = Depends(get_db_session)) -> RevisionRepository:
     return RevisionRepository(session)
 
 
-def get_user_repo(session: AsyncSession = Depends(get_db_session)) -> UserRepository:
-    return UserRepository(session)
-
-
-def get_team_repo(session: AsyncSession = Depends(get_db_session)) -> TeamRepository:
-    return TeamRepository(session)
-
-
-def get_mirror_repo(session: AsyncSession = Depends(get_db_session)) -> CatalogMirrorRepository:
-    return CatalogMirrorRepository(session)
+def get_iceberg_metrics_repo(session: AsyncSession = Depends(get_db_session)) -> IcebergMetricsRepository:
+    return IcebergMetricsRepository(session)
 
 
 # Services
-def get_pipeline_service(
-    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
+def get_data_product_service(
+    repo: DataProductRepository = Depends(get_data_product_repo),
     revision_repo: RevisionRepository = Depends(get_revision_repo),
-) -> PipelineService:
-    return PipelineService(pipeline_repo, revision_repo=revision_repo)
+) -> DataProductService:
+    return DataProductService(repo, revision_repo=revision_repo)
 
 
 def get_ai_service(
-    pipeline_repo: PipelineRepository = Depends(get_pipeline_repo),
+    repo: DataProductRepository = Depends(get_data_product_repo),
 ) -> AIService:
-    return AIService(pipeline_repo)
+    return AIService(repo)
 
 
 def get_table_service(
-    mirror_repo: CatalogMirrorRepository = Depends(get_mirror_repo),
+    metrics_repo: IcebergMetricsRepository = Depends(get_iceberg_metrics_repo),
 ) -> TableService:
-    return TableService(mirror_repo)
+    return TableService(metrics_repo)
 
 
 # ---------------------------------------------------------------------------
@@ -62,4 +51,4 @@ def get_table_service(
 # ---------------------------------------------------------------------------
 
 DbSession = Annotated[AsyncSession, Depends(get_db_session)]
-CurrentUser = Annotated[User, Depends(get_current_user)]
+CurrentUser = Annotated[AuthUser, Depends(get_current_user)]

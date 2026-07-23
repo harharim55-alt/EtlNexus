@@ -22,7 +22,7 @@ export function useRestoreRevision(pipelineId: string) {
       toast.success("Revision restored");
       queryClient.invalidateQueries({ queryKey: ["pipeline", pipelineId] });
       queryClient.invalidateQueries({ queryKey: ["revisions", pipelineId] });
-      queryClient.invalidateQueries({ queryKey: ["pipelines"] });
+      queryClient.invalidateQueries({ queryKey: ["data-products"] });
     },
     onError: () => {
       toast.error("Failed to restore revision");

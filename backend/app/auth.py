@@ -1,37 +1,87 @@
 """FastAPI authentication and authorisation dependencies.
 
-Provides three flavours of dependency injection:
+Identity comes entirely from Keycloak/SSO — nothing about users or teams is
+persisted in the database. ``get_current_user`` builds a transient ``AuthUser``
+from the JWT claims (username, role, team names). When SSO is disabled (local
+dev only) a default admin is returned.
 
-- ``get_current_user`` — requires a valid JWT (or returns a default admin
+Dependencies provided:
+- ``get_current_user`` — requires a valid JWT (or returns the default admin
   when SSO is disabled).
-- ``get_current_user_optional`` — same as above but returns ``None`` instead
-  of raising when credentials are absent.
-- ``require_role(*roles)`` — dependency factory that gates a route behind one
-  or more global roles.
-- ``require_team_membership(pipeline_id_param)`` — dependency factory that
-  ensures the caller belongs to the team that owns the pipeline being accessed.
+- ``get_current_user_optional`` — returns ``None`` instead of raising.
+- ``require_role(*roles)`` — gates a route behind one or more global roles.
+- ``require_team_membership(product_id_param)`` — ensures the caller belongs to
+  the team that owns the data product being edited.
+- ``require_product_visibility(product_id_param)`` — ensures the product exists.
 """
 
 import logging
 import uuid
+from dataclasses import dataclass, field
 
 from fastapi import Depends, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.config import is_master_admin, settings
+from app.config import is_master_admin, settings, team_is_allowed
 from app.database import get_db_session
 from app.enums import UserRole
 from app.integrations.oidc_client import oidc_client
-from app.models.user import User
-from app.repositories.pipeline_repo import PipelineRepository
-from app.services.user_auth_service import UserAuthService
+from app.repositories.data_product_repo import DataProductRepository
 
 logger = logging.getLogger(__name__)
 
 # HTTPBearer with auto_error=False so we can return 401 ourselves and also
 # support the optional variant without FastAPI raising first.
 security = HTTPBearer(auto_error=False)
+
+
+@dataclass
+class AuthUser:
+    """A request's authenticated principal, derived from the JWT (not persisted)."""
+
+    username: str
+    email: str = ""
+    role: str = "member"
+    teams: list[str] = field(default_factory=list)
+    # Human name (first + last) from the token, for display. Falls back to username.
+    full_name: str = ""
+
+    @property
+    def display_name(self) -> str:
+        # Prefer the human name for display; fall back to the username identifier.
+        return self.full_name or self.username
+
+    @property
+    def is_master(self) -> bool:
+        return is_master_admin(self.username)
+
+
+# Stable principal used when SSO is disabled (development only).
+_DEFAULT_ADMIN = AuthUser(username="admin", email="admin@local", role="admin", teams=[], full_name="Admin")
+
+
+def _user_from_claims(claims: dict) -> AuthUser:
+    """Build a transient AuthUser from decoded JWT claims."""
+    username = claims.get("preferred_username") or claims.get("name") or claims.get("email") or claims.get("sub") or ""
+    email = claims.get("email", "")
+    # SSO roles are ignored — elevated (admin) status comes ONLY from
+    # MASTER_ADMIN_USERNAMES. Everyone else is a regular member.
+    role = "admin" if is_master_admin(username) else "member"
+    # Human name: prefer the "name" claim, else "given_name family_name", else username.
+    given = claims.get("given_name") or ""
+    family = claims.get("family_name") or ""
+    full_name = claims.get("name") or f"{given} {family}".strip() or username
+    # Only Keycloak groups permitted by SYSTEM_TEAMS count as teams (["*"] = all).
+    # Dedupe case-insensitively (preserving order) so several SSO groups mapped to the
+    # same alias collapse into a single team.
+    seen: set[str] = set()
+    teams: list[str] = []
+    for g in oidc_client.extract_groups(claims):
+        if team_is_allowed(g) and g.lower() not in seen:
+            seen.add(g.lower())
+            teams.append(g)
+    return AuthUser(username=username, email=email, role=role, teams=teams, full_name=full_name)
 
 
 # ---------------------------------------------------------------------------
@@ -42,13 +92,10 @@ security = HTTPBearer(auto_error=False)
 async def get_current_user(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
-    session: AsyncSession = Depends(get_db_session),
-) -> User:
-    """Validate a Bearer JWT and return (or JIT-create) the matching User."""
-    auth_service = UserAuthService(session)
-
+) -> AuthUser:
+    """Validate a Bearer JWT and return the matching transient AuthUser."""
     if not settings.sso_enabled:
-        return await auth_service.get_or_create_default_user()
+        return _DEFAULT_ADMIN
 
     if not credentials:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -59,40 +106,20 @@ async def get_current_user(
         logger.warning("JWT validation failed: %s", exc)
         raise HTTPException(status_code=401, detail="Invalid token") from exc
 
-    user = await auth_service.upsert_from_claims(claims)
-    if not user.is_active:
-        raise HTTPException(status_code=403, detail="Account deactivated")
-    return user
+    return _user_from_claims(claims)
 
 
 async def get_current_user_optional(
     request: Request,
     credentials: HTTPAuthorizationCredentials | None = Depends(security),
-    session: AsyncSession = Depends(get_db_session),
-) -> User | None:
-    """Same as ``get_current_user`` but returns ``None`` instead of raising.
-
-    Useful for routes that offer richer responses to authenticated callers
-    but must remain accessible to anonymous users.
-
-    Args:
-        request: FastAPI Request.
-        credentials: Optional Bearer token.
-        session: Async DB session.
-
-    Returns:
-        Authenticated User, the default admin user (SSO disabled), or
-        ``None`` when SSO is enabled and credentials are absent/invalid.
-    """
+) -> AuthUser | None:
+    """Same as ``get_current_user`` but returns ``None`` instead of raising."""
     if not settings.sso_enabled:
-        auth_service = UserAuthService(session)
-        return await auth_service.get_or_create_default_user()
-
+        return _DEFAULT_ADMIN
     if not credentials:
         return None
-
     try:
-        return await get_current_user(request, credentials, session)
+        return await get_current_user(request, credentials)
     except HTTPException:
         return None
 
@@ -103,20 +130,9 @@ async def get_current_user_optional(
 
 
 def require_role(*roles: str):
-    """Return a FastAPI dependency that enforces one of the given global roles.
+    """Return a FastAPI dependency that enforces one of the given global roles."""
 
-    Usage::
-
-        @router.delete("/pipelines/{id}", dependencies=[Depends(require_role("admin"))])
-
-    Args:
-        *roles: Acceptable role strings.
-
-    Returns:
-        Async dependency function that raises ``HTTP 403`` on role mismatch.
-    """
-
-    async def _check(user: User = Depends(get_current_user)) -> User:
+    async def _check(user: AuthUser = Depends(get_current_user)) -> AuthUser:
         if user.role not in roles:
             raise HTTPException(
                 status_code=403,
@@ -127,119 +143,89 @@ def require_role(*roles: str):
     return _check
 
 
-async def _resolve_pipeline_team(
+async def _resolve_product(
     request: Request,
-    pipeline_id_param: str,
+    product_id_param: str,
     session: AsyncSession,
 ) -> tuple[uuid.UUID | None, object | None]:
-    """Parse the pipeline UUID from path params and load the pipeline record.
-
-    Args:
-        request: FastAPI Request with path parameters.
-        pipeline_id_param: Name of the path parameter holding the pipeline UUID.
-        session: Async DB session.
-
-    Returns:
-        A 2-tuple of ``(pipeline_uuid, pipeline)``; both ``None`` when the
-        parameter is missing or the UUID is invalid.
-    """
-    raw_pipeline_id: str | None = request.path_params.get(pipeline_id_param)
-    if not raw_pipeline_id:
+    """Parse the product UUID from path params and load the data product."""
+    raw_id: str | None = request.path_params.get(product_id_param)
+    if not raw_id:
         return None, None
     try:
-        pipeline_uuid = uuid.UUID(raw_pipeline_id)
+        product_uuid = uuid.UUID(raw_id)
     except ValueError:
         return None, None
-    pipeline = await PipelineRepository(session).get_by_id(pipeline_uuid)
-    return pipeline_uuid, pipeline
+    product = await DataProductRepository(session).get_by_id(product_uuid)
+    return product_uuid, product
 
 
-def require_team_membership(pipeline_id_param: str = "pipeline_id"):
-    """Return a dependency that checks the caller belongs to the pipeline's team.
+def require_team_membership(product_id_param: str = "product_id"):
+    """Return a dependency that checks the caller belongs to the product's team.
 
-    Editing is scoped to the owning team for everyone, admins included: an admin
-    is a team leader of their own team(s), not a global super-editor. Viewers are
-    read-only. Pipelines without an assigned team are editable by any non-viewer.
-
-    Args:
-        pipeline_id_param: Name of the path parameter that carries the
-            pipeline UUID (default ``"pipeline_id"``).
-
-    Returns:
-        Async dependency function that raises ``HTTP 403`` when the user is
-        not a member of the owning team.
+    Editing is scoped to the owning team for everyone (master admins excepted):
+    an admin is a team leader of their own team(s), not a global super-editor.
+    Viewers are read-only. Products without an assigned team are editable by any
+    non-viewer. Team comparison is case-insensitive.
     """
 
     async def _check(
         request: Request,
-        user: User = Depends(get_current_user),
+        user: AuthUser = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
-    ) -> User:
-        # Master admins (superusers) may edit any product across all teams
-        if is_master_admin(user.display_name):
+    ) -> AuthUser:
+        if user.is_master:
             return user
 
-        # Viewers are read-only — they never edit, regardless of team membership
         if user.role == UserRole.VIEWER:
             raise HTTPException(status_code=403, detail="Viewers cannot edit")
 
-        pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
-        if pipeline_uuid is None:
-            return user
+        product_uuid, product = await _resolve_product(request, product_id_param, session)
+        if product_uuid is None or not product:
+            return user  # missing/unknown product — the endpoint handles 404
 
-        # Unassigned pipeline — any team member may edit
-        if not pipeline or not pipeline.team_id:
-            return user
-
-        user_team_ids = {ut.team_id for ut in user.team_memberships}
-        if pipeline.team_id not in user_team_ids:
+        # Unassigned product (no team): only its creator may edit it.
+        if not product.team:
+            creator = getattr(product, "created_by", None)
+            if creator and creator == user.username:
+                request.state.product = product
+                return user
             raise HTTPException(
                 status_code=403,
-                detail="Not a member of this pipeline's team",
+                detail="Only the creator can edit this unassigned data product",
             )
 
+        if product.team.lower() not in {t.lower() for t in user.teams}:
+            raise HTTPException(
+                status_code=403,
+                detail="Not a member of this product's team",
+            )
+
+        request.state.product = product
         return user
 
     return _check
 
 
-def require_pipeline_visibility(pipeline_id_param: str = "pipeline_id"):
-    """Return a dependency that checks the caller can *see* the pipeline.
+def require_product_visibility(product_id_param: str = "product_id"):
+    """Return a dependency that checks the data product exists.
 
-    Admins bypass the check.  Unassigned pipelines (no team) are visible to
-    everyone.  For other pipelines the caller must satisfy the visibility
-    grant rules (own team, direct grant, or source-team grant).
-
-    The loaded pipeline is stored on ``request.state.pipeline`` so downstream
-    handlers can reuse it without a second DB round-trip.
-
-    Uses HTTP 404 (not 403) when access is denied to prevent pipeline UUID
-    enumeration.
-
-    Args:
-        pipeline_id_param: Name of the path parameter that carries the
-            pipeline UUID (default ``"pipeline_id"``).
-
-    Returns:
-        Async dependency function.
+    Every authenticated user may view any product. The loaded product is stored
+    on ``request.state.product`` for downstream reuse. Uses HTTP 404 to avoid
+    UUID enumeration.
     """
 
     async def _check(
         request: Request,
-        user: User = Depends(get_current_user),
+        user: AuthUser = Depends(get_current_user),
         session: AsyncSession = Depends(get_db_session),
-    ) -> User:
-        # Every authenticated user may view any product; only verify it exists.
-        pipeline_uuid, pipeline = await _resolve_pipeline_team(request, pipeline_id_param, session)
-
-        if pipeline_uuid is None:
+    ) -> AuthUser:
+        product_uuid, product = await _resolve_product(request, product_id_param, session)
+        if product_uuid is None:
             return user
-
-        if pipeline is None:
-            raise HTTPException(status_code=404, detail="Pipeline not found")
-
-        # Store for downstream reuse
-        request.state.pipeline = pipeline
+        if product is None:
+            raise HTTPException(status_code=404, detail="Data product not found")
+        request.state.product = product
         return user
 
     return _check

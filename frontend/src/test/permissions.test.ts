@@ -3,11 +3,9 @@ import { isAdmin } from "@/lib/permissions";
 import type { UserInfo } from "@/types/auth";
 
 const makeUser = (role: string): UserInfo => ({
-  id: "1",
+  username: "test-user",
   email: "test@example.com",
-  display_name: "Test User",
   role,
-  is_active: true,
   is_master: false,
   teams: [],
 });

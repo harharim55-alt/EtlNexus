@@ -1,0 +1,48 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: etlnexus-backend-config
+  # In the OpenShift console the namespace is taken from your current project.
+  # namespace: <your-namespace>
+data:
+  # --- App / runtime ---
+  DEPLOYMENT_ENV: "production"        # in prod the backend refuses to start unless SSO_ENABLED=true
+  DEBUG: "false"
+  APP_NAME: "ETL Nexus"
+  APP_OWNER: ""
+  CORS_ORIGINS: '["https://<frontend-domain>"]'   # your frontend Route URL (JSON list)
+  MASTER_ADMIN_USERNAMES: ""          # comma-separated Keycloak usernames = admins (empty = none)
+  SYSTEM_TEAMS: '["*"]'               # ["*"] = allow all teams, or ["Dagger","Vault"]
+  TRUSTED_PROXY_DEPTH: "2"            # external route/LB (1) + frontend nginx (1)
+
+  # --- OpenShift: a writable HOME for the non-root arbitrary UID (general safety,
+  # not uv-related). Optional — remove if you don't want it. ---
+  HOME: "/tmp"
+
+  # --- Database (managed/external — it must already exist) ---
+  DB_CREATE_DATABASE: "false"
+  DB_SCHEMA: "public"
+  DB_STATEMENT_CACHE_SIZE: "100"      # set "0" behind a TRANSACTION-pooling PgBouncer
+
+  # --- Spark Connect (Iceberg schemas, read on demand) ---
+  SPARK_CONNECT_URL: "sc://<spark-host>:15002"
+  SPARK_CATALOG_NAME: "spark_catalog"
+  ICEBERG_METRICS_TABLE: "iceberg_table_metrics"
+  ICEBERG_METRICS_SCHEMA: ""          # empty = default to DB_SCHEMA
+  ICEBERG_METRICS_DAY_OFFSET: "1"     # list tables dated (today - N days); 1 = yesterday
+
+  # --- AI / LLM (non-secret; the API key lives in the Secret) ---
+  LLM_API_BASE_URL: "https://<llm-endpoint>/v1"
+  LLM_MODEL: "default"
+  LLM_VERIFY_SSL: "false"
+  AI_REQUEST_TIMEOUT_SECONDS: "300"
+
+  # --- SSO / OIDC (non-secret; the client secret lives in the Secret) ---
+  SSO_ENABLED: "true"
+  SSO_ISSUER_URL: "https://<ip>/auth/realms/<realm>"          # backend -> IdP (== token iss)
+  SSO_PUBLIC_ISSUER_URL: "https://<ip>/auth/realms/<realm>"   # browser -> IdP (SPA authority)
+  SSO_CLIENT_ID: "etl-nexus"
+  SSO_AUDIENCE: "etl-nexus"
+  SSO_GROUPS_CLAIM: "groups"
+  SSO_GROUP_MAP: "{}"                 # rename/allow-list SSO groups -> team names, e.g. {"kc-dagger":"Dagger"}
+  OIDC_VERIFY_SSL: "false"            # true + OIDC_CA_BUNDLE for a private/self-signed IdP CA

@@ -2,23 +2,19 @@ import { useMemo, useState } from "react";
 import { Check, Loader2, Search } from "lucide-react";
 import { useTables } from "@/hooks/use-tables";
 
-export interface TableRef {
-  namespace: string;
-  table_name: string;
-}
-
 interface TableSelectProps {
-  value: TableRef[];
-  onChange: (next: TableRef[]) => void;
+  /** Selected tables as full names, e.g. "vault.logins". */
+  value: string[];
+  onChange: (next: string[]) => void;
 }
 
-const keyOf = (t: TableRef) => `${t.namespace}.${t.table_name}`;
+const fqn = (namespace: string, table_name: string) => `${namespace}.${table_name}`;
 
 /** Searchable multi-select of all catalog tables (any team/namespace). */
 export function TableSelect({ value, onChange }: TableSelectProps) {
   const { data, isLoading } = useTables();
   const [search, setSearch] = useState("");
-  const selectedKeys = useMemo(() => new Set(value.map(keyOf)), [value]);
+  const selected = useMemo(() => new Set(value), [value]);
 
   const tables = useMemo(() => {
     const q = search.trim().toLowerCase();
@@ -27,25 +23,20 @@ export function TableSelect({ value, onChange }: TableSelectProps) {
     );
   }, [data, search]);
 
-  const toggle = (t: TableRef) => {
-    if (selectedKeys.has(keyOf(t))) {
-      onChange(value.filter((v) => keyOf(v) !== keyOf(t)));
-    } else {
-      onChange([...value, { namespace: t.namespace, table_name: t.table_name }]);
-    }
+  const toggle = (name: string) => {
+    if (selected.has(name)) onChange(value.filter((v) => v !== name));
+    else onChange([...value, name]);
   };
 
-  // All currently-filtered tables already selected?
-  const allFilteredSelected = tables.length > 0 && tables.every((t) => selectedKeys.has(keyOf(t)));
+  const filteredNames = useMemo(() => tables.map((t) => fqn(t.namespace, t.table_name)), [tables]);
+  const allFilteredSelected = filteredNames.length > 0 && filteredNames.every((n) => selected.has(n));
 
   const toggleAllFiltered = () => {
     if (allFilteredSelected) {
-      const filteredKeys = new Set(tables.map(keyOf));
-      onChange(value.filter((v) => !filteredKeys.has(keyOf(v))));
+      const drop = new Set(filteredNames);
+      onChange(value.filter((v) => !drop.has(v)));
     } else {
-      const additions = tables
-        .filter((t) => !selectedKeys.has(keyOf(t)))
-        .map((t) => ({ namespace: t.namespace, table_name: t.table_name }));
+      const additions = filteredNames.filter((n) => !selected.has(n));
       onChange([...value, ...additions]);
     }
   };
@@ -79,24 +70,24 @@ export function TableSelect({ value, onChange }: TableSelectProps) {
           <p className="text-xs text-text-faint text-center py-6 font-mono">No tables found</p>
         ) : (
           tables.map((t) => {
-            const selected = selectedKeys.has(keyOf(t));
+            const name = fqn(t.namespace, t.table_name);
+            const isSelected = selected.has(name);
             return (
               <button
-                key={keyOf(t)}
+                key={name}
                 type="button"
-                onClick={() => toggle(t)}
+                onClick={() => toggle(name)}
                 className="w-full flex items-center gap-2 px-3 py-2 text-left hover:bg-hover-bg transition-colors cursor-pointer"
               >
                 <span
                   className={`size-4 rounded border flex items-center justify-center shrink-0 ${
-                    selected ? "bg-indigo-600 border-indigo-500" : "border-border-prominent"
+                    isSelected ? "bg-indigo-600 border-indigo-500" : "border-border-prominent"
                   }`}
                 >
-                  {selected && <Check className="size-3 text-white" />}
+                  {isSelected && <Check className="size-3 text-white" />}
                 </span>
                 <span className="font-mono text-sm text-text-primary truncate">{t.table_name}</span>
                 <span className="ml-auto text-[10px] font-mono text-emerald-400/70 shrink-0">{t.namespace}</span>
-                <span className="text-[10px] text-text-faint font-mono shrink-0">{t.columns.length}c</span>
               </button>
             );
           })

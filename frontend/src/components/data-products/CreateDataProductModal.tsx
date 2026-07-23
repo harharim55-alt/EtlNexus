@@ -4,7 +4,8 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/api/client";
 import { toast } from "sonner";
 import type { PipelineDetail } from "@/types/pipeline";
-import { TableSelect, type TableRef } from "./TableSelect";
+import { useAuthStore } from "@/stores/auth-store";
+import { TableSelect } from "./TableSelect";
 
 interface CreateDataProductModalProps {
   open: boolean;
@@ -17,8 +18,13 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
   const [description, setDescription] = useState("");
   const [documentation, setDocumentation] = useState("");
   const [scheduleType, setScheduleType] = useState<string>("");
-  const [tables, setTables] = useState<TableRef[]>([]);
+  const [tables, setTables] = useState<string[]>([]);
+  const [team, setTeam] = useState<string>("");
   const queryClient = useQueryClient();
+
+  const userTeams = useAuthStore((s) => s.user?.teams ?? []);
+  // Only make the user pick when they belong to more than one team.
+  const mustChooseTeam = userTeams.length > 1;
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -27,13 +33,13 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
         description: description || null,
         documentation: documentation || null,
         schedule_type: scheduleType || null,
+        team: team || null,
         tables,
       });
       return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["data-products"] });
-      queryClient.invalidateQueries({ queryKey: ["pipelines"] });
       toast.success(`Data product "${name}" created`);
       onCreated(data);
       resetForm();
@@ -51,6 +57,7 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
     setDocumentation("");
     setScheduleType("");
     setTables([]);
+    setTeam("");
   };
 
   if (!open) return null;
@@ -123,6 +130,29 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
             </select>
           </div>
 
+          {mustChooseTeam && (
+            <div>
+              <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
+                Team
+              </label>
+              <select
+                value={team}
+                onChange={(e) => setTeam(e.target.value)}
+                className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50"
+              >
+                <option value="">Select team...</option>
+                {userTeams.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+              <span className="text-[10px] text-text-faint font-mono">
+                You belong to multiple teams — choose which owns this product.
+              </span>
+            </div>
+          )}
+
           <div>
             <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
               Tables
@@ -140,7 +170,7 @@ export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataP
           </button>
           <button
             onClick={() => createMutation.mutate()}
-            disabled={!name.trim() || createMutation.isPending}
+            disabled={!name.trim() || (mustChooseTeam && !team) || createMutation.isPending}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
           >
             {createMutation.isPending ? "Creating..." : "Create"}

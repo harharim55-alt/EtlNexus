@@ -1,14 +1,14 @@
-"""Spark Connect client — reads Iceberg table schemas via a remote Spark Connect server.
+"""Spark Connect client — reads a single Iceberg table's schema on demand.
 
-Replaces the previous PyIceberg REST-catalog client. Tables are still Iceberg
-format; only the access path changed. The backend connects to a Spark Connect
-server (``sc://host:port``) and reads schemas with Spark SQL, so it needs no JVM
-or catalog credentials of its own — the server owns the Iceberg catalog config.
+The backend connects to a Spark Connect server (``sc://host:port``) and reads a
+table's schema with Spark SQL when a user opens that table. There is no catalog
+mirroring or bulk discovery — which tables exist is known from the external
+``iceberg_table_metrics`` table, and schemas are fetched live per request.
 """
 
+import asyncio
 import logging
 import re
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 
 from app.config import settings
@@ -35,10 +35,7 @@ def _validate_identifier(value: str, label: str) -> str:
 class SparkConnectClient:
     def __init__(self):
         self.remote_url = settings.spark_connect_url
-        self.catalog_name = _validate_identifier(
-            settings.spark_catalog_name, "spark_catalog_name"
-        )
-        self.namespace_prefix = settings.spark_namespace_prefix
+        self.catalog_name = _validate_identifier(settings.spark_catalog_name, "spark_catalog_name")
         self._spark = None
         self._connected = False
 
@@ -64,7 +61,6 @@ class SparkConnectClient:
 
     async def check_health(self) -> bool:
         """Check if we can reach the Spark Connect server."""
-        import asyncio
         return await asyncio.to_thread(self._check_health_sync)
 
     def _check_health_sync(self) -> bool:
@@ -81,63 +77,15 @@ class SparkConnectClient:
             self._connected = False
             return False
 
-    def list_namespaces(self) -> list[str]:
-        """List all namespaces (teams) under the configured Spark catalog."""
-        spark = self._get_spark()
-        if not spark:
-            return []
-        try:
-            rows = spark.sql(f"SHOW NAMESPACES IN {self.catalog_name}").collect()
-            # SHOW NAMESPACES returns a single 'namespace' column per row.
-            return [row[0] for row in rows]
-        except Exception as e:
-            logger.warning("Failed to list namespaces in %s: %s", self.catalog_name, e)
-            return []
-
-    def list_tables_in_namespace(self, namespace: str) -> list[str]:
-        """List all tables in a given namespace of the configured Spark catalog."""
-        _validate_identifier(namespace, "namespace")
-        spark = self._get_spark()
-        if not spark:
-            return []
-        try:
-            rows = spark.sql(f"SHOW TABLES IN {self.catalog_name}.{namespace}").collect()
-            return [row["tableName"] for row in rows]
-        except Exception as e:
-            logger.warning("Failed to list tables in %s: %s", namespace, e)
-            return []
-
-    def is_iceberg_table(self, namespace: str, table_name: str) -> bool:
-        """Return whether the object is a real Iceberg table (not a view / other format).
-
-        Runs ``DESCRIBE FORMATTED`` and looks for a ``Provider`` row whose value
-        contains ``iceberg`` (case-insensitive). Views (Type = VIEW) and non-Iceberg
-        tables don't report that,
-        so they're excluded. DESCRIBE FORMATTED rows are (col_name, data_type, comment).
-        """
-        spark = self._get_spark()
-        if not spark:
-            return False
-        try:
-            _validate_identifier(namespace, "namespace")
-            _validate_identifier(table_name, "table_name")
-            rows = spark.sql(
-                f"DESCRIBE FORMATTED {self.catalog_name}.{namespace}.{table_name}"
-            ).collect()
-            return any(
-                str(row[0]).strip().lower() == "provider" and "iceberg" in str(row[1]).lower()
-                for row in rows
-            )
-        except Exception as e:
-            logger.debug("DESCRIBE FORMATTED check failed for %s.%s: %s", namespace, table_name, e)
-            return False
-
     def get_table_schema(self, namespace: str, table_name: str) -> SparkTableSchema | None:
-        """Read schema from an Iceberg table via Spark Connect.
+        """Read a single Iceberg table's schema via Spark Connect.
 
         Args:
-            namespace: Namespace e.g. "dagger"
-            table_name: Table name e.g. "PortScanCollector"
+            namespace: Namespace e.g. "vault"
+            table_name: Table name e.g. "logins"
+
+        Raises:
+            ValueError: if either identifier contains unsafe characters.
         """
         _validate_identifier(namespace, "namespace")
         _validate_identifier(table_name, "table_name")
@@ -166,57 +114,6 @@ class SparkConnectClient:
         except Exception as e:
             logger.warning("Failed to read schema for %s.%s: %s", namespace, table_name, e)
             return None
-
-    def get_all_schemas(self) -> list[SparkTableSchema]:
-        """Discover tables + schemas under the catalog's namespaces (each namespace = a team).
-
-        Namespaces are discovered dynamically from the Spark catalog. If
-        ``SPARK_NAMESPACE_PREFIX`` is set to an explicit comma list, only those
-        namespaces are mirrored; empty or ``*`` mirrors every namespace.
-        """
-        spark = self._get_spark()
-        if not spark:
-            return []
-
-        configured = [p.strip() for p in self.namespace_prefix.split(",") if p.strip()]
-        # Empty or "*" -> discover every namespace under the catalog; else use the list.
-        namespaces = self.list_namespaces() if not configured or configured == ["*"] else configured
-
-        # Drop excluded namespaces (system schemas etc.).
-        excluded = {n.strip().lower() for n in settings.spark_excluded_namespaces.split(",") if n.strip()}
-        if excluded:
-            namespaces = [n for n in namespaces if n.lower() not in excluded]
-
-        # Collect every (namespace, table) pair first.
-        pairs: list[tuple[str, str]] = []
-        for namespace in namespaces:
-            try:
-                _validate_identifier(namespace, "namespace")
-                pairs.extend((namespace, t) for t in self.list_tables_in_namespace(namespace))
-            except Exception as e:
-                logger.warning("Failed to list tables in namespace '%s': %s", namespace, e)
-
-        # Read schemas concurrently — but only for real Iceberg tables (skip views /
-        # other formats). Spark Connect handles concurrent requests over its channel.
-        def _read(pair: tuple[str, str]) -> SparkTableSchema | None:
-            ns, table = pair
-            if not self.is_iceberg_table(ns, table):
-                return None
-            return self.get_table_schema(ns, table)
-
-        schemas: list[SparkTableSchema] = []
-        if pairs:
-            workers = max(1, min(settings.spark_discovery_concurrency, len(pairs)))
-            with ThreadPoolExecutor(max_workers=workers) as pool:
-                for schema in pool.map(_read, pairs):
-                    if schema:
-                        schemas.append(schema)
-
-        logger.info(
-            "Discovered %d table schemas across %d namespaces (concurrency=%d)",
-            len(schemas), len(namespaces), max(1, min(settings.spark_discovery_concurrency, len(pairs) or 1)),
-        )
-        return schemas
 
     def stop(self):
         """Clean up the Spark Connect session."""

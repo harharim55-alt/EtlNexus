@@ -1,51 +1,36 @@
 """Tests for auth schema helper functions (user_to_response)."""
 
-from unittest.mock import MagicMock
+from unittest.mock import patch
 
+from app.auth import AuthUser
 from app.schemas.auth import user_to_response
-from tests.conftest import make_team, make_user, make_user_team
 
 
 class TestUserToResponse:
     def test_user_with_teams(self):
-        team = make_team(name="Dagger")
-        user = make_user(role="member")
-        ut = make_user_team(user, team)
-        user.team_memberships = [ut]
-
-        resp = user_to_response(user)
+        u = AuthUser(username="bob", email="b@t.local", role="member", teams=["Dagger"])
+        resp = user_to_response(u)
+        assert resp.username == "bob"
         assert resp.role == "member"
-        assert len(resp.teams) == 1
-        assert resp.teams[0].name == "Dagger"
+        assert resp.teams == ["Dagger"]
 
     def test_user_with_no_teams(self):
-        user = make_user(role="admin")
-        user.team_memberships = []
-        resp = user_to_response(user)
-        assert resp.teams == []
-
-    def test_user_with_none_memberships(self):
-        user = make_user()
-        user.team_memberships = None
-        resp = user_to_response(user)
-        assert resp.teams == []
-
-    def test_filters_non_userteam_objects(self):
-        user = make_user()
-        # Simulate a relationship that includes non-UserTeam objects
-        user.team_memberships = [MagicMock(), MagicMock()]
-        resp = user_to_response(user)
+        u = AuthUser(username="alice", role="admin", teams=[])
+        resp = user_to_response(u)
         assert resp.teams == []
 
     def test_user_with_multiple_teams(self):
-        user = make_user(role="member")
-        team_a = make_team(name="Vault")
-        team_b = make_team(name="Prism")
-        ut_a = make_user_team(user, team_a)
-        ut_b = make_user_team(user, team_b)
-        user.team_memberships = [ut_a, ut_b]
+        u = AuthUser(username="carol", role="member", teams=["Vault", "Prism"])
+        resp = user_to_response(u)
+        assert set(resp.teams) == {"Vault", "Prism"}
 
-        resp = user_to_response(user)
-        assert len(resp.teams) == 2
-        names = {t.name for t in resp.teams}
-        assert names == {"Vault", "Prism"}
+    def test_master_admin_flag(self):
+        with patch("app.config.settings.master_admin_usernames", "carol"):
+            u = AuthUser(username="carol", role="member", teams=[])
+            resp = user_to_response(u)
+            assert resp.is_master is True
+
+    def test_non_master_by_default(self):
+        u = AuthUser(username="dave", role="member", teams=[])
+        resp = user_to_response(u)
+        assert resp.is_master is False

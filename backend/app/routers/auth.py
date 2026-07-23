@@ -2,9 +2,8 @@
 
 from fastapi import APIRouter, Depends
 
-from app.auth import get_current_user
+from app.auth import AuthUser, get_current_user
 from app.config import settings
-from app.models.user import User
 from app.schemas.auth import AuthConfigResponse, UserResponse, user_to_response
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -21,12 +20,16 @@ async def get_auth_config() -> AuthConfigResponse:
         sso_enabled=settings.sso_enabled,
         issuer_url=settings.sso_public_issuer_url,
         client_id=settings.sso_client_id,
+        client_secret=settings.sso_client_secret,
         audience=settings.sso_audience,
         ai_greeting=settings.ai_greeting,
+        app_name=settings.app_name,
+        app_owner=settings.app_owner,
+        ai_request_timeout_seconds=settings.ai_request_timeout_seconds,
     )
 
 
 @router.get("/me", response_model=UserResponse)
-async def get_me(user: User = Depends(get_current_user)) -> UserResponse:
-    """Return the current authenticated user with team memberships."""
+async def get_me(user: AuthUser = Depends(get_current_user)) -> UserResponse:
+    """Return the current authenticated user with their Keycloak teams."""
     return user_to_response(user)

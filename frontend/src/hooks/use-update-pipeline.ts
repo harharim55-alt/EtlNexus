@@ -9,13 +9,13 @@ export function useUpdatePipeline(pipelineId: string) {
   return useMutation({
     mutationFn: (body: PipelineUpdateRequest) => updatePipeline(pipelineId, body),
     onSuccess: () => {
-      toast.success("Pipeline updated");
+      toast.success("Data product updated");
       queryClient.invalidateQueries({ queryKey: ["pipeline", pipelineId] });
-      queryClient.invalidateQueries({ queryKey: ["pipelines"] });
+      queryClient.invalidateQueries({ queryKey: ["data-products"] });
       queryClient.invalidateQueries({ queryKey: ["revisions", pipelineId] });
     },
     onError: () => {
-      toast.error("Failed to update pipeline");
+      toast.error("Failed to update data product");
     },
   });
 }

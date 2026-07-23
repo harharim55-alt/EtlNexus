@@ -1,13 +1,20 @@
 import { create } from "zustand";
 
-export type Theme = "dark" | "light" | "pink";
+export type Theme = "dark" | "light";
 
 const STORAGE_KEY = "etlnexus:theme";
 
+/**
+ * Resolve the startup theme.
+ *
+ * Reads only our own persisted choice from localStorage; the OS/browser
+ * `prefers-color-scheme` is intentionally NOT consulted, so a given mode
+ * renders identically on every machine. Falls back to a fixed "dark" default.
+ */
 function getInitialTheme(): Theme {
   try {
     const stored = localStorage.getItem(STORAGE_KEY);
-    if (stored === "light" || stored === "pink" || stored === "dark") return stored;
+    if (stored === "light" || stored === "dark") return stored;
   } catch {
     // localStorage unavailable
   }
@@ -26,10 +33,10 @@ function applyTheme(theme: Theme) {
 interface ThemeState {
   theme: Theme;
   setTheme: (theme: Theme) => void;
-  cycleTheme: () => void;
+  toggleTheme: () => void;
 }
 
-// Apply initial theme immediately
+// Apply initial theme immediately (matches the pre-paint script in index.html).
 applyTheme(getInitialTheme());
 
 export const useThemeStore = create<ThemeState>((set, get) => ({
@@ -38,10 +45,8 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     applyTheme(theme);
     set({ theme });
   },
-  cycleTheme: () => {
-    const order: Theme[] = ["dark", "light", "pink"];
-    const current = get().theme;
-    const next = order[(order.indexOf(current) + 1) % order.length];
+  toggleTheme: () => {
+    const next: Theme = get().theme === "dark" ? "light" : "dark";
     applyTheme(next);
     set({ theme: next });
   },
