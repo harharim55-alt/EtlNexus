@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etlnexus-frontend
+  labels: { app: etlnexus, component: frontend }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: etlnexus, component: frontend }
+  template:
+    metadata:
+      labels: { app: etlnexus, component: frontend }
+    spec:
+      imagePullSecrets:
+        - name: gitlab-pull
+      containers:
+        - name: frontend
+          image: registry.gitlab.com/<group>/<project>/frontend:<tag>
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8080
+          # nginx entrypoint substitutes BACKEND_HOST / CSP_CONNECT_SRC / timeouts from these.
+          # Do NOT set command/args here — that would skip the entrypoint's envsubst.
+          envFrom:
+            - configMapRef:
+                name: etlnexus-frontend-config
+          readinessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "50m", memory: "64Mi" }
+            limits: { cpu: "250m", memory: "256Mi" }
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etlnexus-frontend
+  labels: { app: etlnexus, component: frontend }
+spec:
+  type: ClusterIP
+  selector: { app: etlnexus, component: frontend }
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+---
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: etlnexus                     # the external URL users load
+  labels: { app: etlnexus }
+spec:
+  to:
+    kind: Service
+    name: etlnexus-frontend
+  port:
+    targetPort: http                 # -> Service port named "http" (8080)
+  tls:
+    termination: edge                # TLS terminates at the Route; nginx serves plain HTTP behind it
+    insecureEdgeTerminationPolicy: Redirect
+  # host: etlnexus.apps.<your-cluster-domain>   # omit to let OpenShift auto-generate

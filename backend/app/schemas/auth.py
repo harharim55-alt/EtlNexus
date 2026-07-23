@@ -2,67 +2,46 @@
 
 from __future__ import annotations
 
-import uuid
 from typing import TYPE_CHECKING
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 if TYPE_CHECKING:
-    from app.models.user import User
+    from app.auth import AuthUser
 
 
 class AuthConfigResponse(BaseModel):
     sso_enabled: bool = Field(description="Whether SSO/OIDC authentication is enabled")
     issuer_url: str = Field(description="OIDC issuer URL for the frontend OIDC client")
     client_id: str = Field(description="OIDC client ID for the SPA")
+    client_secret: str = Field(
+        default="", description="OIDC client secret (only for a confidential client; empty = public)"
+    )
     audience: str = Field(description="Expected OIDC audience claim")
-
-
-class TeamMembershipResponse(BaseModel):
-    id: uuid.UUID = Field(description="Team UUID")
-    name: str = Field(description="Team display name")
-    role_in_team: str = Field(description="User's role within this team")
-
-    model_config = ConfigDict(from_attributes=True)
+    ai_greeting: str = Field(default="", description="Opening message for the AI Architect chat")
+    app_name: str = Field(default="ETL Nexus", description="System name shown on the login page")
+    app_owner: str = Field(default="", description="Owner credit ('Made by …') shown on the login page")
+    ai_request_timeout_seconds: int = Field(
+        default=300, description="Client-side timeout (seconds) for an AI chat request"
+    )
 
 
 class UserResponse(BaseModel):
-    id: uuid.UUID = Field(description="User UUID")
-    email: str = Field(description="User email address from SSO claims")
-    display_name: str = Field(description="User display name from SSO claims")
+    username: str = Field(description="Username from SSO claims (stable identifier)")
+    full_name: str = Field(default="", description="Human name (first + last) from SSO claims")
+    email: str = Field(default="", description="User email address from SSO claims")
     role: str = Field(description="Global role: admin, member, or viewer")
-    is_active: bool = Field(description="Whether the user account is active")
     is_master: bool = Field(default=False, description="Master admin (superuser) — edits all teams")
-    teams: list[TeamMembershipResponse] = Field(description="Teams the user belongs to")
-
-    model_config = ConfigDict(from_attributes=True)
+    teams: list[str] = Field(default=[], description="Team names the user belongs to (from Keycloak)")
 
 
-class UserListResponse(BaseModel):
-    items: list[UserResponse]
-    total: int
-
-
-def user_to_response(u: User) -> UserResponse:
-    """Convert a User ORM instance to a UserResponse schema."""
-    from app.config import is_master_admin
-    from app.models.user_team import UserTeam
-
-    teams = [
-        TeamMembershipResponse(
-            id=ut.team.id if ut.team else ut.team_id,
-            name=ut.team.name if ut.team else "",
-            role_in_team=ut.role_in_team,
-        )
-        for ut in (u.team_memberships or [])
-        if isinstance(ut, UserTeam)
-    ]
+def user_to_response(u: AuthUser) -> UserResponse:
+    """Convert a transient AuthUser into a UserResponse schema."""
     return UserResponse(
-        id=u.id,
+        username=u.username,
+        full_name=u.full_name,
         email=u.email,
-        display_name=u.display_name,
         role=u.role,
-        is_active=u.is_active,
-        is_master=is_master_admin(u.display_name),
-        teams=teams,
+        is_master=u.is_master,
+        teams=u.teams,
     )

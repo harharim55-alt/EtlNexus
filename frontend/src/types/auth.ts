@@ -2,21 +2,22 @@ export interface AuthConfig {
   sso_enabled: boolean;
   issuer_url: string;
   client_id: string;
+  // Only set for a confidential client; oidc-client-ts sends it on the token exchange.
+  client_secret?: string;
   audience: string;
-}
-
-export interface TeamMembership {
-  id: string;
-  name: string;
-  role_in_team: string;
+  ai_greeting?: string;
+  app_name?: string;
+  app_owner?: string;
+  ai_request_timeout_seconds?: number;
 }
 
 export interface UserInfo {
-  id: string;
+  username: string;
+  // Human name (first + last) from SSO claims; falls back to username.
+  full_name?: string;
   email: string;
-  display_name: string;
   role: string;
-  is_active: boolean;
   is_master: boolean;
-  teams: TeamMembership[];
+  // Team names from Keycloak (no per-team role / id — teams are not persisted).
+  teams: string[];
 }

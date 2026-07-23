@@ -7,19 +7,14 @@ beforeEach(() => {
 });
 
 describe("useNavigationStore — setActiveTab", () => {
-  it("changes to matrix tab", () => {
-    useNavigationStore.getState().setActiveTab("matrix");
-    expect(useNavigationStore.getState().activeTab).toBe("matrix");
+  it("changes to tables tab", () => {
+    useNavigationStore.getState().setActiveTab("tables");
+    expect(useNavigationStore.getState().activeTab).toBe("tables");
   });
 
   it("changes to ai tab", () => {
     useNavigationStore.getState().setActiveTab("ai");
     expect(useNavigationStore.getState().activeTab).toBe("ai");
-  });
-
-  it("changes to admin tab", () => {
-    useNavigationStore.getState().setActiveTab("admin");
-    expect(useNavigationStore.getState().activeTab).toBe("admin");
   });
 
   it("returns to data-products after switching away", () => {
@@ -29,7 +24,7 @@ describe("useNavigationStore — setActiveTab", () => {
   });
 
   it("accepts all valid TabType values", () => {
-    const tabs: TabType[] = ["data-products", "matrix", "ai", "admin"];
+    const tabs: TabType[] = ["data-products", "tables", "ai"];
     for (const tab of tabs) {
       useNavigationStore.getState().setActiveTab(tab);
       expect(useNavigationStore.getState().activeTab).toBe(tab);

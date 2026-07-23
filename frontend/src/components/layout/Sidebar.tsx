@@ -1,8 +1,7 @@
-import { HelpCircle, LogOut, Moon, Network, Package, Palette, Shield, Sparkles, Sun } from "lucide-react";
+import { HelpCircle, LogOut, Moon, Package, Sparkles, Sun, Table2 } from "lucide-react";
 import { useNavigationStore } from "@/stores/navigation-store";
 import { useAuthStore } from "@/stores/auth-store";
 import { useOnboardingStore } from "@/stores/onboarding-store";
-import { canManageAccess } from "@/lib/permissions";
 import { useThemeStore } from "@/stores/theme-store";
 import { useAuth } from "react-oidc-context";
 import { NavIcon } from "./NavIcon";
@@ -47,11 +46,7 @@ export function Sidebar() {
   const user = useAuthStore((s) => s.user);
   const ssoEnabled = useAuthStore((s) => s.ssoEnabled);
   const theme = useThemeStore((s) => s.theme);
-  const cycleTheme = useThemeStore((s) => s.cycleTheme);
-
-  const themeIcon = theme === "dark" ? <Moon className="size-4" /> : theme === "light" ? <Sun className="size-4" /> : <Palette className="size-4" />;
-  const themeLabel = theme === "dark" ? "Dark theme" : theme === "light" ? "Light theme" : "Pink theme";
-
+  const toggleTheme = useThemeStore((s) => s.toggleTheme);
   return (
     <nav className="w-20 border-r border-border bg-background flex flex-col items-center py-6 z-20 shrink-0">
       {/* Logo */}
@@ -69,12 +64,12 @@ export function Sidebar() {
             tooltip="Data Products"
           />
         </div>
-        <div data-nav-id="matrix">
+        <div data-nav-id="tables">
           <NavIcon
-            active={activeTab === "matrix"}
-            onClick={() => setActiveTab("matrix")}
-            icon={<Network className="w-5 h-5" />}
-            tooltip="Field Matrix"
+            active={activeTab === "tables"}
+            onClick={() => setActiveTab("tables")}
+            icon={<Table2 className="w-5 h-5" />}
+            tooltip="Tables"
           />
         </div>
         <div data-nav-id="ai">
@@ -85,32 +80,22 @@ export function Sidebar() {
             tooltip="AI Architect"
           />
         </div>
-        {canManageAccess(user) && (
-          <div data-nav-id="admin">
-            <NavIcon
-              active={activeTab === "admin"}
-              onClick={() => setActiveTab("admin")}
-              icon={<Shield className="w-5 h-5" />}
-              tooltip="Access Control"
-            />
-          </div>
-        )}
       </div>
 
-      {/* User + theme */}
+      {/* Theme toggle + help + user */}
       <div className="mt-auto flex flex-col items-center gap-4">
         <Tooltip>
           <TooltipTrigger
             className="p-1.5 text-text-muted hover:text-primary hover:bg-primary/10 rounded-lg transition-all duration-200 cursor-pointer"
-            onClick={cycleTheme}
+            onClick={toggleTheme}
           >
-            {themeIcon}
+            {theme === "dark" ? <Moon className="size-4" /> : <Sun className="size-4" />}
           </TooltipTrigger>
           <TooltipContent
             side="right"
             className="bg-card border-border-prominent text-foreground text-xs font-medium"
           >
-            {themeLabel} (click to switch)
+            {theme === "dark" ? "Dark mode" : "Light mode"} (click to switch)
           </TooltipContent>
         </Tooltip>
 
@@ -134,21 +119,21 @@ export function Sidebar() {
           <div className="flex flex-col items-center gap-2">
             <Tooltip>
               <TooltipTrigger className="cursor-default">
-                <UserInitials name={user.display_name} />
+                <UserInitials name={user.full_name || user.username} />
               </TooltipTrigger>
               <TooltipContent
                 side="right"
                 className="bg-card border-border-prominent text-foreground text-xs font-medium"
               >
                 <div className="flex flex-col gap-0.5">
-                  <span className="font-semibold">{user.display_name}</span>
+                  <span className="font-semibold">{user.full_name || user.username}</span>
                   <span className="text-text-secondary">{user.email}</span>
                   <span className="text-[10px] text-indigo-400 uppercase tracking-wider mt-0.5">
                     {user.role}
                   </span>
                   <span className="text-[10px] text-emerald-400 mt-0.5">
                     {user.teams && user.teams.length > 0
-                      ? user.teams.map((t) => t.name).join(", ")
+                      ? user.teams.join(", ")
                       : "No team"}
                   </span>
                 </div>

@@ -6,87 +6,55 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from app.models.pipeline import Pipeline
-from app.models.team import Team
-from app.models.user import User
-from app.models.user_team import UserTeam
+from app.auth import AuthUser
+from app.models.data_product import DataProduct
 
 # ---------------------------------------------------------------------------
 # Factory helpers
 # ---------------------------------------------------------------------------
 
 
-def make_user(
+def make_auth_user(
     *,
     role: str = "member",
-    team_memberships: list | None = None,
-    sub: str | None = None,
+    teams: list[str] | None = None,
+    username: str | None = None,
     email: str | None = None,
-    display_name: str | None = None,
-) -> User:
-    """Create a User ORM-like object for testing."""
-    user = MagicMock(spec=User)
-    user.id = uuid.uuid4()
-    user.sub = sub or f"user-{user.id.hex[:8]}"
-    user.email = email or f"{user.sub}@test.local"
-    user.display_name = display_name or user.sub
-    user.role = role
-    user.is_active = True
-    user.last_login = datetime.now(UTC)
-    user.team_memberships = team_memberships or []
-    return user
+) -> AuthUser:
+    """Create a transient AuthUser for testing."""
+    username = username or "tester"
+    return AuthUser(
+        username=username,
+        email=email or f"{username}@test.local",
+        role=role,
+        teams=teams or [],
+    )
 
 
-def make_team(*, name: str = "Dagger", source: str = "sso") -> Team:
-    """Create a Team ORM-like object for testing."""
-    team = MagicMock(spec=Team)
-    team.id = uuid.uuid4()
-    team.name = name
-    team.description = None
-    team.source = source
-    team.members = []
-    return team
-
-
-def make_user_team(user: User, team: Team, role_in_team: str = "member") -> UserTeam:
-    """Create a UserTeam membership linking user and team."""
-    ut = MagicMock(spec=UserTeam)
-    ut.id = uuid.uuid4()
-    ut.user_id = user.id
-    ut.team_id = team.id
-    ut.user = user
-    ut.team = team
-    ut.role_in_team = role_in_team
-    return ut
-
-
-def make_pipeline(
+def make_product(
     *,
-    name: str = "Port Scan Collector",
-    task_id: str = "PortScanCollector",
+    name: str = "Login Events",
     team: str | None = None,
-    team_id: uuid.UUID | None = None,
-    category: str = "Network Infrastructure",
-) -> Pipeline:
-    """Create a Pipeline ORM-like object for testing."""
-    pipeline = MagicMock(spec=Pipeline)
-    pipeline.id = uuid.uuid4()
-    pipeline.name = name
-    pipeline.task_id = task_id
-    pipeline.description = f"Test pipeline {name}"
-    pipeline.category = category
-    pipeline.schedule = "daily"
-    pipeline.rows_per_day = "10000"
-    pipeline.documentation = None
-    pipeline.last_updated_by = None
-    pipeline.last_updated_at = None
-    pipeline.created_at = datetime.now(UTC)
-    pipeline.updated_at = datetime.now(UTC)
-    pipeline.team = team
-    pipeline.team_id = team_id
-    pipeline.fields = []
-    pipeline.airflow_status = None
-    return pipeline
+    tables: list[str] | None = None,
+    description: str | None = None,
+    schedule_type: str | None = "daily",
+    created_by: str | None = None,
+) -> DataProduct:
+    """Create a DataProduct ORM-like mock for testing."""
+    product = MagicMock(spec=DataProduct)
+    product.id = uuid.uuid4()
+    product.name = name
+    product.description = description if description is not None else f"Test product {name}"
+    product.documentation = None
+    product.team = team
+    product.tables = tables if tables is not None else []
+    product.schedule_type = schedule_type
+    product.created_by = created_by
+    product.last_updated_by = None
+    product.last_updated_at = None
+    product.created_at = datetime.now(UTC)
+    product.updated_at = datetime.now(UTC)
+    return product
 
 
 # ---------------------------------------------------------------------------
@@ -105,10 +73,4 @@ def mock_session():
     session.add = MagicMock()
     session.delete = AsyncMock()
     session.expire = MagicMock()
-    session.begin_nested = MagicMock()
-    # Make begin_nested work as async context manager
-    nested_ctx = AsyncMock()
-    nested_ctx.__aenter__ = AsyncMock()
-    nested_ctx.__aexit__ = AsyncMock(return_value=False)
-    session.begin_nested.return_value = nested_ctx
     return session

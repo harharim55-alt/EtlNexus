@@ -1,0 +1,62 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: etlnexus-backend
+  labels: { app: etlnexus, component: backend }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app: etlnexus, component: backend }
+  template:
+    metadata:
+      labels: { app: etlnexus, component: backend }
+    spec:
+      # Credentials to pull from the private GitLab registry.
+      imagePullSecrets:
+        - name: gitlab-pull
+      containers:
+        - name: backend
+          image: registry.gitlab.com/<group>/<project>/backend:<tag>
+          imagePullPolicy: Always
+          ports:
+            - name: http
+              containerPort: 8000
+          # All env from the ConfigMap + Secret (each key becomes a real env var).
+          envFrom:
+            - configMapRef:
+                name: etlnexus-backend-config
+            - secretRef:
+                name: etlnexus-backend-secret
+          readinessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+          livenessProbe:
+            httpGet: { path: /api/health, port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+          resources:
+            requests: { cpu: "250m", memory: "512Mi" }
+            limits: { cpu: "1", memory: "2Gi" }
+          # OpenShift-restricted-SCC friendly: no root, no extra privileges.
+          # Do NOT set runAsUser — the platform assigns a non-root UID.
+          securityContext:
+            allowPrivilegeEscalation: false
+            runAsNonRoot: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: etlnexus-backend            # must match the frontend's BACKEND_HOST
+  labels: { app: etlnexus, component: backend }
+spec:
+  type: ClusterIP                    # internal only — reached via the frontend /api proxy
+  selector: { app: etlnexus, component: backend }
+  ports:
+    - name: http
+      port: 8000
+      targetPort: 8000

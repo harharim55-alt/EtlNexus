@@ -8,15 +8,14 @@ dependencies = [
     "uvicorn[standard]>=0.32.0",
     "sqlalchemy[asyncio]>=2.0.0",
     "asyncpg>=0.30.0",
-    "alembic>=1.14.0",
     "pydantic-settings>=2.6.0",
     "httpx>=0.28.0",
-    "apscheduler>=4.0.0a1",
     "pyspark[connect]>=3.5.1,<4.0",  # match the Spark Connect server (apache/spark:3.5.1)
     "setuptools>=69",  # PySpark 3.5.x imports distutils, removed from the Python 3.12 stdlib
     "PyJWT[crypto]>=2.8.0",
     "slowapi>=0.1.9",
     "python-json-logger>=3.0",
+    "openai>=1.0",  # OpenAI-compatible client for the LLM endpoint (streaming)
 ]
 
 [project.optional-dependencies]
@@ -45,10 +44,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM", "ASYNC", "S", "PT", "RUF"]
 ignore = ["E501", "B008", "B905", "S101", "S105", "RUF059"]
 
 [tool.ruff.lint.per-file-ignores]
-"app/models/*.py" = ["F821"]  # SQLAlchemy forward references in Mapped["ModelName"]
-"alembic/versions/*.py" = ["F401"]  # Alembic auto-imports
-"app/services/airflow_service.py" = ["E402"]  # Deferred imports for circular dep avoidance
-"app/integrations/oasis_prod_client.py" = ["S608"]  # Table name interpolated only after _safe_table() identifier validation
+"app/models/*.py" = ["F821", "E402"]  # SQLAlchemy forward refs + bottom-of-module imports for relationship registration
 
 [tool.ruff.lint.isort]
 known-first-party = ["app"]

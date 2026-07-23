@@ -1,52 +1,48 @@
 services:
-  # ============================================
-  # Core Services
-  # ============================================
-  db:
-    container_name: db
-    image: postgres:16-alpine
-    environment:
-      POSTGRES_DB: ${POSTGRES_DB:-etlnexus}
-      POSTGRES_USER: ${POSTGRES_USER:-etlnexus}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-etlnexus}
-    volumes:
-      - pgdata:/var/lib/postgresql/data
-    ports:
-      - "127.0.0.1:5432:5432"
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-etlnexus}"]
-      interval: 5s
-      timeout: 5s
-      retries: 5
-
+  # ============================================================================
+  # Two-service stack: backend + frontend only.
+  #
+  # PostgreSQL, the LLM endpoint, Spark Connect, and the Keycloak (OIDC) server are
+  # ALL EXTERNAL — this stack creates none of them. Point at your existing services
+  # via .env:
+  #   DB        -> POSTGRES_HOST / POSTGRES_DB_PORT / POSTGRES_USER / POSTGRES_PASSWORD /
+  #                POSTGRES_DB  (or a full DATABASE_URL), DB_SCHEMA, DB_CREATE_DATABASE=false
+  #   LLM       -> LLM_API_BASE_URL / LLM_API_KEY / LLM_MODEL
+  #   Spark     -> SPARK_CONNECT_URL / SPARK_CATALOG_NAME
+  #   Keycloak  -> SSO_ENABLED=true / SSO_ISSUER_URL / SSO_PUBLIC_ISSUER_URL / SSO_CLIENT_ID …
+  # The frontend must also be allowed to reach Keycloak from the browser — set
+  # CSP_CONNECT_SRC to include your Keycloak origin.
+  # ============================================================================
   backend:
     container_name: backend
     image: etlnexus-backend
     build:
       context: ./backend
       dockerfile: Dockerfile
-    command: sh -c "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     env_file: .env
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-etlnexus}:${POSTGRES_PASSWORD:-etlnexus}@db:5432/${POSTGRES_DB:-etlnexus}
-      SSO_PUBLIC_ISSUER_URL: http://${HOSTNAME:-localhost}:8090/realms/etlnexus
-      CORS_ORIGINS: '["http://localhost:5173","http://${HOSTNAME:-localhost}:5173"]'
+      # Assembled from the POSTGRES_* parts so the host/port/db are env-driven. To use a
+      # full custom URL instead (e.g. with ?prepared_statement_cache_size=0), delete this
+      # line and set DATABASE_URL in .env.
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-etlnexus}:${POSTGRES_PASSWORD:-etlnexus}@${POSTGRES_HOST:-localhost}:${POSTGRES_DB_PORT:-5432}/${POSTGRES_DB:-ui_catalog_db}
     ports:
-      - "8000:8000"
-    depends_on:
-      db:
-        condition: service_healthy
-      seed-data:
-        condition: service_completed_successfully
-      spark-connect:
-        condition: service_healthy
-    develop:
-      watch:
-        - action: sync
-          path: ./backend/app
-          target: /app/app
-        - action: rebuild
-          path: ./backend/pyproject.toml
+      - "${BACKEND_PORT:-8000}:8000"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${BACKEND_MEMORY_LIMIT:-2G}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${LOG_MAX_SIZE:-50m}"
+        max-file: "${LOG_MAX_FILES:-5}"
 
   frontend:
     container_name: frontend
@@ -55,114 +51,27 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       target: production
+    environment:
+      # nginx proxies /api to this host; CSP_CONNECT_SRC must include your Keycloak
+      # origin so the browser SPA can reach the external IdP.
+      BACKEND_HOST: backend
+      CSP_CONNECT_SRC: ${CSP_CONNECT_SRC:-}
     ports:
-      - "5173:80"
+      - "${FRONTEND_PORT:-5173}:8080"
+    depends_on:
+      - backend
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:80/ || exit 1"]
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8080/ || exit 1"]
       interval: 15s
       timeout: 5s
       retries: 3
-    depends_on:
-      - backend
-    develop:
-      watch:
-        - action: rebuild
-          path: ./frontend/src
-        - action: rebuild
-          path: ./frontend/public
-        - action: rebuild
-          path: ./frontend/package.json
-
-  # ============================================
-  # Dev-only: Keycloak (SSO)
-  # ============================================
-  keycloak:
-    container_name: keycloak
-    image: quay.io/keycloak/keycloak:26.2
-    command: start-dev --import-realm
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      KC_HTTP_PORT: 8090
-      KC_HOSTNAME: ${HOSTNAME:-localhost}
-      KC_HOSTNAME_PORT: 8090
-    volumes:
-      - ./dev/keycloak:/opt/keycloak/data/import
-      - ./dev/keycloak/themes/etlnexus:/opt/keycloak/themes/etlnexus
-    ports:
-      - "127.0.0.1:8090:8090"
-
-  # ============================================
-  # Dev-only: Spark Connect server (Iceberg hadoop catalog, no REST)
-  # ============================================
-  spark-volume-init:
-    container_name: spark-volume-init
-    image: alpine:latest
-    volumes:
-      - iceberg-warehouse:${SPARK_WAREHOUSE:-/tmp/warehouse}
-    command: sh -c "chmod 1777 ${SPARK_WAREHOUSE:-/tmp/warehouse}"
-
-  spark-connect:
-    container_name: spark-connect
-    image: etlnexus-spark-connect
-    build:
-      context: .
-      dockerfile: dev/spark/Dockerfile
-    # Spark Connect server settings — override any of these in .env.
-    environment:
-      SPARK_WAREHOUSE: ${SPARK_WAREHOUSE:-/tmp/warehouse}
-      SPARK_CONNECT_VERSION: ${SPARK_CONNECT_VERSION:-3.5.1}
-      ICEBERG_VERSION: ${ICEBERG_VERSION:-1.7.1}
-      SPARK_IVY_DIR: ${SPARK_IVY_DIR:-/opt/spark/.ivy2}
-    volumes:
-      - iceberg-warehouse:${SPARK_WAREHOUSE:-/tmp/warehouse}
-    ports:
-      - "127.0.0.1:${SPARK_CONNECT_PORT:-15002}:15002"
-    depends_on:
-      spark-volume-init:
-        condition: service_completed_successfully
-    healthcheck:
-      test: ["CMD-SHELL", "bash -c 'echo > /dev/tcp/localhost/15002'"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-      start_period: 40s
-
-  # Schema seed: creates empty Iceberg tables via local Spark (hadoop catalog).
-  seed-schema:
-    container_name: seed-schema
-    image: etlnexus-spark-connect
-    # Clear the spark-connect image's ENTRYPOINT (which starts the Connect server)
-    # so the command below runs the one-shot seed instead.
-    entrypoint: []
-    user: "0"
-    environment:
-      SPARK_WAREHOUSE: ${SPARK_WAREHOUSE:-/tmp/warehouse}
-    volumes:
-      - ./dev/seeds:/seeds
-      - iceberg-warehouse:${SPARK_WAREHOUSE:-/tmp/warehouse}
-    command: bash -c "umask 000 && /opt/spark/bin/spark-submit --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:${ICEBERG_VERSION:-1.7.1} --conf spark.jars.ivy=${SPARK_IVY_DIR:-/opt/spark/.ivy2} /seeds/seed_iceberg.py && chmod -R 777 ${SPARK_WAREHOUSE:-/tmp/warehouse}"
-    depends_on:
-      spark-volume-init:
-        condition: service_completed_successfully
-
-  # Data seed: populates a subset of tables with sample rows via local Spark.
-  seed-data:
-    container_name: seed-data
-    image: etlnexus-spark-connect
-    # Clear the spark-connect image's ENTRYPOINT so the seed command runs.
-    entrypoint: []
-    user: "0"
-    environment:
-      SPARK_WAREHOUSE: ${SPARK_WAREHOUSE:-/tmp/warehouse}
-    volumes:
-      - ./dev/seeds:/seeds
-      - iceberg-warehouse:${SPARK_WAREHOUSE:-/tmp/warehouse}
-    command: bash -c "umask 000 && /opt/spark/bin/spark-submit --packages org.apache.iceberg:iceberg-spark-runtime-3.5_2.12:${ICEBERG_VERSION:-1.7.1} --conf spark.jars.ivy=${SPARK_IVY_DIR:-/opt/spark/.ivy2} /seeds/seed_iceberg_data.py && chmod -R 777 ${SPARK_WAREHOUSE:-/tmp/warehouse}"
-    depends_on:
-      seed-schema:
-        condition: service_completed_successfully
-
-volumes:
-  pgdata:
-  iceberg-warehouse:
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: ${FRONTEND_MEMORY_LIMIT:-256M}
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "${LOG_MAX_SIZE_SMALL:-10m}"
+        max-file: "${LOG_MAX_FILES_SMALL:-3}"

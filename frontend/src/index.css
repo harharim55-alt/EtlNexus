@@ -214,9 +214,14 @@
   animation: onboarding-backdrop-fade 600ms ease-out 1400ms forwards;
 }
 
-/* ── Theme: Dark (default) ───────────────────────────────────────── */
+/* ── Theme: Dark (default) ───────────────────────────────────────────
+   The active mode is chosen by the user (data-theme) and never follows the
+   browser/OS light-dark setting. `color-scheme` per mode forces native
+   widgets (scrollbars, form controls, autofill) to match the CHOSEN mode
+   instead of the OS preference — so each mode looks identical everywhere. */
 :root,
 [data-theme="dark"] {
+  color-scheme: dark;
   --background: #09090b;
   --foreground: oklch(0.985 0 0);
   --card: #18181b;
@@ -268,6 +273,7 @@
 
 /* ── Theme: Light ───────────────────────────────────────────────── */
 [data-theme="light"] {
+  color-scheme: light;
   --background: #f8fafc;
   --foreground: #0f172a;
   --card: #ffffff;

@@ -4,22 +4,27 @@ import { useMutation, useQueryClient } from "@tanstack/react-query";
 import apiClient from "@/api/client";
 import { toast } from "sonner";
 import type { PipelineDetail } from "@/types/pipeline";
+import { useAuthStore } from "@/stores/auth-store";
+import { TableSelect } from "./TableSelect";
 
 interface CreateDataProductModalProps {
   open: boolean;
   onClose: () => void;
   onCreated: (product: PipelineDetail) => void;
-  /** Create a tag (no schema, no schedule) instead of a regular data product. */
-  isTag?: boolean;
 }
 
-export function CreateDataProductModal({ open, onClose, onCreated, isTag = false }: CreateDataProductModalProps) {
-  const noun = isTag ? "Tag" : "Data Product";
+export function CreateDataProductModal({ open, onClose, onCreated }: CreateDataProductModalProps) {
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
   const [documentation, setDocumentation] = useState("");
   const [scheduleType, setScheduleType] = useState<string>("");
+  const [tables, setTables] = useState<string[]>([]);
+  const [team, setTeam] = useState<string>("");
   const queryClient = useQueryClient();
+
+  const userTeams = useAuthStore((s) => s.user?.teams ?? []);
+  // Only make the user pick when they belong to more than one team.
+  const mustChooseTeam = userTeams.length > 1;
 
   const createMutation = useMutation({
     mutationFn: async () => {
@@ -27,23 +32,22 @@ export function CreateDataProductModal({ open, onClose, onCreated, isTag = false
         name,
         description: description || null,
         documentation: documentation || null,
-        schedule_type: isTag ? null : scheduleType || null,
-        is_tag: isTag,
+        schedule_type: scheduleType || null,
+        team: team || null,
+        tables,
       });
       return data;
     },
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["data-products"] });
-      queryClient.invalidateQueries({ queryKey: ["pipelines"] });
-      queryClient.invalidateQueries({ queryKey: ["tags"] });
-      toast.success(`${noun} "${name}" created`);
+      toast.success(`Data product "${name}" created`);
       onCreated(data);
       resetForm();
     },
     onError: (err) => {
       const detail =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail;
-      toast.error(detail || `Failed to create ${noun.toLowerCase()}`);
+      toast.error(detail || "Failed to create data product");
     },
   });
 
@@ -52,21 +56,23 @@ export function CreateDataProductModal({ open, onClose, onCreated, isTag = false
     setDescription("");
     setDocumentation("");
     setScheduleType("");
+    setTables([]);
+    setTeam("");
   };
 
   if (!open) return null;
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 animate-in fade-in duration-150">
-      <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200">
-        <div className="flex items-center justify-between p-5 border-b border-border">
-          <h2 className="text-lg font-semibold text-foreground">New {noun}</h2>
+      <div className="bg-card border border-border rounded-2xl w-full max-w-lg shadow-2xl animate-in zoom-in-95 duration-200 max-h-[88vh] flex flex-col">
+        <div className="flex items-center justify-between p-5 border-b border-border shrink-0">
+          <h2 className="text-lg font-semibold text-foreground">New Data Product</h2>
           <button onClick={onClose} className="p-1 text-text-muted hover:text-foreground transition-colors cursor-pointer">
             <X className="size-4" />
           </button>
         </div>
 
-        <div className="p-5 space-y-4">
+        <div className="p-5 space-y-4 overflow-y-auto custom-scrollbar">
           <div>
             <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
               Name
@@ -75,7 +81,7 @@ export function CreateDataProductModal({ open, onClose, onCreated, isTag = false
               type="text"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder={isTag ? "e.g. ThreatBundle" : "e.g. PortScanCollector"}
+              placeholder="e.g. ThreatIntelligence"
               className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50"
             />
           </div>
@@ -88,7 +94,7 @@ export function CreateDataProductModal({ open, onClose, onCreated, isTag = false
               value={description}
               onChange={(e) => setDescription(e.target.value.slice(0, 270))}
               maxLength={270}
-              rows={3}
+              rows={2}
               placeholder="Brief description..."
               className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 resize-none"
             />
@@ -102,38 +108,60 @@ export function CreateDataProductModal({ open, onClose, onCreated, isTag = false
             <textarea
               value={documentation}
               onChange={(e) => setDocumentation(e.target.value)}
-              rows={4}
+              rows={3}
               placeholder="Markdown documentation (optional)..."
               className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50 focus:ring-1 focus:ring-indigo-500/50 resize-none font-mono"
             />
           </div>
 
-          {!isTag && (
+          <div>
+            <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
+              Schedule
+            </label>
+            <select
+              value={scheduleType}
+              onChange={(e) => setScheduleType(e.target.value)}
+              className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50"
+            >
+              <option value="">Select schedule...</option>
+              <option value="daily">Daily</option>
+              <option value="hourly">Hourly</option>
+              <option value="stream">Stream</option>
+            </select>
+          </div>
+
+          {mustChooseTeam && (
             <div>
               <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
-                Schedule
+                Team
               </label>
               <select
-                value={scheduleType}
-                onChange={(e) => setScheduleType(e.target.value)}
+                value={team}
+                onChange={(e) => setTeam(e.target.value)}
                 className="w-full bg-background border border-border-prominent rounded-lg px-3 py-2 text-sm text-foreground focus:outline-none focus:border-indigo-500/50"
               >
-                <option value="">Select schedule...</option>
-                <option value="daily">Daily</option>
-                <option value="hourly">Hourly</option>
-                <option value="stream">Stream</option>
+                <option value="">Select team...</option>
+                {userTeams.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
               </select>
+              <span className="text-[10px] text-text-faint font-mono">
+                You belong to multiple teams — choose which owns this product.
+              </span>
             </div>
           )}
-          {isTag && (
-            <p className="text-[11px] text-text-faint font-mono leading-relaxed">
-              A tag groups data products. It has no schema or schedule of its own —
-              tag products on their pages to add them here.
-            </p>
-          )}
+
+          <div>
+            <label className="text-[11px] font-mono uppercase tracking-widest text-text-muted block mb-1.5">
+              Tables
+            </label>
+            <TableSelect value={tables} onChange={setTables} />
+          </div>
         </div>
 
-        <div className="flex justify-end gap-2 p-5 border-t border-border">
+        <div className="flex justify-end gap-2 p-5 border-t border-border shrink-0">
           <button
             onClick={() => { onClose(); resetForm(); }}
             className="px-4 py-2 text-sm text-text-secondary hover:text-foreground transition-colors rounded-lg"
@@ -142,7 +170,7 @@ export function CreateDataProductModal({ open, onClose, onCreated, isTag = false
           </button>
           <button
             onClick={() => createMutation.mutate()}
-            disabled={!name.trim() || createMutation.isPending}
+            disabled={!name.trim() || (mustChooseTeam && !team) || createMutation.isPending}
             className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white text-sm font-medium rounded-lg transition-colors"
           >
             {createMutation.isPending ? "Creating..." : "Create"}

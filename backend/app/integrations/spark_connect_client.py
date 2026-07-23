@@ -1,11 +1,12 @@
-"""Spark Connect client — reads Iceberg table schemas via a remote Spark Connect server.
+"""Spark Connect client — reads a single Iceberg table's schema on demand.
 
-Replaces the previous PyIceberg REST-catalog client. Tables are still Iceberg
-format; only the access path changed. The backend connects to a Spark Connect
-server (``sc://host:port``) and reads schemas with Spark SQL, so it needs no JVM
-or catalog credentials of its own — the server owns the Iceberg catalog config.
+The backend connects to a Spark Connect server (``sc://host:port``) and reads a
+table's schema with Spark SQL when a user opens that table. There is no catalog
+mirroring or bulk discovery — which tables exist is known from the external
+``iceberg_table_metrics`` table, and schemas are fetched live per request.
 """
 
+import asyncio
 import logging
 import re
 from dataclasses import dataclass, field
@@ -34,10 +35,7 @@ def _validate_identifier(value: str, label: str) -> str:
 class SparkConnectClient:
     def __init__(self):
         self.remote_url = settings.spark_connect_url
-        self.catalog_name = _validate_identifier(
-            settings.spark_catalog_name, "spark_catalog_name"
-        )
-        self.namespace_prefix = settings.spark_namespace_prefix
+        self.catalog_name = _validate_identifier(settings.spark_catalog_name, "spark_catalog_name")
         self._spark = None
         self._connected = False
 
@@ -63,7 +61,6 @@ class SparkConnectClient:
 
     async def check_health(self) -> bool:
         """Check if we can reach the Spark Connect server."""
-        import asyncio
         return await asyncio.to_thread(self._check_health_sync)
 
     def _check_health_sync(self) -> bool:
@@ -80,25 +77,15 @@ class SparkConnectClient:
             self._connected = False
             return False
 
-    def list_tables_in_namespace(self, namespace: str) -> list[str]:
-        """List all tables in a given namespace of the configured Spark catalog."""
-        _validate_identifier(namespace, "namespace")
-        spark = self._get_spark()
-        if not spark:
-            return []
-        try:
-            rows = spark.sql(f"SHOW TABLES IN {self.catalog_name}.{namespace}").collect()
-            return [row["tableName"] for row in rows]
-        except Exception as e:
-            logger.warning("Failed to list tables in %s: %s", namespace, e)
-            return []
-
     def get_table_schema(self, namespace: str, table_name: str) -> SparkTableSchema | None:
-        """Read schema from an Iceberg table via Spark Connect.
+        """Read a single Iceberg table's schema via Spark Connect.
 
         Args:
-            namespace: Namespace e.g. "dagger"
-            table_name: Table name e.g. "PortScanCollector"
+            namespace: Namespace e.g. "vault"
+            table_name: Table name e.g. "logins"
+
+        Raises:
+            ValueError: if either identifier contains unsafe characters.
         """
         _validate_identifier(namespace, "namespace")
         _validate_identifier(table_name, "table_name")
@@ -127,28 +114,6 @@ class SparkConnectClient:
         except Exception as e:
             logger.warning("Failed to read schema for %s.%s: %s", namespace, table_name, e)
             return None
-
-    def get_all_schemas(self) -> list[SparkTableSchema]:
-        """Discover all tables under the configured team namespace prefixes and read their schemas."""
-        spark = self._get_spark()
-        if not spark:
-            return []
-
-        schemas: list[SparkTableSchema] = []
-        prefixes = [p.strip() for p in self.namespace_prefix.split(",")]
-        for prefix in prefixes:
-            try:
-                _validate_identifier(prefix, "namespace_prefix")
-                tables = self.list_tables_in_namespace(prefix)
-                for table_name in tables:
-                    schema = self.get_table_schema(prefix, table_name)
-                    if schema:
-                        schemas.append(schema)
-            except Exception as e:
-                logger.warning("Failed to discover schemas for namespace '%s': %s", prefix, e)
-
-        logger.info("Discovered %d table schemas from configured team namespaces", len(schemas))
-        return schemas
 
     def stop(self):
         """Clean up the Spark Connect session."""

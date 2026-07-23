@@ -14,11 +14,16 @@ export function useAIChat() {
     onMutate: () => setTyping(true),
     onSuccess: (response) =>
       addMessage({ role: "assistant", content: response.content }),
-    onError: () =>
-      addMessage({
-        role: "assistant",
-        content: "Connection to Architect Core severed.",
-      }),
+    onError: (error) => {
+      // A client-side timeout (axios ECONNABORTED) is the long-LLM case, not a
+      // dropped connection — say so instead of the generic "severed" message.
+      const code = (error as { code?: string })?.code;
+      const content =
+        code === "ECONNABORTED"
+          ? "The Architect took too long to respond and the request timed out. Try a more specific question, or raise AI_REQUEST_TIMEOUT_SECONDS / the API proxy timeout."
+          : "Connection to Architect Core severed.";
+      addMessage({ role: "assistant", content });
+    },
     onSettled: () => setTyping(false),
   });
 }

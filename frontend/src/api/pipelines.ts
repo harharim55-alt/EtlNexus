@@ -2,7 +2,6 @@ import apiClient from "./client";
 import type {
   PipelineListResponse,
   PipelineDetail,
-  JoinSuggestionsResponse,
   PipelineUpdateRequest,
   PipelineUpdateResponse,
   RevisionListResponse,
@@ -11,7 +10,6 @@ import type {
 export interface PipelineFilterParams {
   team?: string[];
   schedule?: string[];
-  is_data_product?: boolean;
 }
 
 export async function fetchPipelines(
@@ -21,7 +19,7 @@ export async function fetchPipelines(
   dateParams?: Record<string, string>,
   filters?: PipelineFilterParams,
 ): Promise<PipelineListResponse> {
-  const { data } = await apiClient.get<PipelineListResponse>("/pipelines", {
+  const { data } = await apiClient.get<PipelineListResponse>("/data-products", {
     params: { q: query, skip, limit, ...dateParams, ...filters },
     paramsSerializer: {
       indexes: null, // serialize arrays as team=a&team=b (no bracket indices)
@@ -30,53 +28,41 @@ export async function fetchPipelines(
   return data;
 }
 
-export async function fetchPipelineDetail(pipelineId: string): Promise<PipelineDetail> {
-  const { data } = await apiClient.get<PipelineDetail>(`/pipelines/${pipelineId}`);
-  return data;
-}
-
-export async function fetchJoinSuggestions(pipelineId: string): Promise<JoinSuggestionsResponse> {
-  const { data } = await apiClient.get<JoinSuggestionsResponse>(`/pipelines/${pipelineId}/joins`);
+export async function fetchPipelineDetail(productId: string): Promise<PipelineDetail> {
+  const { data } = await apiClient.get<PipelineDetail>(`/data-products/${productId}`);
   return data;
 }
 
 export async function updatePipeline(
-  pipelineId: string,
+  productId: string,
   body: PipelineUpdateRequest,
 ): Promise<PipelineUpdateResponse> {
   const { data } = await apiClient.patch<PipelineUpdateResponse>(
-    `/pipelines/${pipelineId}`,
+    `/data-products/${productId}`,
     body,
   );
   return data;
 }
 
 export async function fetchRevisions(
-  pipelineId: string,
+  productId: string,
   field?: "description" | "documentation",
   skip = 0,
   limit = 50,
 ): Promise<RevisionListResponse> {
   const { data } = await apiClient.get<RevisionListResponse>(
-    `/pipelines/${pipelineId}/revisions`,
+    `/data-products/${productId}/revisions`,
     { params: { field, skip, limit } },
   );
   return data;
 }
 
 export async function restoreRevision(
-  pipelineId: string,
+  productId: string,
   revisionId: string,
 ): Promise<PipelineUpdateResponse> {
   const { data } = await apiClient.post<PipelineUpdateResponse>(
-    `/pipelines/${pipelineId}/revisions/${revisionId}/restore`,
-  );
-  return data;
-}
-
-export async function promoteToDataProduct(pipelineId: string): Promise<PipelineDetail> {
-  const { data } = await apiClient.post<PipelineDetail>(
-    `/data-products/from-pipeline/${pipelineId}`,
+    `/data-products/${productId}/revisions/${revisionId}/restore`,
   );
   return data;
 }

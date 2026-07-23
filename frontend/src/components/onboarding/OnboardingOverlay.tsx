@@ -125,8 +125,8 @@ export function OnboardingOverlay() {
     ? "slide-in-from-right-4"
     : "slide-in-from-left-4";
 
-  const firstName = user?.display_name?.split(" ")[0] ?? "";
-  const teamNames = user?.teams?.map((t) => t.name).join(", ");
+  const firstName = user?.username?.split(" ")[0] ?? "";
+  const teamNames = user?.teams?.join(", ");
   const roleLabel = user?.role ?? "";
 
   return (

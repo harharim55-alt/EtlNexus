@@ -1,0 +1,14 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: etlnexus-frontend-config
+  # namespace: <your-namespace>
+data:
+  # The frontend nginx substitutes these at container start (docker-entrypoint.sh).
+  # Must be the BACKEND Service name so /api proxies to http://<service>:8000 via cluster DNS.
+  BACKEND_HOST: "etlnexus-backend"
+  # Keycloak origin the browser calls (OIDC discovery/token/JWKS) — CSP connect-src.
+  CSP_CONNECT_SRC: "https://<ip>"
+  # nginx /api proxy timeouts (must be >= AI_REQUEST_TIMEOUT_SECONDS).
+  API_PROXY_READ_TIMEOUT: "300s"
+  API_PROXY_SEND_TIMEOUT: "300s"

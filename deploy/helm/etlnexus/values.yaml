@@ -1,0 +1,101 @@
+# ============================================================================
+# EtlNexus Helm values. Fill the <...> placeholders (or override with --set /
+# a secrets values file). Deploy:  helm upgrade --install etlnexus ./deploy/helm/etlnexus -n <ns>
+# ============================================================================
+
+# Container registry that holds the two images (no trailing slash).
+imageRegistry: registry.gitlab.com/<group>/<project>
+
+# Pull secret for the private registry. Set create=true + username/token to have
+# the chart create it; or set create=false and reference an existing one by name.
+imagePullSecret:
+  create: true
+  name: gitlab-pull
+  server: registry.gitlab.com
+  username: "<registry-user>"
+  token: "<registry-token>"          # GitLab Deploy Token / PAT with read_registry
+
+# Shared pod security context — OpenShift restricted-SCC friendly.
+# Do NOT set runAsUser: the platform assigns a non-root UID.
+securityContext:
+  allowPrivilegeEscalation: false
+  runAsNonRoot: true
+  capabilities:
+    drop: ["ALL"]
+  seccompProfile:
+    type: RuntimeDefault
+
+# ---------------------------------------------------------------------------
+backend:
+  image:
+    repository: backend              # -> {imageRegistry}/backend:{tag}
+    tag: "latest"                    # use a UNIQUE tag per build so K8s re-pulls
+    pullPolicy: Always
+  replicas: 1
+  port: 8000
+  resources:
+    requests: { cpu: "250m", memory: "512Mi" }
+    limits: { cpu: "1", memory: "2Gi" }
+  # Non-secret env -> ConfigMap (each key becomes a real env var).
+  env:
+    DEPLOYMENT_ENV: "production"
+    DEBUG: "false"
+    APP_NAME: "ETL Nexus"
+    APP_OWNER: ""
+    CORS_ORIGINS: '["https://<frontend-domain>"]'
+    MASTER_ADMIN_USERNAMES: ""
+    SYSTEM_TEAMS: '["*"]'
+    TRUSTED_PROXY_DEPTH: "2"
+    # OpenShift: a writable HOME for the non-root arbitrary UID (general; not uv). Optional.
+    HOME: "/tmp"
+    # Database (managed/external; must already exist).
+    DB_CREATE_DATABASE: "false"
+    DB_SCHEMA: "public"
+    DB_STATEMENT_CACHE_SIZE: "100"
+    # Spark Connect.
+    SPARK_CONNECT_URL: "sc://<spark-host>:15002"
+    SPARK_CATALOG_NAME: "spark_catalog"
+    ICEBERG_METRICS_TABLE: "iceberg_table_metrics"
+    ICEBERG_METRICS_SCHEMA: ""
+    ICEBERG_METRICS_DAY_OFFSET: "1"
+    # LLM (key is a secret, below).
+    LLM_API_BASE_URL: "https://<llm-endpoint>/v1"
+    LLM_MODEL: "default"
+    LLM_VERIFY_SSL: "false"
+    AI_REQUEST_TIMEOUT_SECONDS: "300"
+    # SSO / OIDC (client secret is a secret, below).
+    SSO_ENABLED: "true"
+    SSO_ISSUER_URL: "https://<ip>/auth/realms/<realm>"
+    SSO_PUBLIC_ISSUER_URL: "https://<ip>/auth/realms/<realm>"
+    SSO_CLIENT_ID: "etl-nexus"
+    SSO_AUDIENCE: "etl-nexus"
+    SSO_GROUPS_CLAIM: "groups"
+    SSO_GROUP_MAP: "{}"
+    OIDC_VERIFY_SSL: "false"
+  # Sensitive env -> Secret. Override via --set-string or a private values file.
+  secretEnv:
+    DATABASE_URL: "postgresql+asyncpg://<user>:<pass>@<host>:5432/<db>"
+    SSO_CLIENT_SECRET: "<keycloak-client-secret>"
+    LLM_API_KEY: ""
+
+# ---------------------------------------------------------------------------
+frontend:
+  image:
+    repository: frontend
+    tag: "latest"
+    pullPolicy: Always
+  replicas: 1
+  port: 8080          # nginx-unprivileged listens on 8080 (non-root)
+  resources:
+    requests: { cpu: "50m", memory: "64Mi" }
+    limits: { cpu: "250m", memory: "256Mi" }
+  # BACKEND_HOST is injected automatically (= the backend Service name).
+  env:
+    CSP_CONNECT_SRC: "https://<ip>"        # Keycloak origin the browser calls
+    API_PROXY_READ_TIMEOUT: "300s"
+    API_PROXY_SEND_TIMEOUT: "300s"
+  # OpenShift Route (external URL). Set enabled: false to use an Ingress instead.
+  route:
+    enabled: true
+    host: ""                                # empty = OpenShift auto-generates
+    tls: edge                               # edge | passthrough | reencrypt

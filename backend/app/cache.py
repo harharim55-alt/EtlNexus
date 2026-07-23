@@ -1,13 +1,9 @@
 """Shared in-memory TTL cache for read-heavy data.
 
-Pipeline data changes only every sync cycle, so short-lived caches (30-60 s)
-eliminate redundant DB queries between syncs. All caches are cleared after each
-sync/poll cycle completes via :func:`clear_all`.
-
-The cache is process-local and in-memory only — there is no external cache
-store. In a multi-instance deployment each process keeps its own cache; they
-converge through TTL expiry plus the post-sync ``clear_all()`` each process runs.
-See docs/adr/001-in-memory-cache-design.md.
+Short-lived caches (30-60 s) cut redundant DB queries and repeated live Spark
+schema reads. The cache is process-local and in-memory only — there is no
+external cache store. In a multi-instance deployment each process keeps its own
+cache; they converge through TTL expiry. See docs/adr/001-in-memory-cache-design.md.
 """
 
 import logging
@@ -44,10 +40,7 @@ class TTLCache[T]:
         with self._lock:
             # Lazy eviction when store grows large
             if len(self._store) >= _MAX_ENTRIES:
-                self._store = {
-                    k: v for k, v in self._store.items()
-                    if now - v[0] <= self._ttl
-                }
+                self._store = {k: v for k, v in self._store.items() if now - v[0] <= self._ttl}
             self._store[key] = (now, value)
 
     def clear(self) -> None:
@@ -56,20 +49,16 @@ class TTLCache[T]:
 
 
 # ── Module-level singletons ──────────────────────────────────────────
-pipeline_list_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)     # list_pipelines (no query)
-schema_matrix_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium)    # schema matrix response
-join_suggestions_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_medium) # join suggestions per pipeline
-task_id_map_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)       # lightweight {task_id: summary} lookup
+product_list_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)  # list_products (no filters)
+catalog_context_cache: TTLCache[Any] = TTLCache(ttl=settings.cache_ttl_short)  # AI catalog summary string
+table_schema_cache: TTLCache[Any] = TTLCache(
+    ttl=settings.table_schema_cache_ttl
+)  # one table's live schema, keyed by fqn
 
 
 def clear_all() -> None:
-    """Invalidate every application cache in this process.
-
-    Called after each sync/poll cycle. The cache is in-memory and process-local,
-    so this clears only the calling process's caches.
-    """
-    pipeline_list_cache.clear()
-    schema_matrix_cache.clear()
-    join_suggestions_cache.clear()
-    task_id_map_cache.clear()
+    """Invalidate every application cache in this process."""
+    product_list_cache.clear()
+    catalog_context_cache.clear()
+    table_schema_cache.clear()
     logger.debug("All application caches cleared")

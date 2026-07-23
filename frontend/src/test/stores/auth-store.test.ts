@@ -3,13 +3,11 @@ import { useAuthStore } from "@/stores/auth-store";
 import type { UserInfo } from "@/types/auth";
 
 const makeUser = (role: string): UserInfo => ({
-  id: "user-1",
+  username: "test-user",
   email: "test@example.com",
-  display_name: "Test User",
   role,
-  is_active: true,
   is_master: false,
-  teams: [{ id: "team-1", name: "Dagger", role_in_team: "member" }],
+  teams: ["Dagger"],
 });
 
 beforeEach(() => {
@@ -75,7 +73,7 @@ describe("useAuthStore — setUser", () => {
     const user = makeUser("member");
     useAuthStore.getState().setUser(user);
     expect(useAuthStore.getState().user?.teams).toHaveLength(1);
-    expect(useAuthStore.getState().user?.teams[0].name).toBe("Dagger");
+    expect(useAuthStore.getState().user?.teams[0]).toBe("Dagger");
   });
 });
 
